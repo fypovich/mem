@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, desc
+from sqlalchemy import select, update, desc, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -70,3 +70,15 @@ async def mark_all_as_read(
     await db.execute(stmt)
     await db.commit()
     return {"status": "ok"}
+
+@router.get("/unread-count")
+async def get_unread_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where((Notification.user_id == current_user.id) & (Notification.is_read == False))
+    )
+    return {"count": count}

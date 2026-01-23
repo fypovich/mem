@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 # ИМПОРТИРУЕМ ВСЕ 3 РОУТЕРА
-from app.api import memes, auth, users, notifications 
+from app.api import memes, auth, users, notifications, search 
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -32,6 +32,7 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"]) # <--- ЭТОЙ СТРОКИ НЕ ХВАТАЛО
 app.include_router(memes.router, prefix="/api/v1/memes", tags=["memes"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
+app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 
 @app.get("/")
 async def root():

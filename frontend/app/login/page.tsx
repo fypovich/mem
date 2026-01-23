@@ -47,10 +47,13 @@ export default function AuthPage() {
       
       // Сохраняем токен в localStorage
       localStorage.setItem("token", data.access_token);
-      localStorage.setItem("username", loginUsername); // Сохраним ник для удобства
+      localStorage.setItem("username", loginUsername); 
+      
+      // ВАЖНО: Уведомляем другие компоненты (Header) о входе
+      window.dispatchEvent(new Event("auth-change"));
       
       router.push("/"); // На главную
-      router.refresh();
+      router.refresh(); // Обновляем серверные компоненты
 
     } catch (error) {
       alert("Неверный логин или пароль");
@@ -85,6 +88,9 @@ export default function AuthPage() {
       // Сразу сохраняем токен и входим
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("username", regUsername);
+
+      // ВАЖНО: Уведомляем Header
+      window.dispatchEvent(new Event("auth-change"));
 
       router.push("/");
       router.refresh();
