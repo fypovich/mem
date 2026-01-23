@@ -2,6 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
+from sqlalchemy.orm import selectinload # <-- Важный импорт
 from pydantic import BaseModel
 
 from app.core.database import get_db
@@ -28,8 +29,14 @@ async def search_global(
     search_term = f"%{q}%"
 
     # 1. Поиск мемов (по заголовку или описанию)
+    # ВАЖНО: Добавляем options(selectinload(...)) чтобы подгрузить связи
     memes_res = await db.execute(
         select(Meme)
+        .options(
+            selectinload(Meme.user),
+            selectinload(Meme.tags),
+            selectinload(Meme.subject)
+        )
         .where(or_(Meme.title.ilike(search_term), Meme.description.ilike(search_term)))
         .limit(limit)
     )
