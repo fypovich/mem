@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, Bell, Upload, LogOut, User, Menu } from "lucide-react";
+import { Search, Bell, Upload, LogOut, User, Menu, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,7 +15,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SidebarTrigger } from "/ui/sidebar";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sidebar } from "@/components/sidebar"; // Импортируем ваш существующий сайдбар
 
 const API_URL = "http://127.0.0.1:8000";
 
@@ -97,19 +98,33 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center gap-4 px-4">
+      <div className="container flex h-14 items-center gap-4 px-4 mx-auto max-w-7xl">
         
-        {/* Меню для мобилок */}
-        <SidebarTrigger className="md:hidden" />
+        {/* Мобильное меню (Sheet) */}
+        <div className="md:hidden mr-2">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 w-72">
+               {/* Вставляем сайдбар внутрь мобильного меню, убирая скрытие */}
+               <div className="px-4 py-6">
+                 <Sidebar /> 
+               </div>
+            </SheetContent>
+          </Sheet>
+        </div>
 
         {/* Логотип */}
-        <Link href="/" className="flex items-center gap-2 font-bold text-xl mr-4">
+        <Link href="/" className="flex items-center gap-2 font-bold text-xl mr-4 shrink-0">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground">M</div>
-          <span className="hidden sm:inline-block">MemApp</span>
+          <span className="hidden sm:inline-block">MemeHUB</span>
         </Link>
 
         {/* Поиск */}
-        <div className="flex-1 max-w-xl relative">
+        <div className="flex-1 max-w-xl relative hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             type="search"
@@ -121,6 +136,7 @@ export function Header() {
           />
         </div>
 
+        {/* Правая часть */}
         <div className="flex items-center gap-2 md:gap-4 ml-auto">
           {isAuthenticated ? (
             <>
@@ -141,7 +157,7 @@ export function Header() {
                   <Bell className="w-5 h-5" />
                 </Button>
                 {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold pointer-events-none">
+                    <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold pointer-events-none">
                         {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                 )}
@@ -155,7 +171,7 @@ export function Header() {
                     <AvatarFallback>{user?.username?.[0]?.toUpperCase()}</AvatarFallback>
                   </Avatar>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>@{user?.username}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <Link href={`/user/${user?.username}`}>
@@ -165,7 +181,7 @@ export function Header() {
                   </Link>
                   <Link href="/settings">
                     <DropdownMenuItem className="cursor-pointer">
-                      <Settings className="w-4 h-4 mr-2" /> Настройки (fake import fix)
+                      <Settings className="w-4 h-4 mr-2" /> Настройки
                     </DropdownMenuItem>
                   </Link>
                   <DropdownMenuSeparator />
@@ -180,7 +196,7 @@ export function Header() {
               <Link href="/login">
                 <Button variant="ghost" size="sm">Вход</Button>
               </Link>
-              <Link href="/register">
+              <Link href="/login"> {/* Обычно регистрация ведет на отдельную страницу или на таб регистрации */}
                 <Button size="sm">Регистрация</Button>
               </Link>
             </>
@@ -190,6 +206,3 @@ export function Header() {
     </header>
   );
 }
-
-// Костыль, чтобы Settings icon импортировался (в коде выше я использовал import {Settings}, но он мог быть не там)
-import { Settings } from "lucide-react";
