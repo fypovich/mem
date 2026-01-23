@@ -10,7 +10,7 @@ from sqlalchemy import select, func, delete, insert, exists
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.models.models import User, follows # Не забудьте импортировать follows!
+from app.models.models import User, follows, Notification, NotificationType
 from app.api.memes import get_current_user, get_optional_current_user
 # Импортируем обновленную схему (если она в schemas.py, поправьте импорт)
 from app.schemas import UserProfile 
@@ -56,11 +56,17 @@ async def follow_user(
         )
         action = "unfollowed"
     else:
-        # ПОДПИСКА
-        await db.execute(
-            insert(follows).values(follower_id=current_user.id, followed_id=target_user.id)
-        )
+        await db.execute(insert(follows).values(follower_id=current_user.id, followed_id=target.id))
         action = "followed"
+        
+        # --- УВЕДОМЛЕНИЕ О ПОДПИСКЕ ---
+        notif = Notification(
+            user_id=target.id,          # Кому: тот, на кого подписались
+            sender_id=current_user.id,  # От кого: я
+            type=NotificationType.FOLLOW
+        )
+        db.add(notif)
+        # -----------------------------
 
     await db.commit()
     

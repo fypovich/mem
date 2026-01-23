@@ -15,6 +15,22 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 
+# --- НОВАЯ СХЕМА УВЕДОМЛЕНИЙ ---
+class NotificationResponse(BaseModel):
+    id: int
+    type: str # 'follow', 'like', 'comment', 'new_meme', 'system'
+    is_read: bool
+    created_at: datetime
+    text: Optional[str] = None
+    
+    # Вложенные объекты (Optional, так как могут отсутствовать)
+    sender: Optional[UserResponse] = None
+    meme_id: Optional[uuid.UUID] = None
+    meme_thumbnail: Optional[str] = None # Для отображения превью мема
+
+    class Config:
+        from_attributes = True
+
 # --- Tag & Subject Schemas (ДОБАВЛЕНО) ---
 class TagResponse(BaseModel):
     name: str

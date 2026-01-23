@@ -9,7 +9,7 @@ from sqlalchemy import select, func, exists, delete
 from sqlalchemy.orm import selectinload, aliased
 
 from app.core.database import get_db
-from app.models.models import Meme, User, Like, Comment, Tag, Subject, meme_tags
+from app.models.models import Meme, User, Like, Comment, Tag, Subject, meme_tags, Notification, NotificationType
 from app.schemas import MemeResponse, CommentCreate, CommentResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -170,6 +170,19 @@ async def upload_meme(
     new_meme.tags = db_tags
     
     db.add(new_meme)
+    followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
+    followers_res = await db.execute(followers_stmt)
+    follower_ids = followers_res.scalars().all()
+    
+    for fid in follower_ids:
+        notif = Notification(
+            user_id=fid,                # Получатель (подписчик)
+            sender_id=current_user.id,  # Автор
+            type=NotificationType.NEW_MEME,
+            meme_id=new_meme.id
+        )
+        db.add(notif)
+    
     await db.commit()
     
     # --- ИСПРАВЛЕНИЕ ТУТ ---
@@ -210,6 +223,19 @@ async def create_comment(
     )
     
     db.add(new_comment)
+    
+    # --- УВЕДОМЛЕНИЕ О КОММЕНТАРИИ ---
+    if meme.user_id != current_user.id:
+        notif = Notification(
+            user_id=meme.user_id,
+            sender_id=current_user.id,
+            type=NotificationType.COMMENT,
+            meme_id=meme.id,
+            text=comment.text[:50] # Сохраняем начало коммента
+        )
+        db.add(notif)
+    # ---------------------------------
+
     await db.commit()
     await db.refresh(new_comment)
     
@@ -422,6 +448,19 @@ async def like_meme(
         new_like = Like(user_id=current_user.id, meme_id=meme_id)
         db.add(new_like)
         action = "liked"
+        
+        # --- УВЕДОМЛЕНИЕ О ЛАЙКЕ ---
+        # Не уведомляем, если лайкаем свой мем
+        if meme.user_id != current_user.id:
+            # Проверка, чтобы не спамить (опционально можно добавить проверку на существование такого же уведомления)
+            notif = Notification(
+                user_id=meme.user_id,
+                sender_id=current_user.id,
+                type=NotificationType.LIKE,
+                meme_id=meme.id
+            )
+            db.add(notif)
+        # --------------------------
 
     await db.commit()
     
