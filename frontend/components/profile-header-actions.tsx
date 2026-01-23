@@ -8,28 +8,57 @@ import { Button } from "@/components/ui/button";
 
 interface ProfileHeaderActionsProps {
   user: any;        
-  memesCount: number; // Явно принимаем количество
+  memesCount: number;
 }
 
 export function ProfileHeaderActions({ user, memesCount }: ProfileHeaderActionsProps) {
   const router = useRouter();
   
+  // Инициализируем состояние данными с сервера (они могут быть устаревшими для авторизованного юзера)
   const [isFollowing, setIsFollowing] = useState(user.is_following);
   const [followersCount, setFollowersCount] = useState(user.followers_count || 0);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // isMe вычисляем на клиенте
   const [isMe, setIsMe] = useState(false);
-  const [isMounted, setIsMounted] = useState(false); // Чтобы избежать мигания
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
-    const storedUsername = localStorage.getItem("username");
     
-    // Если это мой профиль - запоминаем
+    // 1. Проверяем, мой ли это профиль
+    const storedUsername = localStorage.getItem("username");
     if (storedUsername === user.username) {
         setIsMe(true);
-    } 
-    // Если есть токен, но сервер не знал об этом (SSR), можно тут обновить статус подписки
-    // но для простоты оставим как есть, пользователь увидит кнопку "Подписаться" и при клике его кинет на логин
+    }
+
+    // 2. ВАЖНО: Проверяем актуальный статус подписки
+    // Сервер (SSR) не видит localStorage, поэтому он мог вернуть is_following = false.
+    // Мы должны перепроверить это на клиенте, если есть токен.
+    const checkFollowStatus = async () => {
+        const token = localStorage.getItem("token");
+        // Если токена нет или это мой профиль - проверять нечего
+        if (!token || storedUsername === user.username) return;
+
+        try {
+            const res = await fetch(`http://127.0.0.1:8000/api/v1/users/${user.username}`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                const freshData = await res.json();
+                // Обновляем кнопку, если данные отличаются
+                setIsFollowing(freshData.is_following);
+                // Заодно можно обновить и счетчик
+                setFollowersCount(freshData.followers_count);
+            }
+        } catch (e) {
+            console.error("Failed to check status", e);
+        }
+    };
+
+    checkFollowStatus();
+
   }, [user.username]);
 
   const handleFollow = async () => {
@@ -72,10 +101,8 @@ export function ProfileHeaderActions({ user, memesCount }: ProfileHeaderActionsP
         </p>
         
         <div className="mt-4 flex gap-3 min-h-[36px]">
-            {/* Показываем кнопку ТОЛЬКО если клиент загрузился (isMounted) 
-               И это НЕ мой профиль (!isMe). 
-               Иначе - пустота (никаких миганий).
-            */}
+            {/* Рендерим кнопку только после того, как JS загрузился (isMounted), 
+                чтобы избежать гидратации и мигания */}
             {isMounted && !isMe && (
                 <Button 
                     size="sm" 
@@ -99,7 +126,6 @@ export function ProfileHeaderActions({ user, memesCount }: ProfileHeaderActionsP
       {/* ПРАВАЯ ЧАСТЬ: Статистика */}
       <div className="flex gap-4 p-4 bg-muted/30 rounded-lg border self-start md:self-auto">
         <div className="text-center min-w-[80px]">
-            {/* Используем проп memesCount */}
             <div className="font-bold text-2xl">{memesCount}</div> 
             <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Мемов</div>
         </div>
