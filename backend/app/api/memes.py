@@ -9,7 +9,7 @@ from sqlalchemy import select, func, exists, delete
 from sqlalchemy.orm import selectinload, aliased
 
 from app.core.database import get_db
-from app.models.models import Meme, User, Like, Comment, Tag, Subject, meme_tags, Notification, NotificationType
+from app.models.models import Meme, User, Like, Comment, Tag, Subject, meme_tags, Notification, NotificationType, follows # <-- Добавил follows
 from app.schemas import MemeResponse, CommentCreate, CommentResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt

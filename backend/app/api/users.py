@@ -12,7 +12,6 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.models import User, follows, Notification, NotificationType
 from app.api.memes import get_current_user, get_optional_current_user
-# Импортируем обновленную схему (если она в schemas.py, поправьте импорт)
 from app.schemas import UserProfile 
 
 router = APIRouter()
@@ -20,57 +19,58 @@ UPLOAD_DIR = "uploads"
 
 # --- ЭНДПОИНТЫ ПОДПИСОК ---
 
+# ... импорты ...
+from app.models.models import User, follows, Notification, NotificationType
+
 @router.post("/{username}/follow")
 async def follow_user(
     username: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. Ищем цель подписки
+    # 1. Ищем цель подписки (переменная target_user)
     query = select(User).where(User.username == username)
     result = await db.execute(query)
-    target_user = result.scalars().first()
+    target_user = result.scalars().first() # <-- Было target_user
     
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
         
     if target_user.id == current_user.id:
-        raise HTTPException(status_code=400, detail="You cannot follow yourself")
+        raise HTTPException(status_code=400, detail="Cannot follow self")
 
-    # 2. Проверяем, подписаны ли уже
-    # Используем таблицу follows напрямую
+    # 2. Проверяем подписку
     stmt = select(follows).where(
         (follows.c.follower_id == current_user.id) & 
-        (follows.c.followed_id == target_user.id)
+        (follows.c.followed_id == target_user.id) # <-- Используем target_user
     )
     result = await db.execute(stmt)
     existing_follow = result.first()
 
     if existing_follow:
-        # ОТПИСКА
         await db.execute(
             delete(follows).where(
                 (follows.c.follower_id == current_user.id) & 
-                (follows.c.followed_id == target_user.id)
+                (follows.c.followed_id == target_user.id) # <-- Используем target_user
             )
         )
         action = "unfollowed"
     else:
-        await db.execute(insert(follows).values(follower_id=current_user.id, followed_id=target.id))
+        await db.execute(
+            insert(follows).values(follower_id=current_user.id, followed_id=target_user.id) # <-- Используем target_user
+        )
         action = "followed"
         
-        # --- УВЕДОМЛЕНИЕ О ПОДПИСКЕ ---
+        # --- УВЕДОМЛЕНИЕ ---
         notif = Notification(
-            user_id=target.id,          # Кому: тот, на кого подписались
-            sender_id=current_user.id,  # От кого: я
+            user_id=target_user.id,          # Кому: target_user
+            sender_id=current_user.id,
             type=NotificationType.FOLLOW
         )
         db.add(notif)
-        # -----------------------------
 
     await db.commit()
     
-    # Возвращаем актуальное кол-во подписчиков у цели
     count_stmt = select(func.count()).select_from(follows).where(follows.c.followed_id == target_user.id)
     count = await db.execute(count_stmt)
     
