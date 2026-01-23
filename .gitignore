@@ -1,41 +1,40 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
+# --- System & IDE ---
 .DS_Store
-*.pem
+Thumbs.db
+.vscode/
+.idea/
+*.log
+*.zip
 
-# debug
+# --- Backend (Python) ---
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# Секреты (НИКОГДА не пушим ключи и пароли!)
+backend/.env
+.env
+
+# Загрузки пользователей (папку оставляем, файлы игнорируем)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Миграции (обычно папку versions оставляют, но кэш убираем)
+backend/alembic/__pycache__/
+
+# --- Frontend (Node.js / Next.js) ---
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Логи npm
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+package-lock.json # (Опционально: обычно его пушат, но если хотите сэкономить место - можно убрать, хотя лучше оставить)
