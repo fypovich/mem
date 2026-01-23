@@ -4,23 +4,14 @@ import { MapPin, Link as LinkIcon, Calendar, Play, Heart, MessageCircle, Volume2
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ProfileHeaderActions } from "@/components/profile-header-actions"; // <-- Импорт нового компонента
+import { ProfileHeaderActions } from "@/components/profile-header-actions";
+import { ProfileSettingsButton } from "@/components/profile-settings-button"; // <-- Новый компонент
 
-// Импорт cookies для передачи токена на сервер
 import { cookies } from "next/headers";
 
 const API_URL = "http://127.0.0.1:8000";
 
-// Получаем токен из кук (если вы его туда кладете) или надеемся, что бэкенд поймет без него (для публичных данных)
-// Но для is_following нам НУЖЕН токен.
-// Если токен в localStorage, серверный компонент его не увидит.
-// ПРИМЕЧАНИЕ: В текущей архитектуре (токен в localStorage) серверный компонент не узнает is_following.
-// РЕШЕНИЕ: ProfileHeaderActions сам проверит статус или мы прокинем токен, если он в куках.
-// Пока оставим простую загрузку, а ProfileHeaderActions получит данные как есть. 
-// (В идеале перевести авторизацию на Cookies).
-
 async function getUserProfile(username: string) {
-    // Пытаемся достать токен из Cookies, если он там есть
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
     
@@ -75,9 +66,6 @@ export default async function ProfilePage({ params }: { params: Params }) {
       return <div className="text-center py-20">Пользователь не найден 404</div>;
   }
 
-  // Передадим кол-во мемов в объект профиля для компонента действий
-  userProfile.memes_count = memes.length;
-
   const avatarUrl = userProfile.avatar_url 
     ? (userProfile.avatar_url.startsWith("http") ? userProfile.avatar_url : `${API_URL}${userProfile.avatar_url}`)
     : `https://api.dicebear.com/7.x/avataaars/svg?seed=${userProfile.username}`;
@@ -91,7 +79,7 @@ export default async function ProfilePage({ params }: { params: Params }) {
     year: 'numeric'
   });
 
-  // --- Grid Component ---
+  // Grid Component
   const MemeGrid = ({ items }: { items: any[] }) => {
       if (items.length === 0) {
           return (
@@ -153,7 +141,9 @@ export default async function ProfilePage({ params }: { params: Params }) {
              ) : (
                 <div className="w-full h-full bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900" />
              )}
-             {/* Кнопка настроек убрана отсюда, она теперь внутри ProfileHeaderActions */}
+             
+             {/* Вставляем кнопку настроек (она сама решит, показываться или нет) */}
+             <ProfileSettingsButton username={userProfile.username} />
         </div>
 
         {/* Инфо-блок */}
@@ -165,18 +155,14 @@ export default async function ProfilePage({ params }: { params: Params }) {
                 </Avatar>
             </div>
 
-            {/* Вставляем наш новый интерактивный компонент */}
+            {/* Хедер с информацией и кнопкой подписки */}
             <div className="flex flex-col md:flex-row md:items-start gap-6">
-                
-                {/* Левая часть и Кнопки */}
-                <ProfileHeaderActions user={userProfile} />
-
+                {/* Передаем memes.length как prop */}
+                <ProfileHeaderActions user={userProfile} memesCount={memes.length} />
             </div>
             
-            {/* Доп инфо (дата, сайт) вынесем под блок действий, если нужно, или добавим внутрь компонента. 
-                Сейчас я перенес их внутрь компонента в упрощенном виде, но можно и вернуть сюда.
-            */}
-             <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
+            {/* Доп. инфо */}
+            <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1 hover:text-primary transition-colors cursor-default">
                     <MapPin className="w-4 h-4" /> Internet
                 </div>
