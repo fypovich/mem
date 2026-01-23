@@ -239,12 +239,15 @@ async def read_comments(
     comments = result.scalars().all()
     return comments
 
+
 @router.get("/", response_model=List[MemeResponse])
 async def read_memes(
     skip: int = 0,
     limit: int = 20,
     username: Optional[str] = None, 
     liked_by: Optional[str] = None,
+    tag: Optional[str] = None,      # <-- НОВЫЙ ФИЛЬТР
+    subject: Optional[str] = None,  # <-- НОВЫЙ ФИЛЬТР (slug персонажа)
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user) 
 ):
@@ -252,6 +255,7 @@ async def read_memes(
     CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
+    # Подзапросы статистики
     likes_subquery = (
         select(func.count(LikeStats.user_id))
         .where(LikeStats.meme_id == Meme.id)
@@ -272,6 +276,7 @@ async def read_memes(
     else:
         is_liked_subquery = sa.literal(False)
 
+    # Основной запрос
     query = (
         select(
             Meme, 
@@ -287,9 +292,13 @@ async def read_memes(
         .order_by(Meme.created_at.desc())
     )
     
+    # --- ФИЛЬТРЫ ---
+    
+    # 1. По автору
     if username:
         query = query.join(User, Meme.user_id == User.id).where(User.username == username)
     
+    # 2. По лайкам
     if liked_by:
         user_stmt = select(User.id).where(User.username == liked_by)
         user_res = await db.execute(user_stmt)
@@ -300,6 +309,16 @@ async def read_memes(
         else:
             return []
 
+    # 3. По ТЕГУ (ищем по имени)
+    if tag:
+        # Join-им таблицу тегов через таблицу связей (meme_tags настроен в relationship)
+        query = query.join(Meme.tags).where(Tag.name == tag)
+
+    # 4. По ПЕРСОНАЖУ (ищем по slug)
+    if subject:
+        query = query.join(Meme.subject).where(Subject.slug == subject)
+
+    # Пагинация и выполнение
     query = query.offset(skip).limit(limit)
     
     result = await db.execute(query)

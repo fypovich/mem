@@ -1,13 +1,14 @@
 import React from "react";
 import Link from "next/link";
-import { Hash, Play, Heart, MessageCircle, Volume2 } from "lucide-react";
+import { User, Play, Heart, MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const API_URL = "http://127.0.0.1:8000";
 
-async function getMemesByTag(tag: string) {
+// Получаем мемы по персонажу
+async function getMemesByCharacter(slug: string) {
   try {
-    const res = await fetch(`${API_URL}/api/v1/memes/?tag=${tag}&limit=50`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/api/v1/memes/?subject=${slug}&limit=50`, { cache: "no-store" });
     if (!res.ok) return [];
     return res.json();
   } catch (e) {
@@ -15,22 +16,25 @@ async function getMemesByTag(tag: string) {
   }
 }
 
-export default async function TagPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CharacterPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const decodedTag = decodeURIComponent(slug); // Декодируем (humor -> humor, %23кот -> #кот)
+  const memes = await getMemesByCharacter(slug);
   
-  const memes = await getMemesByTag(decodedTag);
+  // Берем имя персонажа из первого мема (если есть), иначе просто slug
+  const characterName = memes.length > 0 && memes[0].subject ? memes[0].subject.name : slug;
 
   return (
     <div className="container max-w-6xl mx-auto py-8 px-4">
-      {/* Заголовок */}
+      
+      {/* Заголовок Персонажа */}
       <div className="flex items-center gap-4 mb-8 pb-6 border-b">
-        <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
-            <Hash className="w-8 h-8 text-primary" />
+        <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
+            <User className="w-10 h-10 text-white" />
         </div>
         <div>
-            <h1 className="text-3xl font-bold">#{decodedTag}</h1>
-            <p className="text-muted-foreground">{memes.length} мемов с этим тегом</p>
+            <div className="text-sm text-muted-foreground uppercase font-bold tracking-wider mb-1">Персонаж</div>
+            <h1 className="text-4xl font-bold capitalize">{characterName}</h1>
+            <p className="text-muted-foreground mt-1">{memes.length} мемов с этим героем</p>
         </div>
       </div>
 
@@ -72,7 +76,7 @@ export default async function TagPage({ params }: { params: Promise<{ slug: stri
         </div>
       ) : (
         <div className="text-center py-20 text-muted-foreground bg-muted/10 rounded-xl border border-dashed">
-            По этому тегу пока ничего нет 😔
+            Мемы с этим персонажем пока не найдены 😔
         </div>
       )}
     </div>
