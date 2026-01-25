@@ -1,5 +1,6 @@
 import uuid
 import os
+import shutil
 import aiofiles
 import sqlalchemy as sa
 from datetime import datetime, timedelta
@@ -10,7 +11,7 @@ from sqlalchemy import select, func, exists, desc, and_, or_
 from sqlalchemy.orm import selectinload, aliased
 
 from app.core.database import get_db
-# Импортируем все необходимые модели
+# Импортируем все модели, включая SubjectCategory и follows
 from app.models.models import (
     Meme, User, Like, Comment, Tag, Subject, 
     meme_tags, Notification, NotificationType, follows, SubjectCategory
@@ -101,50 +102,87 @@ async def upload_meme(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Загрузка мема, обработка видео, создание тегов/персонажей, индексация и уведомления"""
+    """
+    Загрузка мема. 
+    - Если есть аудио -> конвертируем в видео (MP4).
+    - Если это картинка без аудио -> сохраняем как картинку (dur=0).
+    - Если это видео -> сохраняем как видео (MP4).
+    """
     file_id = str(uuid.uuid4())
-    # Определяем расширение
     ext = file.filename.split('.')[-1].lower()
-    raw_path = os.path.join(UPLOAD_DIR, f"raw_{file_id}.{ext}")
-    final_path = os.path.join(UPLOAD_DIR, f"{file_id}.mp4")
-    thumbnail_path = os.path.join(UPLOAD_DIR, f"{file_id}_thumb.jpg")
+    
+    # Проверяем тип входящего файла
+    is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
+    
+    # Логика: Если это картинка И нет аудио -> оставляем картинкой. Иначе (видео или есть аудио) -> MP4.
+    is_final_video = True
+    if is_image_input and not audio_file:
+        is_final_video = False
 
-    # Сохраняем исходник
+    raw_filename = f"raw_{file_id}.{ext}"
+    # Имя финального файла зависит от того, конвертируем мы или нет
+    final_filename = f"{file_id}.mp4" if is_final_video else f"{file_id}.{ext}"
+    thumbnail_filename = f"{file_id}_thumb.jpg"
+
+    raw_path = os.path.join(UPLOAD_DIR, raw_filename)
+    final_path = os.path.join(UPLOAD_DIR, final_filename)
+    thumbnail_path = os.path.join(UPLOAD_DIR, thumbnail_filename)
+
+    # 1. Сохраняем исходный файл
     async with aiofiles.open(raw_path, 'wb') as f:
         await f.write(await file.read())
 
     processor = MediaProcessor(raw_path)
     
     try:
-        # Обработка видео/аудио
+        # 2. Обработка файла
         if audio_file:
+            # Сценарий: Накладываем аудио (на картинку или заменяем звук у видео)
             audio_ext = audio_file.filename.split('.')[-1]
             audio_path = os.path.join(UPLOAD_DIR, f"audio_{file_id}.{audio_ext}")
             async with aiofiles.open(audio_path, 'wb') as f:
                 await f.write(await audio_file.read())
+            
+            # Конвертация в MP4 с аудио
             processor.process_video_with_audio(audio_path, final_path)
-            processor = MediaProcessor(final_path) # Переключаемся на новый файл
+            processor = MediaProcessor(final_path) # Переключаемся на результат для метаданных
+            
             if os.path.exists(audio_path): os.remove(audio_path)
             if os.path.exists(raw_path): os.remove(raw_path)
-        else:
-            # Просто конвертируем/перемещаем
-            if ext in ['mp4', 'mov', 'webm']:
-                 os.rename(raw_path, final_path)
-                 processor = MediaProcessor(final_path)
-            else:
-                 os.rename(raw_path, final_path)
-                 processor = MediaProcessor(final_path)
+        
+        elif not is_final_video:
+            # Сценарий: Просто картинка
+            if raw_path != final_path:
+                shutil.move(raw_path, final_path)
+            # processor остается инициализирован на файле (который теперь лежит в final_path)
+            processor = MediaProcessor(final_path)
 
+        else:
+            # Сценарий: Видео без дополнительного аудио
+            # Для простоты MVP просто переименовываем (считаем, что пришло видео). 
+            # В проде тут можно добавить принудительную конвертацию в mp4/h264 для совместимости.
+            if raw_path != final_path:
+                shutil.move(raw_path, final_path)
+            processor = MediaProcessor(final_path)
+
+        # 3. Получение метаданных
         duration, width, height = processor.get_metadata()
+        
+        # Если это картинка, принудительно ставим duration 0 (иногда ffprobe может вернуть 0.04 для картинки)
+        if not is_final_video:
+            duration = 0.0
+
+        # Генерация превью
         processor.generate_thumbnail(thumbnail_path)
+        
     except Exception as e:
-        # Чистим за собой
+        # Очистка мусора при ошибке
         if os.path.exists(final_path): os.remove(final_path)
         if os.path.exists(thumbnail_path): os.remove(thumbnail_path)
         if os.path.exists(raw_path): os.remove(raw_path)
         raise HTTPException(500, detail=f"Media processing error: {str(e)}")
 
-    # Обработка Тегов
+    # 4. Обработка Тегов
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -157,7 +195,7 @@ async def upload_meme(
                 await db.flush()
             db_tags.append(tag)
 
-    # Обработка Персонажа (Subject)
+    # 5. Обработка Персонажа (Subject)
     db_subject = None
     if subject:
         clean_name = subject.strip()
@@ -165,32 +203,30 @@ async def upload_meme(
         res = await db.execute(select(Subject).where(Subject.slug == slug))
         db_subject = res.scalars().first()
         if not db_subject:
-            # По умолчанию категория PERSON, можно расширить логику определения
+            # По умолчанию категория PERSON
             db_subject = Subject(name=clean_name, slug=slug, category="person")
             db.add(db_subject)
             await db.flush()
 
-    # Создание записи в БД
+    # 6. Сохранение в БД
     new_meme = Meme(
         title=title,
         description=description,
-        media_url=f"/static/{file_id}.mp4",
-        thumbnail_url=f"/static/{file_id}_thumb.jpg",
+        media_url=f"/static/{final_filename}",
+        thumbnail_url=f"/static/{thumbnail_filename}",
         duration=duration,
         width=width,
         height=height,
         user_id=current_user.id,
-        status="approved", # Сразу одобряем для MVP
+        status="approved",
         subject_id=db_subject.id if db_subject else None
     )
-    # Привязываем теги перед первым коммитом
-    # (SQLAlchemy сам разберется с Many-to-Many при db.add)
-    new_meme.tags = db_tags
+    new_meme.tags = db_tags # SQLAlchemy handle M2M
     
     db.add(new_meme)
     await db.commit()
 
-    # 1. Индексация в Meilisearch
+    # 7. Индексация в Meilisearch
     try:
         search = get_search_service()
         if search:
@@ -199,30 +235,28 @@ async def upload_meme(
                 "title": new_meme.title,
                 "description": new_meme.description,
                 "thumbnail_url": new_meme.thumbnail_url,
+                "media_url": new_meme.media_url, # Важно для телеграм бота
                 "views_count": new_meme.views_count
             })
     except Exception as e:
         print(f"Meilisearch indexing warning: {e}")
 
-    # 2. Уведомления подписчикам
-    # Находим всех, кто подписан на current_user (followers)
+    # 8. Уведомления подписчикам
     followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
     followers_res = await db.execute(followers_stmt)
     follower_ids = followers_res.scalars().all()
     
     for fid in follower_ids:
-        notif = Notification(
-            user_id=fid,                # Получатель (подписчик)
-            sender_id=current_user.id,  # Автор
-            type=NotificationType.NEW_MEME,
+        db.add(Notification(
+            user_id=fid, 
+            sender_id=current_user.id, 
+            type=NotificationType.NEW_MEME, 
             meme_id=new_meme.id
-        )
-        db.add(notif)
+        ))
     
     await db.commit()
 
-    # ВАЖНО: Делаем SELECT заново с подгрузкой связей, 
-    # вместо db.refresh(), который сбрасывает связи в асинхронном режиме
+    # Возврат с подгрузкой связей для корректного ответа API
     res = await db.execute(
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
@@ -239,7 +273,7 @@ async def read_memes(
     liked_by: Optional[str] = None,
     tag: Optional[str] = None,
     subject: Optional[str] = None,
-    # Новые фильтры
+    # Фильтры
     category: Optional[str] = None, # 'game', 'movie', 'person'
     sort: str = "new",              # "new", "popular"
     period: str = "all",            # "week", "month", "all"
@@ -248,41 +282,24 @@ async def read_memes(
 ):
     """Получение списка мемов с фильтрацией, сортировкой и статистикой"""
     
-    # Алиасы для подзапросов, чтобы не путать таблицы
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
-    # Подзапрос: Количество лайков
-    likes_subquery = (
-        select(func.count(LikeStats.user_id))
-        .where(LikeStats.meme_id == Meme.id)
-        .scalar_subquery()
-    )
-
-    # Подзапрос: Количество комментариев
-    comments_subquery = (
-        select(func.count(CommentStats.id))
-        .where(CommentStats.meme_id == Meme.id)
-        .scalar_subquery()
-    )
-
-    # Подзапрос: Лайкнул ли текущий юзер?
+    # Подзапросы
+    likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
+    comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
+    
+    is_liked = sa.literal(False)
     if current_user:
-        is_liked_subquery = (
-            exists()
-            .where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id))
-        )
-    else:
-        is_liked_subquery = sa.literal(False)
+        is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id))
 
-    # Основной запрос
     query = (
         select(
             Meme, 
-            likes_subquery.label("likes_count"),
-            comments_subquery.label("comments_count"),
-            is_liked_subquery.label("is_liked")
+            likes_count.label("likes_count"),
+            comments_count.label("comments_count"),
+            is_liked.label("is_liked")
         )
         .options(
             selectinload(Meme.user),
@@ -292,35 +309,27 @@ async def read_memes(
     )
     
     # --- ФИЛЬТРЫ ---
-    
-    # 1. По автору
     if username:
         query = query.join(User, Meme.user_id == User.id).where(User.username == username)
     
-    # 2. По лайкам (избранное) - ИСПРАВЛЕННАЯ ЛОГИКА
-    if liked_by:
-        # Находим ID пользователя
-        user_res = await db.execute(select(User.id).where(User.username == liked_by))
-        uid = user_res.scalar_one_or_none()
-        if not uid: return [] # Если пользователя нет, возвращаем пустой список
-        # Джойним таблицу лайков
-        query = query.join(Like, Meme.id == Like.meme_id).where(Like.user_id == uid)
-
-    # 3. По тегу
     if tag:
         query = query.join(Meme.tags).where(Tag.name == tag)
 
-    # 4. По персонажу
     if subject:
         query = query.join(Meme.subject).where(Subject.slug == subject)
 
-    # 5. По категории (Games, Movies, etc.)
     if category:
-        # Проверяем, есть ли такая категория в Enum
         if category in [e.value for e in SubjectCategory]:
              query = query.join(Meme.subject).where(Subject.category == category)
+    
+    if liked_by:
+        # Сначала получаем ID, чтобы избежать лишних join'ов или ошибок
+        uid_res = await db.execute(select(User.id).where(User.username == liked_by))
+        uid = uid_res.scalar_one_or_none()
+        if not uid: return [] # Если юзер не найден, то и лайков нет
+        query = query.join(Like, Meme.id == Like.meme_id).where(Like.user_id == uid)
 
-    # 6. По периоду (для трендов)
+    # --- ПЕРИОД ---
     if period == "week":
         week_ago = datetime.utcnow() - timedelta(days=7)
         query = query.where(Meme.created_at >= week_ago)
@@ -330,10 +339,9 @@ async def read_memes(
 
     # --- СОРТИРОВКА ---
     if sort == "popular":
-        # Сортируем по просмотрам и лайкам (комбинированный вес)
         query = query.order_by(desc("likes_count"), desc(Meme.views_count))
     else:
-        # По умолчанию - новые
+        # Default: new
         query = query.order_by(Meme.created_at.desc())
 
     # Пагинация
@@ -342,7 +350,7 @@ async def read_memes(
     result = await db.execute(query)
     rows = result.all()
     
-    # Сборка ответа (Pydantic не умеет мапить кортежи (Meme, int, int, bool) напрямую)
+    # Сборка
     memes_with_stats = []
     for row in rows:
         meme = row[0]
@@ -362,20 +370,19 @@ async def read_meme(
 ):
     """Получение одного мема + инкремент просмотров"""
     
-    # Инкремент просмотров (атомарно)
+    # Инкремент
     await db.execute(
         sa.update(Meme).where(Meme.id == meme_id).values(views_count=Meme.views_count + 1)
     )
     await db.commit()
 
-    # Запрос данных (аналогичный read_memes, но для одного ID)
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
-    # Подзапросы
     likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
     comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
+    
     is_liked = sa.literal(False)
     if current_user:
         is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id))
@@ -425,19 +432,17 @@ async def like_meme(
         db.add(new_like)
         action = "liked"
         
-        # --- УВЕДОМЛЕНИЕ ---
+        # Уведомление
         if meme.user_id != current_user.id:
-            notif = Notification(
+            db.add(Notification(
                 user_id=meme.user_id,
                 sender_id=current_user.id,
                 type=NotificationType.LIKE,
                 meme_id=meme.id
-            )
-            db.add(notif)
+            ))
 
     await db.commit()
     
-    # Возвращаем актуальное кол-во лайков
     count = await db.scalar(select(func.count()).select_from(Like).where(Like.meme_id == meme_id))
     return {"action": action, "likes_count": count}
 
@@ -460,20 +465,19 @@ async def create_comment(
     )
     db.add(new_comment)
     
-    # --- УВЕДОМЛЕНИЕ ---
+    # Уведомление
     if meme.user_id != current_user.id:
-        notif = Notification(
+        db.add(Notification(
             user_id=meme.user_id,
             sender_id=current_user.id,
             type=NotificationType.COMMENT,
             meme_id=meme.id,
             text=new_comment.text[:50]
-        )
-        db.add(notif)
+        ))
 
     await db.commit()
     
-    # Подгружаем юзера для ответа
+    # Возврат с юзером
     res = await db.execute(
         select(Comment).options(selectinload(Comment.user)).where(Comment.id == new_comment.id)
     )
@@ -492,7 +496,7 @@ async def get_comments(
         select(Comment)
         .where(Comment.meme_id == meme_id)
         .options(selectinload(Comment.user))
-        .order_by(Comment.created_at.desc()) # Свежие сверху
+        .order_by(Comment.created_at.desc())
         .offset(skip)
         .limit(limit)
     )
@@ -506,8 +510,13 @@ async def check_meme_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Проверка лайка без накрутки просмотров"""
+    """Проверка статуса / лайка"""
+    # Для целей фронтенда часто используется для проверки is_liked
     is_liked = await db.scalar(
         select(exists().where((Like.meme_id == meme_id) & (Like.user_id == current_user.id)))
     )
-    return {"is_liked": is_liked}
+    # Также можно вернуть статус процессинга, если нужно
+    meme = await db.get(Meme, meme_id)
+    status = meme.status if meme else "not_found"
+    
+    return {"is_liked": is_liked, "status": status}
