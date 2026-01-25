@@ -24,6 +24,18 @@ services:
     networks:
       - app-network
 
+  bot:
+    build: ./telegram_bot
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - BACKEND_URL=http://backend:8000/api/v1
+      # ЗАМЕНИТЕ НА ВАШ NGROK URL ИЛИ ПУБЛИЧНЫЙ IP ДЛЯ ТЕСТА:
+      - BASE_MEDIA_URL=https://ВАШ-URL.ngrok-free.app 
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
 volumes:
   postgres_data:
   meili_data:
