@@ -1,8 +1,10 @@
 import React from "react";
 import { notFound } from "next/navigation";
-import { Link as LinkIcon, Calendar } from "lucide-react";
+import Link from "next/link";
+import { Link as LinkIcon, Calendar, Grid, Heart } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // <-- Добавил табы
 import { ProfileSettingsButton } from "@/components/profile-settings-button";
 import { ProfileHeaderActions } from "@/components/profile-header-actions";
 import { MemeGrid } from "@/components/meme-grid";
@@ -29,11 +31,24 @@ async function getUserMemes(username: string) {
   }
 }
 
+// Новая функция для получения лайкнутых мемов
+async function getUserLikedMemes(username: string) {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/memes/?liked_by=${username}&limit=100`, { cache: "no-store" });
+    if (!res.ok) return [];
+    return res.json();
+  } catch (e) {
+    return [];
+  }
+}
+
+// Исправленный тип params для Next.js 15
 export default async function ProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = await params;
   
   const user = await getUser(username);
   const memes = await getUserMemes(username);
+  const likedMemes = await getUserLikedMemes(username); // Загружаем избранное
 
   if (!user) return notFound();
 
@@ -61,13 +76,15 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
               <p className="text-muted-foreground">@{user.username}</p>
             </div>
 
-            {/* ИСПРАВЛЕНО: Передаем объект user целиком */}
-            <ProfileHeaderActions user={user} />
+            {/* Кнопки действий */}
+            <div className="mt-4 sm:mt-0">
+               <ProfileHeaderActions user={user} />
+            </div>
           </div>
 
           {user.bio && <p className="mb-4 text-sm max-w-2xl">{user.bio}</p>}
 
-          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mb-4">
             <div className="flex items-center gap-1">
               <Calendar className="w-3 h-3" /> Регистрация: {new Date(user.created_at).toLocaleDateString()}
             </div>
@@ -77,14 +94,42 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
                </a>
             )}
           </div>
+
+          {/* Статистика (Вернули на место) */}
+          <div className="flex gap-4 text-sm">
+            <Link href={`/user/${user.username}/followers`} className="hover:underline cursor-pointer flex items-center gap-1">
+                <span className="font-bold text-foreground">{user.followers_count || 0}</span> 
+                <span className="text-muted-foreground">подписчиков</span>
+            </Link>
+            <Link href={`/user/${user.username}/following`} className="hover:underline cursor-pointer flex items-center gap-1">
+                <span className="font-bold text-foreground">{user.following_count || 0}</span> 
+                <span className="text-muted-foreground">подписок</span>
+            </Link>
+          </div>
         </div>
       </div>
 
       <Separator className="my-8" />
 
-      {/* Контент */}
-      <h2 className="text-xl font-semibold mb-6">Публикации ({memes.length})</h2>
-      <MemeGrid items={memes} />
+      {/* ТАБЫ: Публикации / Избранное */}
+      <Tabs defaultValue="posts" className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="posts" className="flex items-center gap-2">
+            <Grid className="w-4 h-4" /> Публикации ({memes.length})
+          </TabsTrigger>
+          <TabsTrigger value="liked" className="flex items-center gap-2">
+            <Heart className="w-4 h-4" /> Избранное ({likedMemes.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="posts">
+           <MemeGrid items={memes} />
+        </TabsContent>
+
+        <TabsContent value="liked">
+           <MemeGrid items={likedMemes} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
