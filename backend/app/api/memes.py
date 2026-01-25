@@ -520,3 +520,88 @@ async def check_meme_status(
     status = meme.status if meme else "not_found"
     
     return {"is_liked": is_liked, "status": status}
+
+
+@router.get("/{meme_id}/similar", response_model=List[MemeResponse])
+async def get_similar_memes(
+    meme_id: uuid.UUID,
+    limit: int = 6,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    Получает список похожих мемов на основе тегов и персонажа.
+    """
+    # 1. Получаем исходный мем с тегами
+    current_meme_query = (
+        select(Meme)
+        .options(selectinload(Meme.tags))
+        .where(Meme.id == meme_id)
+    )
+    res = await db.execute(current_meme_query)
+    current_meme = res.scalars().first()
+    
+    if not current_meme:
+        return []
+
+    tag_ids = [t.id for t in current_meme.tags]
+    subject_id = current_meme.subject_id
+
+    # 2. Подготавливаем запрос для похожих (копируем логику с лайками из read_memes)
+    LikeStats = aliased(Like)
+    CommentStats = aliased(Comment)
+    MyLike = aliased(Like)
+
+    likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
+    comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
+    is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id)) if current_user else sa.literal(False)
+
+    query = (
+        select(
+            Meme, 
+            likes_count.label("likes_count"),
+            comments_count.label("comments_count"),
+            is_liked.label("is_liked")
+        )
+        .options(
+            selectinload(Meme.user),
+            selectinload(Meme.tags),    
+            selectinload(Meme.subject) 
+        )
+        .where(Meme.id != meme_id) # Исключаем текущий мем
+        .where(Meme.status == "approved")
+    )
+
+    # 3. Фильтрация по похожести
+    conditions = []
+    if subject_id:
+        # Сильное условие: тот же персонаж
+        conditions.append(Meme.subject_id == subject_id)
+    
+    if tag_ids:
+        # Условие: совпадение хотя бы по одному тегу
+        conditions.append(Meme.tags.any(Tag.id.in_(tag_ids)))
+
+    if conditions:
+        query = query.where(or_(*conditions))
+    else:
+        # Если у мема нет ни тегов, ни персонажа, возвращаем просто случайные/новые
+        # Но для "похожих" лучше вернуть пустоту или популярные, если совсем нет зацепок.
+        # Вернем просто популярные
+        query = query.order_by(desc("likes_count"))
+
+    # Сортируем в случайном порядке, чтобы рекомендации менялись
+    query = query.order_by(func.random()).limit(limit)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    memes_with_stats = []
+    for row in rows:
+        meme = row[0]
+        meme.likes_count = row[1]
+        meme.comments_count = row[2]
+        meme.is_liked = row[3]
+        memes_with_stats.append(meme)
+
+    return memes_with_stats

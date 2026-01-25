@@ -1,30 +1,50 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Calendar, Eye, Hash, User as UserIcon } from "lucide-react"; // <-- Добавили иконки
+import { Calendar, Eye, Hash, User as UserIcon } from "lucide-react"; 
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge"; // <-- Добавили Badge
+import { Badge } from "@/components/ui/badge"; 
 import { MemeInteractions } from "@/components/meme-interactions"; 
 import { CommentsSection } from "@/components/comments-section";
+import { MemeGrid } from "@/components/meme-grid"; // <-- Добавил импорт сетки для рекомендаций
 
 const API_URL = "http://127.0.0.1:8000";
 
 async function getMeme(id: string) {
-  const res = await fetch(`${API_URL}/api/v1/memes/${id}`, { cache: "no-store" });
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const res = await fetch(`${API_URL}/api/v1/memes/${id}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return res.json();
+  } catch (e) {
+    return null;
+  }
 }
 
+// Новая функция для похожих мемов
+async function getSimilarMemes(id: string) {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/memes/${id}/similar`, { cache: "no-store" });
+    if (!res.ok) return [];
+    return res.json();
+  } catch (e) {
+    return [];
+  }
+}
+
+// Исправленный тип params (Promise для Next.js 15)
 type Params = Promise<{ id: string }>;
 
 export default async function MemePage({ params }: { params: Params }) {
   const { id } = await params;
-  const meme = await getMeme(id);
+  
+  // Параллельная загрузка
+  const memeData = getMeme(id);
+  const similarData = getSimilarMemes(id);
+  const [meme, similarMemes] = await Promise.all([memeData, similarData]);
 
   if (!meme) return notFound();
 
-  const mediaUrl = meme.media_url.startsWith("http") ? meme.media_url : `${API_URL}${meme.media_url}`;
   const avatarUrl = meme.user.avatar_url 
       ? (meme.user.avatar_url.startsWith("http") ? meme.user.avatar_url : `${API_URL}${meme.user.avatar_url}`)
       : `https://api.dicebear.com/7.x/avataaars/svg?seed=${meme.user.username}`;
@@ -33,6 +53,8 @@ export default async function MemePage({ params }: { params: Params }) {
 
   // URL медиа
   const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${API_URL}${meme.media_url}`;
+  
+  // Проверка: Видео или Картинка? (если duration > 0.1 - видео, иначе картинка)
   const isVideo = meme.duration > 0.1;
 
   return (
@@ -75,12 +97,12 @@ export default async function MemePage({ params }: { params: Params }) {
                         <div>
                            <div className="font-semibold group-hover:text-primary transition-colors">@{meme.user.username}</div>
                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <div className="flex items-center gap-1">
-                                  <Calendar className="w-3 h-3" /> {date}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                  <Eye className="w-3 h-3" /> {meme.views_count}
-                              </div>
+                             <div className="flex items-center gap-1">
+                                 <Calendar className="w-3 h-3" /> {date}
+                             </div>
+                             <div className="flex items-center gap-1">
+                                 <Eye className="w-3 h-3" /> {meme.views_count}
+                             </div>
                            </div>
                         </div>
                      </Link>
@@ -126,6 +148,15 @@ export default async function MemePage({ params }: { params: Params }) {
                      {/* ------------------------------- */}
                  </div>
              </div>
+
+             {/* БЛОК РЕКОМЕНДАЦИЙ (Новое) */}
+             {similarMemes.length > 0 && (
+                <div className="pt-8 border-t">
+                    <h3 className="text-xl font-bold mb-4">Похожие мемы</h3>
+                    <MemeGrid items={similarMemes} />
+                </div>
+             )}
+
           </div>
 
           {/* ПРАВАЯ КОЛОНКА: Комментарии */}
