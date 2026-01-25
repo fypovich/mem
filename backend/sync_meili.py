@@ -1,6 +1,7 @@
 import asyncio
 from sqlalchemy import select
-from app.core.database import async_session_maker
+# ИСПРАВЛЕНИЕ: Импортируем AsyncSessionLocal вместо несуществующего async_session_maker
+from app.core.database import AsyncSessionLocal 
 from app.models.models import Meme, User, Tag
 from app.services.search import get_search_service
 
@@ -8,7 +9,13 @@ async def sync_data():
     print("Starting synchronization with Meilisearch...")
     search = get_search_service()
     
-    async with async_session_maker() as db:
+    # Если Meilisearch недоступен
+    if not search:
+        print("Error: Could not connect to Meilisearch service.")
+        return
+
+    # ИСПРАВЛЕНИЕ: Используем AsyncSessionLocal()
+    async with AsyncSessionLocal() as db:
         # 1. МЕМЫ
         print("Syncing Memes...")
         memes = (await db.execute(select(Meme))).scalars().all()
