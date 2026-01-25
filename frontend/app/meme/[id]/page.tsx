@@ -1,13 +1,12 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Calendar, Eye, Hash, User as UserIcon } from "lucide-react"; 
-import { Button } from "@/components/ui/button";
+import { Calendar, Eye, User as UserIcon } from "lucide-react"; 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge"; 
 import { MemeInteractions } from "@/components/meme-interactions"; 
 import { CommentsSection } from "@/components/comments-section";
-import { MemeGrid } from "@/components/meme-grid"; // <-- Добавил импорт сетки для рекомендаций
+import { MemeGrid } from "@/components/meme-grid";
 
 const API_URL = "http://127.0.0.1:8000";
 
@@ -21,7 +20,6 @@ async function getMeme(id: string) {
   }
 }
 
-// Новая функция для похожих мемов
 async function getSimilarMemes(id: string) {
   try {
     const res = await fetch(`${API_URL}/api/v1/memes/${id}/similar`, { cache: "no-store" });
@@ -32,13 +30,11 @@ async function getSimilarMemes(id: string) {
   }
 }
 
-// Исправленный тип params (Promise для Next.js 15)
 type Params = Promise<{ id: string }>;
 
 export default async function MemePage({ params }: { params: Params }) {
   const { id } = await params;
   
-  // Параллельная загрузка
   const memeData = getMeme(id);
   const similarData = getSimilarMemes(id);
   const [meme, similarMemes] = await Promise.all([memeData, similarData]);
@@ -50,45 +46,44 @@ export default async function MemePage({ params }: { params: Params }) {
       : `https://api.dicebear.com/7.x/avataaars/svg?seed=${meme.user.username}`;
   
   const date = new Date(meme.created_at).toLocaleDateString("ru-RU", { day: 'numeric', month: 'long', year: 'numeric' });
-
-  // URL медиа
   const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${API_URL}${meme.media_url}`;
-  
-  // Проверка: Видео или Картинка? (если duration > 0.1 - видео, иначе картинка)
   const isVideo = meme.duration > 0.1;
 
   return (
-    <div className="container max-w-4xl mx-auto py-6 px-4">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div className="container max-w-6xl mx-auto py-6 px-4">
+      {/* items-start - Важно! Не дает колонкам растягиваться на всю высоту (stretch).
+          Теперь правая колонка будет иметь высоту своего контента.
+      */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         
-        {/* ЛЕВАЯ КОЛОНКА: Контент */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* ЛЕВАЯ КОЛОНКА: Контент + Рекомендации */}
+        <div className="lg:col-span-2 space-y-8">
           
-          {/* МЕДИА ПЛЕЕР / КАРТИНКА */}
-          <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative aspect-video flex items-center justify-center">
-             {isVideo ? (
-                <video 
-                    src={mediaSrc} 
-                    controls 
-                    autoPlay 
-                    loop 
-                    className="w-full h-full object-contain"
-                />
-             ) : (
-                <img 
-                    src={mediaSrc} 
-                    alt={meme.title}
-                    className="w-full h-full object-contain"
-                />
-             )}
-          </div>
+          <div className="space-y-6">
+             {/* Медиа */}
+             <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative aspect-video flex items-center justify-center">
+                {isVideo ? (
+                    <video 
+                        src={mediaSrc} 
+                        controls 
+                        autoPlay 
+                        loop 
+                        className="w-full h-full object-contain"
+                    />
+                ) : (
+                    <img 
+                        src={mediaSrc} 
+                        alt={meme.title}
+                        className="w-full h-full object-contain"
+                    />
+                )}
+             </div>
 
-             {/* Инфо блок */}
+             {/* Инфо */}
              <div className="space-y-4">
                  <h1 className="text-2xl md:text-3xl font-bold break-words">{meme.title}</h1>
                  
                  <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border">
-                     {/* Автор */}
                      <Link href={`/user/${meme.user.username}`} className="flex items-center gap-3 group">
                         <Avatar className="w-10 h-10 border border-border group-hover:border-primary transition-colors">
                            <AvatarImage src={avatarUrl} />
@@ -115,7 +110,6 @@ export default async function MemePage({ params }: { params: Params }) {
                      />
                  </div>
                  
-                 {/* Описание + Теги */}
                  <div className="space-y-4">
                      {meme.description && (
                         <div className="bg-muted/30 p-4 rounded-lg text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
@@ -123,10 +117,8 @@ export default async function MemePage({ params }: { params: Params }) {
                         </div>
                      )}
 
-                     {/* --- БЛОК ТЕГОВ И ПЕРСОНАЖА --- */}
                      {(meme.tags.length > 0 || meme.subject) && (
                         <div className="flex flex-wrap gap-2">
-                            {/* Персонаж */}
                             {meme.subject && (
                                 <Link href={`/character/${meme.subject.slug}`}>
                                     <Badge variant="outline" className="px-3 py-1 gap-1 text-sm cursor-pointer hover:bg-primary/10 hover:border-primary transition-colors">
@@ -134,8 +126,6 @@ export default async function MemePage({ params }: { params: Params }) {
                                     </Badge>
                                 </Link>
                             )}
-
-                            {/* Теги */}
                             {meme.tags.map((tag: any) => (
                                 <Link key={tag.name} href={`/tag/${tag.name}`}>
                                     <Badge variant="secondary" className="px-3 py-1 text-sm cursor-pointer hover:bg-primary hover:text-white transition-colors">
@@ -145,30 +135,33 @@ export default async function MemePage({ params }: { params: Params }) {
                             ))}
                         </div>
                      )}
-                     {/* ------------------------------- */}
                  </div>
              </div>
-
-             {/* БЛОК РЕКОМЕНДАЦИЙ (Новое) */}
-             {similarMemes.length > 0 && (
-                <div className="pt-8 border-t">
-                    <h3 className="text-xl font-bold mb-4">Похожие мемы</h3>
-                    <MemeGrid items={similarMemes} />
-                </div>
-             )}
-
           </div>
 
-          {/* ПРАВАЯ КОЛОНКА: Комментарии */}
-          <div id="comments-section" className="hidden lg:block space-y-4">
-              <CommentsSection memeId={meme.id} />
-          </div>
+          {/* Рекомендации */}
+          {similarMemes.length > 0 && (
+             <div className="pt-8 border-t">
+                 <h3 className="text-xl font-bold mb-4">Похожие мемы</h3>
+                 <MemeGrid items={similarMemes} />
+             </div>
+          )}
+        </div>
 
-          <div className="lg:hidden block space-y-4">
-              <CommentsSection memeId={meme.id} />
-          </div>
+        {/* ПРАВАЯ КОЛОНКА: Комментарии */}
+        {/* sticky top-24 -> Прилипает к верху при скролле
+            h-fit -> Занимает высоту только контента (не растягивается как сосиска)
+        */}
+        <div id="comments-section" className="hidden lg:block space-y-4 sticky top-24 h-fit">
+            <CommentsSection memeId={meme.id} />
+        </div>
 
-       </div>
+        {/* Мобильная версия комментариев (внизу) */}
+        <div className="lg:hidden block space-y-4">
+            <CommentsSection memeId={meme.id} />
+        </div>
+
+      </div>
     </div>
   );
 }

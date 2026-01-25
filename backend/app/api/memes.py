@@ -525,7 +525,7 @@ async def check_meme_status(
 @router.get("/{meme_id}/similar", response_model=List[MemeResponse])
 async def get_similar_memes(
     meme_id: uuid.UUID,
-    limit: int = 6,
+    limit: int = 12,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
