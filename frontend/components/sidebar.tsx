@@ -1,57 +1,119 @@
 "use client";
 
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Home, TrendingUp, Flame, Hash, User, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Flame, Sparkles, Gamepad2, Film, Tv } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
-const CATEGORIES = [
-  { name: "В тренде", slug: "trending", icon: <Flame className="w-4 h-4 text-orange-500" /> },
-  { name: "Новое", slug: "new", icon: <Sparkles className="w-4 h-4 text-yellow-500" /> },
-  { name: "Реакции", slug: "reactions", icon: null },
-  { name: "Игры", slug: "gaming", icon: <Gamepad2 className="w-4 h-4" /> },
-  { name: "Фильмы", slug: "movies", icon: <Film className="w-4 h-4" /> },
-  { name: "Аниме", slug: "anime", icon: <Tv className="w-4 h-4" /> },
+const API_URL = "http://127.0.0.1:8000";
+
+const MENU_ITEMS = [
+  { name: "Главная", href: "/", icon: Home },
+  { name: "Новое", href: "/new", icon: RefreshCw },
+  { name: "Тренды", href: "/trending", icon: Flame },
 ];
 
 export function Sidebar() {
+  const pathname = usePathname();
+  const [popular, setPopular] = useState<{ tags: any[], subjects: any[] } | null>(null);
+
+  useEffect(() => {
+    const fetchPopular = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/v1/memes/popular-content`);
+        if (res.ok) {
+          setPopular(await res.json());
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    fetchPopular();
+  }, []);
+
   return (
-    <aside className="hidden lg:block w-64 shrink-0 space-y-6 pt-6"> {/* Добавил shrink-0 и убрал sticky отсюда, чтобы управлялось из layout */}
-      <div className="sticky top-20"> {/* Sticky теперь внутри */}
-        <div className="mb-6">
-            <h3 className="mb-2 px-2 text-sm font-semibold tracking-tight text-muted-foreground">
-            Категории
-            </h3>
-            <div className="space-y-1">
-            {CATEGORIES.map((cat) => (
-                <Link href={`/category/${cat.slug}`} key={cat.slug} className="block w-full">
-                <Button variant="ghost" className="w-full justify-start gap-2 font-medium">
-                    {cat.icon ? cat.icon : <span className="w-4" />}
-                    {cat.name}
-                </Button>
-                </Link>
-            ))}
-            </div>
-        </div>
-        
-        <div>
-            <h3 className="mb-2 px-2 text-sm font-semibold tracking-tight text-muted-foreground">
-            Популярные Персонажи
-            </h3>
-            <div className="space-y-1">
-            {['Ryan Gosling', 'Ana de Armas', 'Patrick Bateman', 'Walter White'].map((person) => (
-                <Link href={`/tag/${person.toLowerCase().replace(' ', '_')}`} key={person} className="block w-full">
-                <Button variant="ghost" className="w-full justify-start gap-3 h-auto py-2">
-                    <Avatar className="h-6 w-6 rounded-md">
-                    <AvatarFallback className="text-[10px] rounded-md">{person[0]}</AvatarFallback>
-                    </Avatar>
-                    <span className="text-sm">{person}</span>
-                </Button>
-                </Link>
-            ))}
-            </div>
-        </div>
+    <div className="w-full flex flex-col gap-6 h-full">
+      
+      {/* Основное меню */}
+      <div className="flex flex-col gap-1">
+        <h3 className="px-4 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+            Лента
+        </h3>
+        {MENU_ITEMS.map((item) => (
+          <Link key={item.href} href={item.href}>
+            <Button
+              variant="ghost"
+              className={cn(
+                "w-full justify-start gap-3 text-base font-normal",
+                pathname === item.href && "bg-secondary text-secondary-foreground font-medium"
+              )}
+            >
+              <item.icon className="w-5 h-5" />
+              {item.name}
+            </Button>
+          </Link>
+        ))}
       </div>
-    </aside>
+
+      {/* Популярные Персонажи */}
+      {popular && popular.subjects.length > 0 && (
+        <div className="flex flex-col gap-1">
+            <h3 className="px-4 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider flex items-center gap-2">
+                <User className="w-3 h-3" /> Топ Персонажи
+            </h3>
+            <ScrollArea className="h-auto max-h-[200px]">
+                {popular.subjects.map((sub: any) => (
+                <Link key={sub.slug} href={`/character/${sub.slug}`}>
+                    <Button
+                    variant="ghost"
+                    className={cn(
+                        "w-full justify-start gap-3 text-sm font-normal truncate",
+                        pathname === `/character/${sub.slug}` && "bg-secondary font-medium"
+                    )}
+                    >
+                    <span className="truncate">#{sub.name}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{sub.count}</span>
+                    </Button>
+                </Link>
+                ))}
+            </ScrollArea>
+        </div>
+      )}
+
+      {/* Популярные Теги */}
+      {popular && popular.tags.length > 0 && (
+        <div className="flex flex-col gap-1">
+            <h3 className="px-4 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider flex items-center gap-2">
+                <Hash className="w-3 h-3" /> Топ Теги
+            </h3>
+            <ScrollArea className="h-auto max-h-[200px]">
+                {popular.tags.map((tag: any) => (
+                <Link key={tag.name} href={`/tag/${tag.name}`}>
+                    <Button
+                    variant="ghost"
+                    className={cn(
+                        "w-full justify-start gap-3 text-sm font-normal",
+                        pathname === `/tag/${tag.name}` && "bg-secondary font-medium"
+                    )}
+                    >
+                    <span className="truncate">#{tag.name}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{tag.count}</span>
+                    </Button>
+                </Link>
+                ))}
+            </ScrollArea>
+        </div>
+      )}
+
+      {/* Футер */}
+      <div className="mt-auto px-4 py-4 text-xs text-muted-foreground border-t">
+        <Link href="/about" className="hover:underline">О проекте</Link> • 
+        <Link href="/rules" className="hover:underline ml-1">Правила</Link>
+        <div className="mt-2">© 2026 MemeHUB</div>
+      </div>
+    </div>
   );
 }
