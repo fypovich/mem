@@ -168,9 +168,16 @@ async def upload_meme(
         # Если это картинка, принудительно ставим длительность 0.0
         if not is_final_video:
             duration = 0.0
-
-        # Генерация превью (работает и для картинок, и для видео)
-        processor.generate_thumbnail(thumbnail_path)
+            width, height = 0, 0 # Можно вытащить через Pillow, но пока 0
+            
+            # ТУМНЕЙЛ ДЛЯ КАРТИНКИ: Просто копируем файл
+            import shutil
+            shutil.copy(final_path, thumbnail_path)
+            
+        else:
+            # ВИДЕО
+            duration, width, height = processor.get_metadata()
+            processor.generate_thumbnail(thumbnail_path)
         
     except Exception as e:
         # Очистка мусора при ошибке

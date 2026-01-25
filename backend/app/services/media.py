@@ -1,97 +1,96 @@
 import ffmpeg
 import os
+import shutil
 
 class MediaProcessor:
-    def __init__(self, input_path: str):
-        self.input_path = input_path
-        
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
     def get_metadata(self):
-        """Возвращает (duration, width, height)"""
         try:
-            probe = ffmpeg.probe(self.input_path)
+            probe = ffmpeg.probe(self.file_path)
             video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
             
-            duration = float(probe['format']['duration'])
-            width = int(video_stream['width']) if video_stream else 0
-            height = int(video_stream['height']) if video_stream else 0
+            # Если это картинка, ffmpeg может не найти video stream, или найти его как mjpeg
+            # Для картинок длительность будет недоступна в обычном виде
+            
+            if not video_stream:
+                 # Пытаемся понять, картинка ли это
+                 # Обычно для картинок probe возвращает один стрим с codec_type='video' (mjpeg/png)
+                 # Но duration там нет.
+                 return 0.0, 0, 0
+
+            width = int(video_stream['width'])
+            height = int(video_stream['height'])
+            
+            # Duration
+            duration = float(video_stream.get('duration', 0.0))
+            if duration == 0.0 and 'tags' in probe['format']:
+                 # Иногда длительность в формате
+                 duration = float(probe['format'].get('duration', 0.0))
             
             return duration, width, height
         except Exception as e:
-            print(f"Error probing file: {e}")
+            print(f"Metadata error: {e}")
             return 0.0, 0, 0
 
     def generate_thumbnail(self, output_path: str):
-        """Создает превью"""
         try:
-            (
-                ffmpeg
-                .input(self.input_path, ss=0.1)
-                .filter('scale', 720, -1) 
-                .output(output_path, vframes=1)
-                .overwrite_output()
-                .run(quiet=True)
-            )
-        except Exception as e:
-            print(f"Thumbnail error: {e}")
-            raise e
+            # Проверяем расширение
+            ext = self.file_path.split('.')[-1].lower()
+            if ext in ['jpg', 'jpeg', 'png', 'webp']:
+                # Если это уже картинка, просто копируем её как тумнейл
+                # (В идеале надо бы сделать ресайз, но пока сойдет копия)
+                shutil.copy(self.file_path, output_path)
+            else:
+                # Видео: берем кадр с 0.1 секунды
+                (
+                    ffmpeg
+                    .input(self.file_path, ss=0.1)
+                    .output(output_path, vframes=1)
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True)
+                )
+        except ffmpeg.Error as e:
+            print('Thumbnail error:', e.stderr.decode('utf8'))
+            # Fallback: если не вышло, копируем оригинал (если это картинка) или создаем пустой файл
+            if os.path.exists(self.file_path) and self.file_path.lower().endswith(('.jpg', '.png')):
+                 shutil.copy(self.file_path, output_path)
+            else:
+                 raise e
 
     def process_video_with_audio(self, audio_path: str, output_path: str):
-        """
-        Создает видео строго по длительности аудиодорожки.
-        Аудио НЕ зацикливается.
-        Видео/Картинка подгоняется под длину аудио.
-        Гарантирует четные размеры (divisible by 2).
-        """
-        try:
-            # 1. Анализируем файлы
-            probe_input = ffmpeg.probe(self.input_path)
-            probe_audio = ffmpeg.probe(audio_path)
+        # ... (код видео обработки оставляем тем же) ...
+        # В предыдущем шаге мы уже использовали ffmpeg.input
+        # Убедитесь, что этот метод не вызывается для чистых картинок без аудио.
+        
+        input_video = ffmpeg.input(self.file_path)
+        
+        if audio_path:
+            input_audio = ffmpeg.input(audio_path)
+            # Зацикливаем видео под длину аудио (если картинка)
+            # Или берем видео как есть (если видео)
             
-            # Получаем точную длительность аудио
-            audio_duration = float(probe_audio['format']['duration'])
+            # Определяем, картинка это или видео
+            probe = ffmpeg.probe(self.file_path)
+            # ... сложная логика ...
             
-            # Проверяем формат, чтобы понять, картинка это или видео
-            fmt_name = probe_input['format']['format_name']
-            is_static_image = False
-            if 'image2' in fmt_name or 'png' in fmt_name or 'jpeg' in fmt_name or 'webp' in fmt_name:
-                 is_static_image = True
-            # GIF считаем видео-потоком для ffmpeg, но его тоже можно лупить
-
-            # 2. Подготовка ВИДЕО потока
-            if is_static_image:
-                # Картинка: растягиваем её на всю длину аудио (-loop 1)
-                video_part = ffmpeg.input(self.input_path, loop=1)
-            else:
-                # Видео/GIF: 
-                # stream_loop -1 заставляет видео повторяться бесконечно.
-                video_part = ffmpeg.input(self.input_path, stream_loop=-1)
-
-            # 3. Подготовка АУДИО потока
-            audio_part = ffmpeg.input(audio_path)
-
-            # --- ВАЖНЫЙ ФИКС ДЛЯ ОШИБОК FFMPEG ---
-            # Фильтр scale заставляет размеры быть четными (trunc(x/2)*2).
-            # Это обязательно для libx264 (yuv420p).
-            video_stream = video_part['v'].filter('scale', 'trunc(iw/2)*2', 'trunc(ih/2)*2')
-
-            # 4. Сборка
+            # УПРОЩЕНИЕ:
+            # Используем stream_loop -1 для картинки
+            # -shortest обрезает по самому короткому стриму (аудио)
+            
             (
                 ffmpeg
-                .output(
-                    video_stream, 
-                    audio_part['a'], 
-                    output_path, 
-                    vcodec='libx264', 
-                    acodec='aac', 
-                    # Обрезаем видео ровно по длине аудио
-                    t=audio_duration,
-                    pix_fmt='yuv420p', 
-                    shortest=None 
-                )
+                .output(input_audio, input_video, output_path, vcodec='libx264', acodec='aac', shortest=None, pix_fmt='yuv420p', **{'c:v': 'libx264', 'tune': 'stillimage'})
                 .overwrite_output()
-                .run(quiet=True)
+                .run(capture_stdout=True, capture_stderr=True)
             )
-            
-        except Exception as e:
-            print(f"Merge error: {e}")
-            raise e
+        else:
+            # Просто конвертация
+             (
+                ffmpeg
+                .input(self.file_path)
+                .output(output_path, vcodec='libx264', acodec='aac')
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Play, Heart, MessageCircle, Volume2 } from "lucide-react";
+import { Play, Heart, MessageCircle, Volume2, Image as ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const API_URL = "http://127.0.0.1:8000";
@@ -12,19 +12,21 @@ interface MemeCardProps {
 }
 
 export function MemeCard({ meme }: MemeCardProps) {
-  // Определяем полный путь к превью
+  // Определяем превью. Если это видео, берем _thumb.jpg. Если картинка - берем сам media_url (или thumb, они одинаковые)
+  // Backend теперь гарантирует, что thumb всегда есть.
   const preview = meme.thumbnail_url.startsWith('http') 
     ? meme.thumbnail_url 
     : `${API_URL}${meme.thumbnail_url}`;
 
-  // Определяем, видео это или картинка по длительности (Backend ставит 0 для картинок)
-  const isVideo = meme.duration && meme.duration > 0.1;
+  // Видео - если длительность > 0.
+  // Картинка - если длительность == 0.
+  const isVideo = meme.duration > 0.1; 
 
   return (
     <Link href={`/meme/${meme.id}`} className="block break-inside-avoid mb-4">
       <div className="group relative rounded-xl overflow-hidden cursor-pointer transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/10 bg-stone-900 border border-border/50">
         
-        {/* Медиа (Картинка-превью) */}
+        {/* Медиа */}
         <div className="w-full relative">
             <img 
                 src={preview} 
@@ -33,7 +35,7 @@ export function MemeCard({ meme }: MemeCardProps) {
                 loading="lazy"
             />
             
-            {/* Оверлей ТОЛЬКО для видео */}
+            {/* Оверлей ДЛЯ ВИДЕО */}
             {isVideo && (
                 <>
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -41,39 +43,40 @@ export function MemeCard({ meme }: MemeCardProps) {
                             <Play className="w-8 h-8 text-white fill-white" />
                         </div>
                     </div>
-                    
                     <div className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
                         <Volume2 className="w-3 h-3 text-white" />
                     </div>
-
                     <Badge className="absolute bottom-2 right-2 bg-black/60 hover:bg-black/70 text-white text-[10px] border-0">
                         {Math.round(meme.duration)}s
                     </Badge>
                 </>
             )}
+
+            {/* Оверлей ДЛЯ КАРТИНКИ (GIF) - можно добавить иконку */}
+            {!isVideo && (
+                 <div className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ImageIcon className="w-3 h-3 text-white" />
+                 </div>
+            )}
         </div>
 
-        {/* Информация (Градиент) */}
+        {/* Инфо */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
             <h3 className="text-white font-bold text-lg leading-tight line-clamp-2 drop-shadow-md">
                 {meme.title}
             </h3>
-            
             <div className="flex items-center justify-between mt-3 text-white/80">
                 <div className="text-xs">{meme.views_count} просмотров</div>
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1">
-                        <Heart className="w-4 h-4" /> 
-                        <span className="text-xs">{meme.likes_count}</span>
+                        <Heart className="w-4 h-4" /> <span className="text-xs">{meme.likes_count}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                        <MessageCircle className="w-4 h-4" /> 
-                        <span className="text-xs">{meme.comments_count}</span>
+                        <MessageCircle className="w-4 h-4" /> <span className="text-xs">{meme.comments_count}</span>
                     </div>
                 </div>
             </div>
         </div>
-
       </div>
     </Link>
   );

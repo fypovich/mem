@@ -31,22 +31,35 @@ export default async function MemePage({ params }: { params: Params }) {
   
   const date = new Date(meme.created_at).toLocaleDateString("ru-RU", { day: 'numeric', month: 'long', year: 'numeric' });
 
+  // URL медиа
+  const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${API_URL}${meme.media_url}`;
+  const isVideo = meme.duration > 0.1;
+
   return (
-    <div className="container max-w-5xl mx-auto py-6 px-4">
-       <div className="grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8">
+    <div className="container max-w-4xl mx-auto py-6 px-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* ЛЕВАЯ КОЛОНКА: Контент */}
+        <div className="lg:col-span-2 space-y-6">
           
-          {/* ЛЕВАЯ КОЛОНКА: Контент */}
-          <div className="space-y-6">
-             {/* Видео плеер */}
-             <div className="rounded-xl overflow-hidden bg-black border border-border shadow-2xl relative aspect-video flex items-center justify-center">
-                 <video 
-                    src={mediaUrl} 
+          {/* МЕДИА ПЛЕЕР / КАРТИНКА */}
+          <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative aspect-video flex items-center justify-center">
+             {isVideo ? (
+                <video 
+                    src={mediaSrc} 
                     controls 
                     autoPlay 
                     loop 
-                    className="w-full h-full max-h-[70vh] object-contain"
-                 />
-             </div>
+                    className="w-full h-full object-contain"
+                />
+             ) : (
+                <img 
+                    src={mediaSrc} 
+                    alt={meme.title}
+                    className="w-full h-full object-contain"
+                />
+             )}
+          </div>
 
              {/* Инфо блок */}
              <div className="space-y-4">
