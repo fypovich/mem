@@ -184,6 +184,21 @@ async def upload_meme(
         db.add(notif)
     
     await db.commit()
+
+    try:
+        search = get_search_service()
+        if search:
+            meme_doc = {
+                "id": str(new_meme.id),
+                "title": new_meme.title,
+                "description": new_meme.description,
+                "thumbnail_url": new_meme.thumbnail_url,
+                "views_count": new_meme.views_count,
+                # Можно добавить теги, автора и т.д. для фильтров
+            }
+            search.add_meme(meme_doc)
+    except Exception as e:
+        print(f"Indexing error: {e}")
     
     # --- ИСПРАВЛЕНИЕ ТУТ ---
     # Вместо db.refresh используем явный запрос с eager loading (подгрузкой)

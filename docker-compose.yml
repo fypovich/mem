@@ -13,6 +13,21 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_MASTER_KEY=masterKey123  # В продакшене вынести в .env
+    volumes:
+      - meili_data:/meili_data
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
+  meili_data:
+
+networks:
+  app-network:
+    driver: bridge
