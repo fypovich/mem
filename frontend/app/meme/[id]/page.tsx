@@ -1,12 +1,14 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Calendar, Eye, User as UserIcon } from "lucide-react"; 
+import { Calendar, Eye, Hash, User as UserIcon } from "lucide-react"; 
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge"; 
 import { MemeInteractions } from "@/components/meme-interactions"; 
 import { CommentsSection } from "@/components/comments-section";
 import { MemeGrid } from "@/components/meme-grid";
+import { MemeOwnerActions } from "@/components/meme-owner-actions"; // <-- Импорт
 
 const API_URL = "http://127.0.0.1:8000";
 
@@ -50,17 +52,13 @@ export default async function MemePage({ params }: { params: Params }) {
   const isVideo = meme.duration > 0.1;
 
   return (
-    <div className="container max-w-6xl mx-auto py-6 px-4">
-      {/* items-start - Важно! Не дает колонкам растягиваться на всю высоту (stretch).
-          Теперь правая колонка будет иметь высоту своего контента.
-      */}
+    <div className="container max-w-4xl mx-auto py-6 px-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         
-        {/* ЛЕВАЯ КОЛОНКА: Контент + Рекомендации */}
+        {/* ЛЕВАЯ КОЛОНКА */}
         <div className="lg:col-span-2 space-y-8">
           
           <div className="space-y-6">
-             {/* Медиа */}
              <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative aspect-video flex items-center justify-center">
                 {isVideo ? (
                     <video 
@@ -79,7 +77,6 @@ export default async function MemePage({ params }: { params: Params }) {
                 )}
              </div>
 
-             {/* Инфо */}
              <div className="space-y-4">
                  <h1 className="text-2xl md:text-3xl font-bold break-words">{meme.title}</h1>
                  
@@ -102,12 +99,20 @@ export default async function MemePage({ params }: { params: Params }) {
                         </div>
                      </Link>
 
-                     <MemeInteractions 
-                        memeId={meme.id} 
-                        initialLikes={meme.likes_count} 
-                        initialLiked={meme.is_liked}
-                        commentsCount={meme.comments_count || 0} 
-                     />
+                     <div className="flex items-center gap-2">
+                        <MemeInteractions 
+                            memeId={meme.id} 
+                            initialLikes={meme.likes_count} 
+                            initialLiked={meme.is_liked}
+                            commentsCount={meme.comments_count || 0} 
+                        />
+
+                        {/* Кнопка удаления (видна только владельцу) */}
+                        <MemeOwnerActions 
+                            memeId={meme.id} 
+                            authorUsername={meme.user.username} 
+                        />
+                     </div>
                  </div>
                  
                  <div className="space-y-4">
@@ -139,7 +144,6 @@ export default async function MemePage({ params }: { params: Params }) {
              </div>
           </div>
 
-          {/* Рекомендации */}
           {similarMemes.length > 0 && (
              <div className="pt-8 border-t">
                  <h3 className="text-xl font-bold mb-4">Похожие мемы</h3>
@@ -149,14 +153,10 @@ export default async function MemePage({ params }: { params: Params }) {
         </div>
 
         {/* ПРАВАЯ КОЛОНКА: Комментарии */}
-        {/* sticky top-24 -> Прилипает к верху при скролле
-            h-fit -> Занимает высоту только контента (не растягивается как сосиска)
-        */}
         <div id="comments-section" className="hidden lg:block space-y-4 sticky top-24 h-fit">
             <CommentsSection memeId={meme.id} />
         </div>
 
-        {/* Мобильная версия комментариев (внизу) */}
         <div className="lg:hidden block space-y-4">
             <CommentsSection memeId={meme.id} />
         </div>

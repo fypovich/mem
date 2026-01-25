@@ -605,3 +605,48 @@ async def get_similar_memes(
         memes_with_stats.append(meme)
 
     return memes_with_stats
+
+@router.delete("/{meme_id}", status_code=204)
+async def delete_meme(
+    meme_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Удаление мема (доступно только автору)"""
+    meme = await db.get(Meme, meme_id)
+    if not meme:
+        raise HTTPException(status_code=404, detail="Meme not found")
+    
+    if meme.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to delete this meme")
+
+    # 1. Удаляем файлы с диска
+    try:
+        # media_url пример: /static/uuid.mp4 -> нужно взять имя файла
+        if meme.media_url:
+            filename = meme.media_url.split("/")[-1]
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        
+        if meme.thumbnail_url:
+            filename = meme.thumbnail_url.split("/")[-1]
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+    except Exception as e:
+        print(f"Error deleting files: {e}")
+
+    # 2. Удаляем из Meilisearch (если подключен)
+    try:
+        search = get_search_service()
+        if search:
+            search.index_memes.delete_document(str(meme.id))
+    except Exception as e:
+        print(f"Meilisearch delete error: {e}")
+
+    # 3. Удаляем запись из БД
+    await db.delete(meme)
+    await db.commit()
+    
+    return None
