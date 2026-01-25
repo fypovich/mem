@@ -154,6 +154,7 @@ async def upload_meme(
             # Сценарий: Картинка без звука (просто перемещаем)
             if raw_path != final_path:
                 shutil.move(raw_path, final_path)
+            # Для картинок процессор не нужен для конвертации, но путь обновим
             processor = MediaProcessor(final_path)
 
         else:
@@ -163,20 +164,16 @@ async def upload_meme(
             processor = MediaProcessor(final_path)
 
         # 5. Получение метаданных
-        duration, width, height = processor.get_metadata()
-        
-        # Если это картинка, принудительно ставим длительность 0.0
         if not is_final_video:
+            # Если это картинка, принудительно ставим длительность 0.0
             duration = 0.0
-            width, height = 0, 0 # Можно вытащить через Pillow, но пока 0
+            width, height = 0, 0 # Можно доработать через Pillow, но для MVP хватит 0
             
-            # ТУМНЕЙЛ ДЛЯ КАРТИНКИ: Просто копируем файл
-            import shutil
+            # Тумнейл для картинки - это копия самой картинки
             shutil.copy(final_path, thumbnail_path)
-            
         else:
-            # ВИДЕО
             duration, width, height = processor.get_metadata()
+            # Генерация превью (работает для видео)
             processor.generate_thumbnail(thumbnail_path)
         
     except Exception as e:

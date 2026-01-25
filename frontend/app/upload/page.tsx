@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { UploadCloud, Music, Film, X, ImageIcon, Mic, Wand2, Loader2, Play, Volume2 } from "lucide-react";
+import { UploadCloud, Music, X, Wand2, Loader2, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
 const API_URL = "http://127.0.0.1:8000";
@@ -18,18 +17,16 @@ export default function UploadPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   
-  // States
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Data
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"video" | "image">("image");
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [audioPreview, setAudioPreview] = useState<string | null>(null); // URL для превью аудио
+  const [audioPreview, setAudioPreview] = useState<string | null>(null);
   
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -45,11 +42,8 @@ export default function UploadPage() {
     setToken(t);
   }, [router]);
 
-  // Handlers
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files[0]) processFile(e.target.files[0]);
   };
 
   const processFile = (file: File) => {
@@ -79,9 +73,8 @@ export default function UploadPage() {
         return;
     }
 
-    // --- УБРАНА ПРОВЕРКА НА АУДИО ---
-    // Раньше тут был блок if (mediaType === "image" && !audioFile) ...
-    
+    // ВАЛИДАЦИЯ УБРАНА: Картинки можно грузить без аудио!
+
     setIsUploading(true);
     setError(null);
 
@@ -93,15 +86,11 @@ export default function UploadPage() {
         if (subject) formData.append("subject", subject);
         
         formData.append("file", mediaFile);
-        if (audioFile) {
-            formData.append("audio_file", audioFile);
-        }
+        if (audioFile) formData.append("audio_file", audioFile);
 
         const res = await fetch(`${API_URL}/api/v1/memes/upload`, {
             method: "POST",
-            headers: {
-                Authorization: `Bearer ${token}`
-            },
+            headers: { Authorization: `Bearer ${token}` },
             body: formData
         });
 
@@ -120,33 +109,24 @@ export default function UploadPage() {
     }
   };
 
-  // Drag & Drop
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        processFile(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
   };
 
   return (
     <div className="container max-w-4xl mx-auto py-8 px-4">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* ЛЕВАЯ КОЛОНКА: Загрузка */}
         <div className="space-y-6">
             <h1 className="text-2xl font-bold">Загрузить новый мем</h1>
-            
-            {/* Медиа Дропзона */}
             <div 
                 className={`border-2 border-dashed rounded-xl h-[400px] flex flex-col items-center justify-center relative overflow-hidden transition-colors ${
                     isDragging ? "border-primary bg-primary/10" : "border-muted-foreground/25 hover:border-primary/50"
                 } ${mediaPreview ? "bg-black" : "bg-muted/5"}`}
-                onDragOver={onDragOver}
-                onDragLeave={onDragLeave}
-                onDrop={onDrop}
+                onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
             >
                 {mediaPreview ? (
                     <>
@@ -155,12 +135,7 @@ export default function UploadPage() {
                         ) : (
                             <img src={mediaPreview} className="w-full h-full object-contain" alt="Preview" />
                         )}
-                        <Button 
-                            size="icon" 
-                            variant="destructive" 
-                            className="absolute top-4 right-4 rounded-full"
-                            onClick={() => { setMediaFile(null); setMediaPreview(null); }}
-                        >
+                        <Button size="icon" variant="destructive" className="absolute top-4 right-4 rounded-full" onClick={() => { setMediaFile(null); setMediaPreview(null); }}>
                             <X className="w-4 h-4" />
                         </Button>
                     </>
@@ -173,154 +148,68 @@ export default function UploadPage() {
                             <p className="text-lg font-medium">Перетащите сюда файл</p>
                             <p className="text-sm text-muted-foreground mt-1">Поддерживаем видео и картинки</p>
                         </div>
-                        <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-                            Выбрать файл
-                        </Button>
-                        <input 
-                            type="file" 
-                            ref={fileInputRef} 
-                            className="hidden" 
-                            accept="image/*,video/*"
-                            onChange={handleFileSelect}
-                        />
+                        <Button variant="outline" onClick={() => fileInputRef.current?.click()}>Выбрать файл</Button>
+                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileSelect} />
                     </div>
                 )}
             </div>
 
-            {/* Аудио Загрузка (Опционально) */}
             <Card className="p-4 border-dashed border-muted-foreground/25">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                         <Music className="w-5 h-5 text-blue-500" />
                         <span className="font-semibold">Аудиодорожка (опционально)</span>
                     </div>
-                    {audioFile && (
-                        <Button variant="ghost" size="sm" onClick={removeAudio} className="text-red-500 h-8">
-                            <X className="w-4 h-4 mr-1" /> Удалить
-                        </Button>
-                    )}
+                    {audioFile && <Button variant="ghost" size="sm" onClick={removeAudio} className="text-red-500 h-8"><X className="w-4 h-4 mr-1" /> Удалить</Button>}
                 </div>
-
                 {!audioFile ? (
-                    <div 
-                        className="h-16 bg-muted/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-muted/40 transition-colors border border-transparent hover:border-primary/20"
-                        onClick={() => audioInputRef.current?.click()}
-                    >
+                    <div className="h-16 bg-muted/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-muted/40 transition-colors border border-transparent hover:border-primary/20" onClick={() => audioInputRef.current?.click()}>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <UploadCloud className="w-4 h-4" />
-                            <span>Нажмите, чтобы добавить свою музыку</span>
+                            <UploadCloud className="w-4 h-4" /><span>Нажмите, чтобы добавить музыку</span>
                         </div>
                     </div>
                 ) : (
                     <div className="flex items-center gap-3 bg-secondary/50 p-3 rounded-lg border">
-                        <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center">
-                            <Volume2 className="w-5 h-5 text-blue-500" />
-                        </div>
+                        <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center"><Volume2 className="w-5 h-5 text-blue-500" /></div>
                         <div className="flex-1 overflow-hidden">
                             <p className="text-sm font-medium truncate">{audioFile.name}</p>
-                            <p className="text-xs text-muted-foreground">{(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
                         </div>
-                        {audioPreview && (
-                            <audio src={audioPreview} controls className="h-8 w-24 opacity-70" />
-                        )}
+                        {audioPreview && <audio src={audioPreview} controls className="h-8 w-24 opacity-70" />}
                     </div>
                 )}
-                <input 
-                    type="file" 
-                    ref={audioInputRef} 
-                    className="hidden" 
-                    accept="audio/*"
-                    onChange={handleAudioSelect}
-                />
+                <input type="file" ref={audioInputRef} className="hidden" accept="audio/*" onChange={handleAudioSelect} />
                 <p className="text-xs text-muted-foreground mt-3">
                     * Если не добавить аудио к картинке, она сохранится как изображение (без длительности).
                 </p>
             </Card>
         </div>
 
-        {/* ПРАВАЯ КОЛОНКА: Метаданные */}
         <div>
             <Card className="p-6 space-y-6 sticky top-24">
-                {error && (
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded-lg text-sm">
-                        {error}
-                    </div>
-                )}
-
+                {error && <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded-lg text-sm">{error}</div>}
                 <div className="space-y-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="title">Название</Label>
-                        <Input 
-                            id="title" 
-                            placeholder="Придумайте смешной заголовок..." 
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="grid gap-2">
-                        <Label htmlFor="desc">Описание</Label>
-                        <Textarea 
-                            id="desc" 
-                            placeholder="Контекст мема (необязательно)" 
-                            className="resize-none h-24"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                        />
-                    </div>
-
+                    <div className="grid gap-2"><Label htmlFor="title">Название</Label><Input id="title" placeholder="Придумайте заголовок..." value={title} onChange={(e) => setTitle(e.target.value)} /></div>
+                    <div className="grid gap-2"><Label htmlFor="desc">Описание</Label><Textarea id="desc" placeholder="Контекст (необязательно)" className="resize-none h-24" value={description} onChange={(e) => setDescription(e.target.value)} /></div>
                     <Separator />
-
                     <div className="grid gap-2">
-                        <Label>Персонаж / Источник</Label>
-                        <div className="relative">
-                            <Wand2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            <Input 
-                                placeholder="Например: Райан Гослинг" 
-                                className="pl-9"
-                                value={subject}
-                                onChange={(e) => setSubject(e.target.value)}
-                            />
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            Это поможет найти мем через поиск по персонажам.
-                        </p>
+                        <Label>Персонаж</Label>
+                        <div className="relative"><Wand2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input placeholder="Например: Райан Гослинг" className="pl-9" value={subject} onChange={(e) => setSubject(e.target.value)} /></div>
                     </div>
-
                     <div className="grid gap-2">
                         <Label>Теги</Label>
-                        <Input 
-                            placeholder="жиза, школа, работа..." 
-                            value={tagsInput}
-                            onChange={(e) => setTagsInput(e.target.value)}
-                        />
-                        {/* Предпросмотр тегов */}
+                        <Input placeholder="жиза, мем..." value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} />
                         <div className="flex flex-wrap gap-2 mt-2 min-h-[24px]">
-                            {tagsInput.split(/[\s,]+/).filter(t => t).map((tag, i) => (
-                                <Badge key={i} variant="secondary" className="text-[10px]">
-                                    {tag.startsWith('#') ? tag : `#${tag}`}
-                                </Badge>
-                            ))}
+                            {tagsInput.split(/[\s,]+/).filter(t => t).map((tag, i) => <Badge key={i} variant="secondary" className="text-[10px]">{tag.startsWith('#') ? tag : `#${tag}`}</Badge>)}
                         </div>
                     </div>
                 </div>
-
                 <div className="mt-8 pt-6 border-t flex gap-3">
-                    <Button 
-                        className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-lg shadow-primary/20"
-                        disabled={!mediaFile || !title || isUploading}
-                        onClick={handleSubmit}
-                    >
+                    <Button className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-lg shadow-primary/20" disabled={!mediaFile || !title || isUploading} onClick={handleSubmit}>
                         {isUploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Обработка...</> : "Опубликовать"}
                     </Button>
                 </div>
             </Card>
-            
-            <div className="text-center text-xs text-muted-foreground mt-4">
-                Публикуя контент, вы соглашаетесь с правилами сообщества.
-            </div>
         </div>
-
       </div>
     </div>
   );
