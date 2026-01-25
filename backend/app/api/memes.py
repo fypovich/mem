@@ -111,16 +111,17 @@ async def upload_meme(
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1].lower()
     
-    # Проверяем тип входящего файла
+    # 1. Проверяем, является ли файл картинкой
     is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
     
-    # Логика: Если это картинка И нет аудио -> оставляем картинкой. Иначе (видео или есть аудио) -> MP4.
+    # 2. Определяем, будет ли финальный файл видео
+    # Видео = (Это картинка + Есть аудио) ИЛИ (Это изначально видео)
     is_final_video = True
     if is_image_input and not audio_file:
         is_final_video = False
 
     raw_filename = f"raw_{file_id}.{ext}"
-    # Имя финального файла зависит от того, конвертируем мы или нет
+    # Имя финального файла: .mp4 для видео, оригинальное расширение для картинок
     final_filename = f"{file_id}.mp4" if is_final_video else f"{file_id}.{ext}"
     thumbnail_filename = f"{file_id}_thumb.jpg"
 
@@ -128,51 +129,47 @@ async def upload_meme(
     final_path = os.path.join(UPLOAD_DIR, final_filename)
     thumbnail_path = os.path.join(UPLOAD_DIR, thumbnail_filename)
 
-    # 1. Сохраняем исходный файл
+    # 3. Сохраняем исходный файл
     async with aiofiles.open(raw_path, 'wb') as f:
         await f.write(await file.read())
 
     processor = MediaProcessor(raw_path)
     
     try:
-        # 2. Обработка файла
+        # 4. Обработка файла
         if audio_file:
-            # Сценарий: Накладываем аудио (на картинку или заменяем звук у видео)
+            # Сценарий: Накладываем аудио (конвертация в MP4)
             audio_ext = audio_file.filename.split('.')[-1]
             audio_path = os.path.join(UPLOAD_DIR, f"audio_{file_id}.{audio_ext}")
             async with aiofiles.open(audio_path, 'wb') as f:
                 await f.write(await audio_file.read())
             
-            # Конвертация в MP4 с аудио
             processor.process_video_with_audio(audio_path, final_path)
-            processor = MediaProcessor(final_path) # Переключаемся на результат для метаданных
+            processor = MediaProcessor(final_path) # Переключаемся на результат
             
             if os.path.exists(audio_path): os.remove(audio_path)
             if os.path.exists(raw_path): os.remove(raw_path)
         
         elif not is_final_video:
-            # Сценарий: Просто картинка
+            # Сценарий: Картинка без звука (просто перемещаем)
             if raw_path != final_path:
                 shutil.move(raw_path, final_path)
-            # processor остается инициализирован на файле (который теперь лежит в final_path)
             processor = MediaProcessor(final_path)
 
         else:
-            # Сценарий: Видео без дополнительного аудио
-            # Для простоты MVP просто переименовываем (считаем, что пришло видео). 
-            # В проде тут можно добавить принудительную конвертацию в mp4/h264 для совместимости.
+            # Сценарий: Видео без дополнительного аудио (просто перемещаем)
             if raw_path != final_path:
                 shutil.move(raw_path, final_path)
             processor = MediaProcessor(final_path)
 
-        # 3. Получение метаданных
+        # 5. Получение метаданных
         duration, width, height = processor.get_metadata()
         
-        # Если это картинка, принудительно ставим duration 0 (иногда ffprobe может вернуть 0.04 для картинки)
+        # Если это картинка, принудительно ставим длительность 0.0
         if not is_final_video:
             duration = 0.0
 
-        # Генерация превью
+        # Генерация превью (работает и для картинок, и для видео)
         processor.generate_thumbnail(thumbnail_path)
         
     except Exception as e:
@@ -182,7 +179,7 @@ async def upload_meme(
         if os.path.exists(raw_path): os.remove(raw_path)
         raise HTTPException(500, detail=f"Media processing error: {str(e)}")
 
-    # 4. Обработка Тегов
+    # 6. Обработка Тегов
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -195,7 +192,7 @@ async def upload_meme(
                 await db.flush()
             db_tags.append(tag)
 
-    # 5. Обработка Персонажа (Subject)
+    # 7. Обработка Персонажа (Subject)
     db_subject = None
     if subject:
         clean_name = subject.strip()
@@ -203,12 +200,11 @@ async def upload_meme(
         res = await db.execute(select(Subject).where(Subject.slug == slug))
         db_subject = res.scalars().first()
         if not db_subject:
-            # По умолчанию категория PERSON
             db_subject = Subject(name=clean_name, slug=slug, category="person")
             db.add(db_subject)
             await db.flush()
 
-    # 6. Сохранение в БД
+    # 8. Сохранение в БД
     new_meme = Meme(
         title=title,
         description=description,
@@ -221,12 +217,12 @@ async def upload_meme(
         status="approved",
         subject_id=db_subject.id if db_subject else None
     )
-    new_meme.tags = db_tags # SQLAlchemy handle M2M
+    new_meme.tags = db_tags
     
     db.add(new_meme)
     await db.commit()
 
-    # 7. Индексация в Meilisearch
+    # 9. Индексация в Meilisearch
     try:
         search = get_search_service()
         if search:
@@ -235,13 +231,13 @@ async def upload_meme(
                 "title": new_meme.title,
                 "description": new_meme.description,
                 "thumbnail_url": new_meme.thumbnail_url,
-                "media_url": new_meme.media_url, # Важно для телеграм бота
+                "media_url": new_meme.media_url,
                 "views_count": new_meme.views_count
             })
     except Exception as e:
         print(f"Meilisearch indexing warning: {e}")
 
-    # 8. Уведомления подписчикам
+    # 10. Уведомления подписчикам
     followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
     followers_res = await db.execute(followers_stmt)
     follower_ids = followers_res.scalars().all()
@@ -256,7 +252,7 @@ async def upload_meme(
     
     await db.commit()
 
-    # Возврат с подгрузкой связей для корректного ответа API
+    # 11. Возврат результата
     res = await db.execute(
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
