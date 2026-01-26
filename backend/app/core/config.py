@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     MEILI_HOST: str = os.getenv("MEILI_HOST", "http://localhost:7700")
     MEILI_MASTER_KEY: str = os.getenv("MEILI_MASTER_KEY", "masterKey123")
 
+    # URL для Celery (используем сервис redis из docker-compose)
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

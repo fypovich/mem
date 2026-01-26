@@ -22,6 +22,7 @@ from jose import JWTError, jwt
 from app.core import security
 from app.services.media import MediaProcessor
 from app.services.search import get_search_service
+from app.worker import process_meme_task
 
 router = APIRouter()
 
