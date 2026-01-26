@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface MemeOwnerActionsProps {
   memeId: string;
@@ -21,12 +21,19 @@ interface MemeOwnerActionsProps {
 export function MemeOwnerActions({ memeId, authorUsername }: MemeOwnerActionsProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
-  
-  // Проверяем, является ли текущий юзер автором (читаем username из localStorage)
-  const currentUsername = typeof window !== "undefined" ? localStorage.getItem("username") : null;
+  const [isOwner, setIsOwner] = useState(false);
 
-  // Если это не автор, ничего не показываем
-  if (currentUsername !== authorUsername) {
+  // Исправление Hydration Error:
+  // Проверяем localStorage только после того, как компонент смонтирован в браузере.
+  useEffect(() => {
+    const currentUsername = localStorage.getItem("username");
+    if (currentUsername === authorUsername) {
+      setIsOwner(true);
+    }
+  }, [authorUsername]);
+
+  // Если не владелец, ничего не рендерим
+  if (!isOwner) {
     return null;
   }
 
@@ -47,7 +54,7 @@ export function MemeOwnerActions({ memeId, authorUsername }: MemeOwnerActionsPro
 
       if (res.ok) {
         // После удаления перекидываем в профиль
-        router.push(`/user/${currentUsername}`);
+        router.push(`/user/${authorUsername}`);
         router.refresh();
       } else {
         alert("Не удалось удалить мем");
