@@ -622,7 +622,6 @@ async def delete_meme(
 
     # 1. Удаляем файлы с диска
     try:
-        # media_url пример: /static/uuid.mp4 -> нужно взять имя файла
         if meme.media_url:
             filename = meme.media_url.split("/")[-1]
             file_path = os.path.join(UPLOAD_DIR, filename)
@@ -645,7 +644,22 @@ async def delete_meme(
     except Exception as e:
         print(f"Meilisearch delete error: {e}")
 
-    # 3. Удаляем запись из БД
+    # 3. Очистка зависимостей в БД (Ручной каскад)
+    # Важно: Сначала удаляем всё, что ссылается на мем!
+    
+    # Удаляем уведомления, связанные с этим мемом
+    await db.execute(sa.delete(Notification).where(Notification.meme_id == meme_id))
+    
+    # Удаляем лайки этого мема
+    await db.execute(sa.delete(Like).where(Like.meme_id == meme_id))
+    
+    # Удаляем комментарии к этому мему
+    await db.execute(sa.delete(Comment).where(Comment.meme_id == meme_id))
+    
+    # Удаляем связи с тегами
+    await db.execute(sa.delete(meme_tags).where(meme_tags.c.meme_id == meme_id))
+
+    # 4. Теперь безопасно удаляем сам мем
     await db.delete(meme)
     await db.commit()
     
