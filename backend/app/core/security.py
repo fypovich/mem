@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union
+from typing import Any, Union, Optional
 from jose import jwt
 from passlib.context import CryptContext
 
@@ -8,6 +8,7 @@ from passlib.context import CryptContext
 SECRET_KEY = "super-secret-key-change-me-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+RESET_PASSWORD_EXPIRE_MINUTES = 15
 
 # Настройка хеширования (используем bcrypt)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -31,3 +32,21 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+def create_password_reset_token(email: str) -> str:
+    """Генерирует токен, который живет 15 минут"""
+    expire = datetime.utcnow() + timedelta(minutes=RESET_PASSWORD_EXPIRE_MINUTES)
+    to_encode = {"sub": email, "type": "password_reset", "exp": expire}
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def verify_password_reset_token(token: str) -> Optional[str]:
+    """Проверяет токен и возвращает email, если всё ок"""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "password_reset":
+            return None
+        email: str = payload.get("sub")
+        return email
+    except JWTError:
+        return None

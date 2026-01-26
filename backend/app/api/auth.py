@@ -6,9 +6,9 @@ from sqlalchemy.future import select
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.database import get_db
-from app.core.security import create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
+from app.core.security import create_access_token, verify_password, get_password_hash, create_password_reset_token, verify_password_reset_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.models.models import User
-from app.schemas import Token, UserResponse, UserCreate
+from app.schemas import Token, UserResponse, UserCreate, PasswordResetRequest, PasswordResetConfirm
 
 router = APIRouter()
 
@@ -72,3 +72,60 @@ async def register_user(
     )
     
     return {"access_token": access_token, "token_type": "bearer", "user": new_user}
+
+@router.post("/forgot-password")
+async def forgot_password(
+    request: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Генерация ссылки на сброс пароля.
+    В РЕАЛЬНОСТИ: Отправляет email.
+    ЗДЕСЬ: Выводит ссылку в консоль сервера (docker logs).
+    """
+    # 1. Ищем пользователя
+    query = select(User).where(User.email == request.email)
+    result = await db.execute(query)
+    user = result.scalars().first()
+
+    if not user:
+        # В целях безопасности лучше отвечать 200 даже если юзера нет, но для дебага скажем правду
+        raise HTTPException(status_code=404, detail="User with this email not found")
+
+    # 2. Генерируем токен
+    reset_token = create_password_reset_token(email=user.email)
+    
+    # 3. "Отправляем" email (в консоль)
+    # Ссылка ведет на фронтенд
+    reset_link = f"http://localhost:3000/reset-password?token={reset_token}"
+    print(f"\n\n=========================================")
+    print(f"PASSWORD RESET LINK FOR {user.email}:")
+    print(f"{reset_link}")
+    print(f"=========================================\n\n")
+
+    return {"message": "Password reset link generated (check server logs)"}
+
+@router.post("/reset-password")
+async def reset_password(
+    request: PasswordResetConfirm,
+    db: AsyncSession = Depends(get_db)
+):
+    """Сброс пароля по токену"""
+    # 1. Валидируем токен
+    email = verify_password_reset_token(request.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    # 2. Ищем юзера
+    query = select(User).where(User.email == email)
+    result = await db.execute(query)
+    user = result.scalars().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 3. Обновляем пароль
+    user.hashed_password = get_password_hash(request.new_password)
+    await db.commit()
+
+    return {"message": "Password updated successfully"}
