@@ -449,37 +449,36 @@ async def like_meme(
 
 @router.post("/{meme_id}/comments", response_model=CommentResponse)
 async def create_comment(
-    meme_id: uuid.UUID,
-    comment_data: CommentCreate,
-    db: AsyncSession = Depends(get_db),
+    meme_id: uuid.UUID, 
+    comment: CommentCreate, 
+    db: AsyncSession = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
     """Добавление комментария + Уведомление"""
+    # --- НОВОЕ: Проверка длины ---
+    if len(comment.text) > 500:
+        raise HTTPException(status_code=400, detail="Комментарий не может быть длиннее 500 символов")
+    # -----------------------------
+
     meme = await db.get(Meme, meme_id)
     if not meme: raise HTTPException(404, "Meme not found")
 
-    new_comment = Comment(
-        user_id=current_user.id,
-        meme_id=meme_id,
-        text=comment_data.text
-    )
-    db.add(new_comment)
+    new_comm = Comment(text=comment.text, user_id=current_user.id, meme_id=meme_id)
+    db.add(new_comm)
     
-    # Уведомление
     if meme.user_id != current_user.id:
         db.add(Notification(
-            user_id=meme.user_id,
-            sender_id=current_user.id,
-            type=NotificationType.COMMENT,
-            meme_id=meme.id,
-            text=new_comment.text[:50]
+            user_id=meme.user_id, 
+            sender_id=current_user.id, 
+            type=NotificationType.COMMENT, 
+            meme_id=meme.id, 
+            text=comment.text[:50]
         ))
-
+    
     await db.commit()
     
-    # Возврат с юзером
     res = await db.execute(
-        select(Comment).options(selectinload(Comment.user)).where(Comment.id == new_comment.id)
+        select(Comment).options(selectinload(Comment.user)).where(Comment.id == new_comm.id)
     )
     return res.scalars().first()
 
