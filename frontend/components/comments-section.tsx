@@ -75,27 +75,34 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
   };
 
   return (
-    // ИСПРАВЛЕНИЕ 2: Фиксированная высота h-[600px] вместо max-h. 
-    // Это заставит ScrollArea работать корректно внутри flex-контейнера.
-    <div className="bg-card border border-border/50 rounded-xl p-4 flex flex-col h-[600px]">
-      <h3 className="font-semibold mb-4 flex items-center gap-2 flex-shrink-0">
-        <MessageCircle className="w-4 h-4" /> Комментарии ({comments.length})
-      </h3>
+    // ГЛАВНЫЙ КОНТЕЙНЕР
+    // h-[600px]: Фиксированная высота
+    // overflow-hidden: Обрезает всё лишнее, чтобы скругления углов работали
+    <div className="bg-card border border-border/50 rounded-xl flex flex-col h-[600px] overflow-hidden w-full">
+      
+      {/* ЗАГОЛОВОК (Фиксированный, не скроллится) */}
+      <div className="p-4 border-b flex-shrink-0 bg-card z-10">
+        <h3 className="font-semibold flex items-center gap-2">
+          <MessageCircle className="w-4 h-4" /> Комментарии ({comments.length})
+        </h3>
+      </div>
 
-      {/* Список комментариев */}
-      <ScrollArea className="flex-1 w-full pr-4 -mr-2 mb-4">
-        {isLoading ? (
-            <div className="flex justify-center py-8">
-                <Loader2 className="animate-spin w-6 h-6 text-muted-foreground" />
-            </div>
-        ) : comments.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8 text-sm">
-                Пока нет комментариев. Будьте первым!
-            </div>
-        ) : (
-            <div className="space-y-4">
-                {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-3 items-start w-full">
+      {/* ЗОНА СКРОЛЛА (Растягивается) */}
+      {/* flex-1 min-h-0: Ключевая связка. Заставляет блок занимать только доступное место и включать скролл */}
+      <ScrollArea className="flex-1 w-full min-h-0">
+        <div className="p-4 space-y-4">
+            {isLoading ? (
+                <div className="flex justify-center py-8">
+                    <Loader2 className="animate-spin w-6 h-6 text-muted-foreground" />
+                </div>
+            ) : comments.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8 text-sm">
+                    Пока нет комментариев. Будьте первым!
+                </div>
+            ) : (
+                comments.map((comment) => (
+                    <div key={comment.id} className="flex gap-3 w-full max-w-full">
+                        {/* Аватарка (не сжимается) */}
                         <Link href={`/user/${comment.user.username}`} className="shrink-0">
                             <Avatar className="w-8 h-8 cursor-pointer hover:opacity-80 transition-opacity">
                                 <AvatarImage src={comment.user.avatar_url ? `${API_URL}${comment.user.avatar_url}` : undefined} />
@@ -103,8 +110,9 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
                             </Avatar>
                         </Link>
                         
-                        {/* ИСПРАВЛЕНИЕ 1: min-w-0 и w-full заставляют flex-элемент уважать границы родителя */}
-                        <div className="flex-1 min-w-0 w-full">
+                        {/* ТЕКСТ КОММЕНТАРИЯ */}
+                        {/* min-w-0: Позволяет flex-элементу сжиматься, если текст внутри слишком длинный */}
+                        <div className="flex-1 min-w-0">
                             <div className="bg-secondary/30 rounded-lg p-3">
                                 <div className="flex justify-between items-baseline mb-1 gap-2">
                                     <Link href={`/user/${comment.user.username}`} className="font-semibold text-xs hover:underline truncate max-w-[150px]">
@@ -115,20 +123,21 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
                                     </span>
                                 </div>
                                 
-                                {/* break-words переносит слова, whitespace-pre-wrap сохраняет абзацы */}
-                                <p className="text-sm text-foreground break-words whitespace-pre-wrap leading-relaxed overflow-hidden">
+                                {/* break-words: Переносит длинные слова */}
+                                {/* whitespace-pre-wrap: Сохраняет абзацы */}
+                                <p className="text-sm text-foreground break-words whitespace-pre-wrap leading-relaxed">
                                     {comment.text}
                                 </p>
                             </div>
                         </div>
                     </div>
-                ))}
-            </div>
-        )}
+                ))
+            )}
+        </div>
       </ScrollArea>
 
-      {/* Форма отправки (прибита к низу благодаря flex-col и flex-1 у списка) */}
-      <div className="flex-shrink-0 pt-2">
+      {/* ПОЛЕ ВВОДА (Фиксированное внизу) */}
+      <div className="p-3 border-t bg-background flex-shrink-0">
         {token ? (
             <div className="space-y-2">
                 <div className="relative">
@@ -159,6 +168,7 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
             </div>
         )}
       </div>
+
     </div>
   );
 }
