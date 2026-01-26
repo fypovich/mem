@@ -8,6 +8,7 @@ import { MemeInteractions } from "@/components/meme-interactions";
 import { CommentsSection } from "@/components/comments-section";
 import { MemeGrid } from "@/components/meme-grid";
 import { MemeOwnerActions } from "@/components/meme-owner-actions";
+import { MemeViewerActions } from "@/components/meme-viewer-actions"; // <-- Импорт
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -49,7 +50,6 @@ export default async function MemePage({ params }: { params: Params }) {
   const date = new Date(meme.created_at).toLocaleDateString("ru-RU", { day: 'numeric', month: 'long', year: 'numeric' });
   const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${API_URL}${meme.media_url}`;
   
-  // ЛОГИКА: Используем <video> только если это файл .mp4 (даже если это "гифка" без звука)
   const isMp4 = meme.media_url.endsWith(".mp4");
 
   return (
@@ -60,7 +60,6 @@ export default async function MemePage({ params }: { params: Params }) {
         <div className="lg:col-span-2 space-y-8">
           
           <div className="space-y-6">
-             {/* Блок медиа с фиксированным aspect-ratio, как в вашем дизайне */}
              <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative aspect-video flex items-center justify-center">
                 {isMp4 ? (
                     <video 
@@ -68,7 +67,6 @@ export default async function MemePage({ params }: { params: Params }) {
                         controls 
                         autoPlay 
                         loop 
-                        // Если звука нет (флаг has_audio=false), мьютим, чтобы работало как гифка и автоплей не блокировался
                         muted={!meme.has_audio} 
                         playsInline
                         className="w-full h-full object-contain"
@@ -112,13 +110,19 @@ export default async function MemePage({ params }: { params: Params }) {
                             commentsCount={meme.comments_count || 0} 
                         />
 
+                        {/* Меню для Владельца (Редактировать/Удалить) */}
                         <MemeOwnerActions 
                             memeId={meme.id} 
                             authorUsername={meme.user.username}
-                            // Добавляем эти пропсы для редактирования
                             initialTitle={meme.title}
                             initialDescription={meme.description}
                             initialTags={meme.tags}
+                        />
+
+                        {/* Меню для Зрителя (Пожаловаться) */}
+                        <MemeViewerActions 
+                            memeId={meme.id}
+                            authorUsername={meme.user.username}
                         />
                      </div>
                  </div>
