@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, exists, desc, and_, or_
+from sqlalchemy import select, func, exists, desc, and_, or_, extract, case
 from sqlalchemy.orm import selectinload, aliased
 
 from app.core.database import get_db
@@ -299,17 +299,24 @@ async def read_memes(
     tag: Optional[str] = None,
     subject: Optional[str] = None,
     category: Optional[str] = None, 
-    sort: str = "new",              
+    sort: str = "new", # new, popular, smart (for you)
     period: str = "all",            
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user) 
 ):
-    """Получение списка мемов (с учетом блокировок)"""
+    """
+    Получение списка мемов.
+    Sort options:
+    - 'new': По дате (сначала новые)
+    - 'popular': По количеству лайков
+    - 'smart': Алгоритм гравитации (Лайки / Возраст) - для вкладки "Для вас"
+    """
     
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
+    # Подзапросы для подсчета лайков и комментов
     likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
     comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
     
@@ -317,6 +324,7 @@ async def read_memes(
     if current_user:
         is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id))
 
+    # Базовый запрос
     query = (
         select(
             Meme, 
@@ -329,31 +337,24 @@ async def read_memes(
             selectinload(Meme.tags),    
             selectinload(Meme.subject) 
         )
-        # Фильтр только одобренных (или на модерации, если мы автор)
         .where(Meme.status == "approved")
     )
     
-    # --- ЛОГИКА БЛОКИРОВОК (Blacklist) ---
+    # --- БЛОКИРОВКИ ---
     if current_user:
-        # Исключаем мемы авторов, которых я заблокировал
-        # WHERE user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = me)
         blocked_users_query = select(Block.blocked_id).where(Block.blocker_id == current_user.id)
         query = query.where(Meme.user_id.not_in(blocked_users_query))
 
-    # --- ФИЛЬТРЫ (остальное как было) ---
+    # --- ФИЛЬТРЫ ---
     if username:
         query = query.join(User, Meme.user_id == User.id).where(User.username == username)
-    
     if tag:
         query = query.join(Meme.tags).where(Tag.name == tag)
-
     if subject:
         query = query.join(Meme.subject).where(Subject.slug == subject)
-
     if category:
         if category in [e.value for e in SubjectCategory]:
              query = query.join(Meme.subject).where(Subject.category == category)
-    
     if liked_by:
         uid_res = await db.execute(select(User.id).where(User.username == liked_by))
         uid = uid_res.scalar_one_or_none()
@@ -368,10 +369,27 @@ async def read_memes(
         month_ago = datetime.utcnow() - timedelta(days=30)
         query = query.where(Meme.created_at >= month_ago)
 
-    # --- СОРТИРОВКА ---
+    # --- СОРТИРОВКА (ГЛАВНАЯ ЛОГИКА) ---
     if sort == "popular":
+        # Просто много лайков + просмотров
         query = query.order_by(desc("likes_count"), desc(Meme.views_count))
+        
+    elif sort == "smart":
+        # Алгоритм "Hacker News Gravity" адаптированный:
+        # Score = (Likes + 1) / (Age_In_Hours + 2)^1.5
+        # Чем свежее мем, тем меньше лайков ему нужно, чтобы быть в топе.
+        
+        # Вычисляем возраст в часах
+        # EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600
+        age_in_hours = (extract('epoch', func.now() - Meme.created_at) / 3600)
+        
+        # Формула гравитации
+        gravity_score = (likes_count + 1) / func.power((age_in_hours + 2), 1.5)
+        
+        query = query.order_by(desc(gravity_score))
+        
     else:
+        # По умолчанию: самые новые
         query = query.order_by(Meme.created_at.desc())
 
     # Пагинация
