@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +25,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. Раздаем статику
+# Создаем папку uploads, если нет
+os.makedirs("uploads", exist_ok=True)
+
+# Монтируем uploads как /static
 app.mount("/static", StaticFiles(directory="uploads"), name="static")
 
 # 2. ПОДКЛЮЧАЕМ РОУТЕРЫ

@@ -25,48 +25,43 @@ services:
     volumes:
       - meili_data:/meili_data
 
-  # ДОБАВЛЯЕМ REDIS
   redis:
     image: redis:7-alpine
+    container_name: memegiphy_redis
     ports:
       - "6379:6379"
 
-  # ДОБАВЛЯЕМ CELERY WORKER
   worker:
     build: ./backend
+    container_name: memegiphy_worker
     command: celery -A app.core.celery_app worker --loglevel=info
     volumes:
       - ./backend:/app
-      - media_volume:/app/static
+      - ./backend/uploads:/app/uploads
     env_file:
       - ./backend/.env
     depends_on:
       - redis
       - db
 
-  # ВАЖНО: Сервис должен называться именно "backend", так как bot на него ссылается
   backend:
     build: ./backend
     container_name: memegiphy_backend
     restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Ждем базу, накатываем миграции и запускаем сервер
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./backend:/app
-      - ./uploads:/app/uploads
-      - media_volume:/app/static
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/memegiphy
-      - SECRET_KEY=supersecretkey
-      - ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=30
-      - MEILI_HOST=http://meilisearch:7700
-      - MEILI_MASTER_KEY=masterKey
-      # Внимание: для локальной разработки (localhost)
-      - BASE_MEDIA_URL=http://localhost:8000 
+      - ./backend/uploads:/app/uploads
+    env_file:
+      - ./backend/.env
     ports:
       - "8000:8000"
     depends_on:
       - db
+      - redis
       - meilisearch
 
   frontend:
@@ -76,8 +71,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Важно: URL бэкенда для браузера (клиентский)
-      - NEXT_PUBLIC_API_URL=http://localhost:8000 
+      # Браузер пользователя стучится на localhost
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
 
@@ -85,15 +80,14 @@ services:
     build: ./telegram_bot
     container_name: memegiphy_bot
     restart: always
+    env_file:
+      - ./backend/.env
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      # Внутри сети Docker мы обращаемся по имени сервиса "backend"
-      - BACKEND_URL=http://backend:8000/api/v1 
-      - BASE_MEDIA_URL=http://backend:8000
+      # Бот внутри докера стучится по имени сервиса backend
+      - BASE_API_URL=http://backend:8000
     depends_on:
       - backend
 
 volumes:
   postgres_data:
   meili_data:
-  media_volume:

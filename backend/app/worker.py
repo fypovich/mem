@@ -14,7 +14,7 @@ SYNC_DATABASE_URL = settings.DATABASE_URL.replace("postgresql+asyncpg", "postgre
 engine = create_engine(SYNC_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-UPLOAD_DIR = "app/static"
+UPLOAD_DIR = "uploads"
 
 @shared_task(name="app.worker.process_meme_task")
 def process_meme_task(meme_id: str, file_path: str, audio_path: str = None):
