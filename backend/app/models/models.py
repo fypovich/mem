@@ -155,3 +155,35 @@ class Notification(Base):
     user = relationship("User", foreign_keys=[user_id], back_populates="notifications")
     sender = relationship("User", foreign_keys=[sender_id])
     meme = relationship("Meme")
+
+class Block(Base):
+    __tablename__ = "blocks"
+    # Кто заблокировал (current_user)
+    blocker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    # Кого заблокировали (bad_user)
+    blocked_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ReportReason(str):
+    SPAM = "spam"
+    VIOLENCE = "violence"
+    PORN = "porn"
+    COPYRIGHT = "copyright"
+    OTHER = "other"
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reporter_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")) # Кто жалуется
+    meme_id = Column(UUID(as_uuid=True), ForeignKey("memes.id", ondelete="CASCADE"), nullable=True) # На что (мем)
+    comment_id = Column(UUID(as_uuid=True), ForeignKey("comments.id", ondelete="CASCADE"), nullable=True) # На что (коммент)
+    
+    reason = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    status = Column(String, default="pending") # pending, resolved, rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    reporter = relationship("User", foreign_keys=[reporter_id])
+    meme = relationship("Meme", foreign_keys=[meme_id])
+    comment = relationship("Comment", foreign_keys=[comment_id])

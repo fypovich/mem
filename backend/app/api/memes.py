@@ -14,9 +14,9 @@ from app.core.database import get_db
 # Импортируем все модели, включая SubjectCategory и follows
 from app.models.models import (
     Meme, User, Like, Comment, Tag, Subject, 
-    meme_tags, Notification, NotificationType, follows, SubjectCategory
+    meme_tags, Notification, NotificationType, follows, SubjectCategory, Report, Block
 )
-from app.schemas import MemeResponse, CommentCreate, CommentResponse, MemeUpdate
+from app.schemas import MemeResponse, CommentCreate, CommentResponse, MemeUpdate, ReportCreate
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from app.core import security
@@ -298,20 +298,18 @@ async def read_memes(
     liked_by: Optional[str] = None,
     tag: Optional[str] = None,
     subject: Optional[str] = None,
-    # Фильтры
-    category: Optional[str] = None, # 'game', 'movie', 'person'
-    sort: str = "new",              # "new", "popular"
-    period: str = "all",            # "week", "month", "all"
+    category: Optional[str] = None, 
+    sort: str = "new",              
+    period: str = "all",            
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user) 
 ):
-    """Получение списка мемов с фильтрацией, сортировкой и статистикой"""
+    """Получение списка мемов (с учетом блокировок)"""
     
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
-    # Подзапросы
     likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
     comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
     
@@ -331,9 +329,18 @@ async def read_memes(
             selectinload(Meme.tags),    
             selectinload(Meme.subject) 
         )
+        # Фильтр только одобренных (или на модерации, если мы автор)
+        .where(Meme.status == "approved")
     )
     
-    # --- ФИЛЬТРЫ ---
+    # --- ЛОГИКА БЛОКИРОВОК (Blacklist) ---
+    if current_user:
+        # Исключаем мемы авторов, которых я заблокировал
+        # WHERE user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = me)
+        blocked_users_query = select(Block.blocked_id).where(Block.blocker_id == current_user.id)
+        query = query.where(Meme.user_id.not_in(blocked_users_query))
+
+    # --- ФИЛЬТРЫ (остальное как было) ---
     if username:
         query = query.join(User, Meme.user_id == User.id).where(User.username == username)
     
@@ -348,10 +355,9 @@ async def read_memes(
              query = query.join(Meme.subject).where(Subject.category == category)
     
     if liked_by:
-        # Сначала получаем ID, чтобы избежать лишних join'ов или ошибок
         uid_res = await db.execute(select(User.id).where(User.username == liked_by))
         uid = uid_res.scalar_one_or_none()
-        if not uid: return [] # Если юзер не найден, то и лайков нет
+        if not uid: return [] 
         query = query.join(Like, Meme.id == Like.meme_id).where(Like.user_id == uid)
 
     # --- ПЕРИОД ---
@@ -366,7 +372,6 @@ async def read_memes(
     if sort == "popular":
         query = query.order_by(desc("likes_count"), desc(Meme.views_count))
     else:
-        # Default: new
         query = query.order_by(Meme.created_at.desc())
 
     # Пагинация
@@ -375,7 +380,6 @@ async def read_memes(
     result = await db.execute(query)
     rows = result.all()
     
-    # Сборка
     memes_with_stats = []
     for row in rows:
         meme = row[0]
@@ -780,3 +784,26 @@ async def update_meme(
     )
     final_res = await db.execute(final_query)
     return final_res.scalars().first()
+
+# --- НОВЫЙ МЕТОД: ЖАЛОБА ---
+@router.post("/{meme_id}/report", status_code=201)
+async def report_meme(
+    meme_id: uuid.UUID,
+    report_data: ReportCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Отправить жалобу на мем"""
+    meme = await db.get(Meme, meme_id)
+    if not meme: raise HTTPException(404, "Meme not found")
+
+    new_report = Report(
+        reporter_id=current_user.id,
+        meme_id=meme_id,
+        reason=report_data.reason,
+        description=report_data.description
+    )
+    db.add(new_report)
+    await db.commit()
+    
+    return {"message": "Report submitted"}

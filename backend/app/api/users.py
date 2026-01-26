@@ -10,9 +10,9 @@ from sqlalchemy import select, func, delete, insert, exists
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.models.models import User, follows, Notification, NotificationType
+from app.models.models import User, follows, Notification, NotificationType, Block
 from app.api.memes import get_current_user, get_optional_current_user
-from app.schemas import UserProfile 
+from app.schemas import UserResponse, UserProfile, UserUpdate, BlockResponse 
 
 router = APIRouter()
 UPLOAD_DIR = "uploads"
@@ -209,3 +209,58 @@ async def update_user_me(
     await db.refresh(current_user)
     
     return current_user
+
+@router.post("/{user_id}/block", response_model=BlockResponse)
+async def block_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Заблокировать пользователя"""
+    if user_id == current_user.id:
+        raise HTTPException(400, "Cannot block yourself")
+    
+    # Проверяем существование
+    target_user = await db.get(User, user_id)
+    if not target_user:
+        raise HTTPException(404, "User not found")
+
+    # Проверяем, есть ли уже блок
+    query = select(Block).where((Block.blocker_id == current_user.id) & (Block.blocked_id == user_id))
+    existing = await db.execute(query)
+    if existing.scalars().first():
+        return {"is_blocked": True, "user_id": user_id} # Уже заблокирован
+
+    # Создаем блок
+    new_block = Block(blocker_id=current_user.id, blocked_id=user_id)
+    db.add(new_block)
+    
+    # ВАЖНО: При блокировке нужно отписаться друг от друга
+    # 1. Я отписываюсь от него
+    await db.execute(sa.delete(follows).where(
+        (follows.c.follower_id == current_user.id) & (follows.c.followed_id == user_id)
+    ))
+    # 2. Он отписывается от меня (принудительно)
+    await db.execute(sa.delete(follows).where(
+        (follows.c.follower_id == user_id) & (follows.c.followed_id == current_user.id)
+    ))
+
+    await db.commit()
+    return {"is_blocked": True, "user_id": user_id}
+
+@router.post("/{user_id}/unblock", response_model=BlockResponse)
+async def unblock_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Разблокировать пользователя"""
+    query = select(Block).where((Block.blocker_id == current_user.id) & (Block.blocked_id == user_id))
+    result = await db.execute(query)
+    block_entry = result.scalars().first()
+
+    if block_entry:
+        await db.delete(block_entry)
+        await db.commit()
+    
+    return {"is_blocked": False, "user_id": user_id}

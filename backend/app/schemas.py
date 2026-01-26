@@ -158,3 +158,13 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str
+
+# --- Report ---
+class ReportCreate(BaseModel):
+    reason: str # spam, violence, etc.
+    description: Optional[str] = None
+
+# --- Block ---
+class BlockResponse(BaseModel):
+    is_blocked: bool
+    user_id: uuid.UUID
