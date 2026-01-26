@@ -2,15 +2,14 @@ import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Calendar, Eye, Hash, User as UserIcon } from "lucide-react"; 
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge"; 
 import { MemeInteractions } from "@/components/meme-interactions"; 
 import { CommentsSection } from "@/components/comments-section";
 import { MemeGrid } from "@/components/meme-grid";
-import { MemeOwnerActions } from "@/components/meme-owner-actions"; // <-- Импорт
+import { MemeOwnerActions } from "@/components/meme-owner-actions";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function getMeme(id: string) {
   try {
@@ -49,7 +48,9 @@ export default async function MemePage({ params }: { params: Params }) {
   
   const date = new Date(meme.created_at).toLocaleDateString("ru-RU", { day: 'numeric', month: 'long', year: 'numeric' });
   const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${API_URL}${meme.media_url}`;
-  const isVideo = meme.duration > 0.1;
+  
+  // ЛОГИКА: Используем <video> только если это файл .mp4 (даже если это "гифка" без звука)
+  const isMp4 = meme.media_url.endsWith(".mp4");
 
   return (
     <div className="container max-w-4xl mx-auto py-6 px-4">
@@ -59,13 +60,17 @@ export default async function MemePage({ params }: { params: Params }) {
         <div className="lg:col-span-2 space-y-8">
           
           <div className="space-y-6">
+             {/* Блок медиа с фиксированным aspect-ratio, как в вашем дизайне */}
              <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative aspect-video flex items-center justify-center">
-                {isVideo ? (
+                {isMp4 ? (
                     <video 
                         src={mediaSrc} 
                         controls 
                         autoPlay 
                         loop 
+                        // Если звука нет (флаг has_audio=false), мьютим, чтобы работало как гифка и автоплей не блокировался
+                        muted={!meme.has_audio} 
+                        playsInline
                         className="w-full h-full object-contain"
                     />
                 ) : (
@@ -107,7 +112,6 @@ export default async function MemePage({ params }: { params: Params }) {
                             commentsCount={meme.comments_count || 0} 
                         />
 
-                        {/* Кнопка удаления (видна только владельцу) */}
                         <MemeOwnerActions 
                             memeId={meme.id} 
                             authorUsername={meme.user.username} 
