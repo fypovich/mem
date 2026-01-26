@@ -700,3 +700,70 @@ async def delete_meme(
     await db.commit()
     
     return None
+
+
+@router.put("/{meme_id}", response_model=MemeResponse)
+async def update_meme(
+    meme_id: uuid.UUID,
+    meme_update: MemeUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Редактирование заголовка, описания и тегов мема"""
+    # 1. Ищем мем
+    meme = await db.get(Meme, meme_id)
+    if not meme:
+        raise HTTPException(status_code=404, detail="Meme not found")
+    
+    # 2. Проверяем права
+    if meme.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to edit this meme")
+
+    # 3. Обновляем поля
+    if meme_update.title is not None:
+        meme.title = meme_update.title
+    
+    if meme_update.description is not None:
+        meme.description = meme_update.description
+
+    # 4. Обновляем теги (если переданы)
+    if meme_update.tags is not None:
+        # Очищаем старые теги (в Many-to-Many это делается через присваивание нового списка)
+        tag_list_names = [t.strip().lower().replace("#", "") for t in meme_update.tags.split(",") if t.strip()]
+        new_tags = []
+        for t_name in tag_list_names:
+            # Ищем или создаем тег
+            res = await db.execute(select(Tag).where(Tag.name == t_name))
+            tag = res.scalars().first()
+            if not tag:
+                tag = Tag(name=t_name)
+                db.add(tag)
+                await db.flush() # чтобы получить ID
+            new_tags.append(tag)
+        
+        meme.tags = new_tags
+
+    await db.commit()
+    
+    # 5. Обновляем индекс поиска (Meilisearch)
+    try:
+        search = get_search_service()
+        if search:
+            search.add_meme({
+                "id": str(meme.id),
+                "title": meme.title,
+                "description": meme.description,
+                "thumbnail_url": meme.thumbnail_url,
+                "media_url": meme.media_url,
+                "views_count": meme.views_count
+            })
+    except Exception as e:
+        print(f"Meili update error: {e}")
+
+    # Перезагружаем с зависимостями для ответа
+    res = await db.execute(
+        select(Meme)
+        .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
+        .where(Meme.id == meme.id)
+    )
+    return res.scalars().first()

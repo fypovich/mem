@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, EmailStr
 
 # --- User Schemas ---
 class UserBase(BaseModel):
@@ -11,8 +11,9 @@ class UserBase(BaseModel):
     bio: Optional[str] = None
     website: Optional[str] = None
 
-class UserCreate(UserBase):
-    email: str
+class UserCreate(BaseModel):
+    username: str
+    email: EmailStr
     password: str
     full_name: Optional[str] = None
 
@@ -32,10 +33,8 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     bio: Optional[str] = None
     website: Optional[str] = None
-    password: Optional[str] = None
-
-# --- UserProfile (для страницы профиля) ---
-# Это та самая схема, на которую ругался импорт
+    # Password update is usually handled separately or requires logic
+    
 class UserProfile(BaseModel):
     id: uuid.UUID
     username: str
@@ -87,10 +86,18 @@ class CommentResponse(BaseModel):
         from_attributes = True
 
 # --- Meme ---
-class MemeResponse(BaseModel):
-    id: uuid.UUID
+class MemeBase(BaseModel):
     title: str
     description: Optional[str] = None
+
+# Схема для обновления мема
+class MemeUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[str] = None # Принимаем строку через запятую для упрощения
+
+class MemeResponse(MemeBase):
+    id: uuid.UUID
     media_url: str
     thumbnail_url: str
     original_audio_url: Optional[str] = None
@@ -99,7 +106,6 @@ class MemeResponse(BaseModel):
     width: int
     height: int
     
-    # ВАЖНО: Валидатор для старых записей (где NULL)
     has_audio: bool = False
 
     @validator('has_audio', pre=True)
@@ -131,8 +137,6 @@ class NotificationResponse(BaseModel):
     
     sender: Optional[UserResponse] = None
     meme_id: Optional[uuid.UUID] = None
-    
-    # Для превью мема (если есть)
     meme: Optional[MemeResponse] = None 
 
     class Config:

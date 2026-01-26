@@ -114,7 +114,11 @@ export default async function MemePage({ params }: { params: Params }) {
 
                         <MemeOwnerActions 
                             memeId={meme.id} 
-                            authorUsername={meme.user.username} 
+                            authorUsername={meme.user.username}
+                            // Добавляем эти пропсы для редактирования
+                            initialTitle={meme.title}
+                            initialDescription={meme.description}
+                            initialTags={meme.tags}
                         />
                      </div>
                  </div>
