@@ -1,85 +1,76 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 
 # --- User Schemas ---
 class UserBase(BaseModel):
     username: str
     avatar_url: Optional[str] = None
+    header_url: Optional[str] = None
+    bio: Optional[str] = None
+    website: Optional[str] = None
+
+class UserCreate(UserBase):
+    email: str
+    password: str
+    full_name: Optional[str] = None
 
 class UserResponse(UserBase):
     id: uuid.UUID
+    email: str
     full_name: Optional[str] = None
-    
-    class Config:
-        from_attributes = True
-
-# --- НОВАЯ СХЕМА УВЕДОМЛЕНИЙ ---
-class NotificationResponse(BaseModel):
-    id: int
-    type: str # 'follow', 'like', 'comment', 'new_meme', 'system'
-    is_read: bool
+    is_following: bool = False
+    followers_count: int = 0
+    following_count: int = 0
     created_at: datetime
-    text: Optional[str] = None
-    
-    # Вложенные объекты (Optional, так как могут отсутствовать)
-    sender: Optional[UserResponse] = None
-    meme_id: Optional[uuid.UUID] = None
-    meme_thumbnail: Optional[str] = None # Для отображения превью мема
 
     class Config:
         from_attributes = True
 
-# --- Tag & Subject Schemas (ДОБАВЛЕНО) ---
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    bio: Optional[str] = None
+    website: Optional[str] = None
+    password: Optional[str] = None
+
+# --- UserProfile (для страницы профиля) ---
+# Это та самая схема, на которую ругался импорт
+class UserProfile(BaseModel):
+    id: uuid.UUID
+    username: str
+    email: str 
+    full_name: Optional[str]
+    avatar_url: Optional[str]
+    header_url: Optional[str]
+    bio: Optional[str]
+    website: Optional[str]
+    created_at: datetime
+    
+    followers_count: int = 0
+    following_count: int = 0
+    is_following: bool = False
+    is_me: bool = False
+
+    class Config:
+        from_attributes = True
+
+# --- Tag & Subject ---
 class TagResponse(BaseModel):
+    id: int
     name: str
     class Config:
         from_attributes = True
 
 class SubjectResponse(BaseModel):
+    id: int
     name: str
     slug: str
+    category: str
     class Config:
         from_attributes = True
 
-# --- Meme Schemas ---
-class MemeBase(BaseModel):
-    title: str
-    description: Optional[str] = None
-
-class MemeCreate(MemeBase):
-    pass
-
-class MemeResponse(MemeBase):
-    id: uuid.UUID
-    media_url: str
-    thumbnail_url: str
-    duration: float
-    width: int
-    height: int
-    has_audio: bool = False
-    views_count: int
-    created_at: datetime
-    user: UserResponse
-
-    # Теперь эти классы определены выше, ошибки не будет
-    tags: List[TagResponse] = []        
-    subject: Optional[SubjectResponse] = None 
-    
-    # --- СТАТИСТИКА ---
-    likes_count: int = 0
-    comments_count: int = 0 
-    is_liked: bool = False
-    # ------------------
-    
-    class Config:
-        from_attributes = True
-
-# --- Comment Schemas ---
-class CommentBase(BaseModel):
-    text: str
-
+# --- Comment ---
 class CommentCreate(BaseModel):
     text: str
     parent_id: Optional[uuid.UUID] = None
@@ -90,29 +81,68 @@ class CommentResponse(BaseModel):
     created_at: datetime
     user: UserResponse
     meme_id: uuid.UUID
-    parent_id: Optional[uuid.UUID] = None # <-- Добавили
-
+    parent_id: Optional[uuid.UUID] = None
+    
     class Config:
         from_attributes = True
 
-
-class UserProfile(BaseModel):
+# --- Meme ---
+class MemeResponse(BaseModel):
     id: uuid.UUID
-    username: str
-    email: str # Email можно скрывать для чужих, но пока оставим
-    full_name: Optional[str]
-    avatar_url: Optional[str]
-    header_url: Optional[str]
-    bio: Optional[str]
-    website: Optional[str]
+    title: str
+    description: Optional[str] = None
+    media_url: str
+    thumbnail_url: str
+    original_audio_url: Optional[str] = None
+    
+    duration: float
+    width: int
+    height: int
+    
+    # ВАЖНО: Валидатор для старых записей (где NULL)
+    has_audio: bool = False
+
+    @validator('has_audio', pre=True)
+    def parse_has_audio(cls, v):
+        return v or False
+    
+    views_count: int
+    status: str
     created_at: datetime
     
-    # --- НОВЫЕ ПОЛЯ ---
-    followers_count: int = 0
-    following_count: int = 0
-    is_following: bool = False  # Подписан ли текущий юзер на этого?
-    is_me: bool = False         # Это мой профиль?
-    # ------------------
+    user: UserResponse
+    tags: List[TagResponse] = []
+    subject: Optional[SubjectResponse] = None
+    
+    likes_count: int = 0
+    comments_count: int = 0
+    is_liked: bool = False
 
     class Config:
         from_attributes = True
+
+# --- Notification ---
+class NotificationResponse(BaseModel):
+    id: uuid.UUID
+    type: str 
+    is_read: bool
+    created_at: datetime
+    text: Optional[str] = None
+    
+    sender: Optional[UserResponse] = None
+    meme_id: Optional[uuid.UUID] = None
+    
+    # Для превью мема (если есть)
+    meme: Optional[MemeResponse] = None 
+
+    class Config:
+        from_attributes = True
+
+# --- Auth ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserResponse
+
+class TokenData(BaseModel):
+    user_id: Optional[str] = None

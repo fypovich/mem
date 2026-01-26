@@ -1,39 +1,33 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
-import { Play, Heart, MessageCircle } from "lucide-react";
+import { Play, Heart, MessageCircle, Volume2, Image as ImageIcon, FileVideo } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-interface Meme {
-  id: string;
-  title: string;
-  thumbnail_url: string;
-  media_url: string;
-  duration: number;
-  has_audio: boolean; // <-- Новое поле
-  likes_count: number;
-  comments_count: number;
-  views_count: number;
-}
-
 interface MemeCardProps {
-  meme: Meme;
+  meme: any;
 }
 
 export function MemeCard({ meme }: MemeCardProps) {
-  const thumbUrl = meme.thumbnail_url.startsWith("http") 
+  // Определяем превью
+  const preview = meme.thumbnail_url.startsWith('http') 
     ? meme.thumbnail_url 
     : `${API_URL}${meme.thumbnail_url}`;
 
-  // ЛОГИКА ОТОБРАЖЕНИЯ БЕЙДЖЕЙ
-  // 1. Если длительность > 0, но звука нет -> GIF
-  // 2. Если длительность > 0 и есть звук -> Видео (тайминг)
-  // 3. Иначе -> Картинка (ничего не пишем или IMG)
+  // --- ЛОГИКА ТИПОВ ---
+  // 1. duration > 0.1 значит это видео-файл (mp4/webm).
+  const isVideoFile = meme.duration > 0.1;
   
-  const isVideoOrGif = meme.duration > 0.1;
-  const isGif = isVideoOrGif && !meme.has_audio;
+  // 2. Если это видео-файл, но нет звука -> считаем GIF.
+  const isGif = isVideoFile && !meme.has_audio;
+  
+  // 3. Если это видео-файл и есть звук -> Полноценное видео.
+  const isRealVideo = isVideoFile && meme.has_audio;
 
+  // Форматирование времени (только для видео со звуком)
   const formatDuration = (seconds: number) => {
     const min = Math.floor(seconds / 60);
     const sec = Math.floor(seconds % 60);
@@ -41,49 +35,72 @@ export function MemeCard({ meme }: MemeCardProps) {
   };
 
   return (
-    <Link href={`/meme/${meme.id}`} className="group block space-y-2">
-      <div className="relative rounded-xl overflow-hidden aspect-[4/5] bg-muted">
-        <img 
-          src={thumbUrl} 
-          alt={meme.title}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-          loading="lazy"
-        />
+    <Link href={`/meme/${meme.id}`} className="block break-inside-avoid mb-4">
+      <div className="group relative rounded-xl overflow-hidden cursor-pointer transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/10 bg-stone-900 border border-border/50">
         
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+        {/* Медиа (Картинка) */}
+        <div className="w-full relative">
+            <img 
+                src={preview} 
+                alt={meme.title} 
+                className="w-full h-auto object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-300 min-h-[100px]" 
+                loading="lazy"
+            />
+            
+            {/* --- ОВЕРЛЕИ --- */}
 
-        {/* БЕЙДЖИКИ */}
-        {isVideoOrGif && (
-            <div className="absolute top-2 right-2">
-                {isGif ? (
-                    <Badge variant="secondary" className="bg-black/60 text-white hover:bg-black/70 border-0 font-bold tracking-wider text-[10px] px-1.5 py-0.5">
-                        GIF
-                    </Badge>
-                ) : (
-                    <Badge variant="secondary" className="bg-black/60 text-white hover:bg-black/70 border-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5">
-                        <Play className="w-2 h-2 fill-current" />
+            {/* 1. ВИДЕО СО ЗВУКОМ */}
+            {isRealVideo && (
+                <>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="bg-black/40 p-3 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity scale-75 group-hover:scale-100 duration-300 border border-white/20">
+                            <Play className="w-8 h-8 text-white fill-white ml-1" />
+                        </div>
+                    </div>
+                    <div className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Volume2 className="w-3 h-3 text-white" />
+                    </div>
+                    <Badge className="absolute bottom-2 right-2 bg-black/60 hover:bg-black/70 text-white text-[10px] border-0 px-1.5 h-5">
                         {formatDuration(meme.duration)}
                     </Badge>
-                )}
-            </div>
-        )}
+                </>
+            )}
 
-        {/* Статистика при наведении */}
-        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between text-white text-xs">
-           <div className="flex items-center gap-3 font-medium">
-              <span className="flex items-center gap-1">
-                <Heart className="w-3.5 h-3.5 fill-current" /> {meme.likes_count}
-              </span>
-              <span className="flex items-center gap-1">
-                <MessageCircle className="w-3.5 h-3.5 fill-current" /> {meme.comments_count}
-              </span>
-           </div>
+            {/* 2. GIF (Видео без звука) */}
+            {isGif && (
+                 <div className="absolute top-2 right-2">
+                    <Badge variant="secondary" className="bg-black/60 text-white hover:bg-black/70 border-0 font-bold tracking-wider text-[9px] px-1.5 py-0.5 h-5 backdrop-blur-md">
+                        GIF
+                    </Badge>
+                 </div>
+            )}
+
+            {/* 3. ОБЫЧНАЯ КАРТИНКА (Не видео файл) */}
+            {!isVideoFile && (
+                 <div className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ImageIcon className="w-3 h-3 text-white" />
+                 </div>
+            )}
+        </div>
+
+        {/* Инфо (ваш оригинальный градиент) */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
+            <h3 className="text-white font-bold text-lg leading-tight line-clamp-2 drop-shadow-md">
+                {meme.title}
+            </h3>
+            <div className="flex items-center justify-between mt-3 text-white/80">
+                <div className="text-xs font-medium">{meme.views_count} просмотров</div>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                        <Heart className="w-4 h-4" /> <span className="text-xs font-bold">{meme.likes_count}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <MessageCircle className="w-4 h-4" /> <span className="text-xs font-bold">{meme.comments_count}</span>
+                    </div>
+                </div>
+            </div>
         </div>
       </div>
-      
-      <h3 className="font-medium text-sm leading-tight line-clamp-2 group-hover:text-primary transition-colors px-1">
-        {meme.title}
-      </h3>
     </Link>
   );
 }
