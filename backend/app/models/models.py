@@ -87,6 +87,9 @@ class Meme(Base):
     duration = Column(Float, default=0.0)
     width = Column(Integer, default=0)
     height = Column(Integer, default=0)
+
+    # НОВОЕ ПОЛЕ: Есть ли звук?
+    has_audio = Column(Boolean, default=False)
     
     views_count = Column(Integer, default=0)
     status = Column(String, default="pending") # pending, approved, rejected

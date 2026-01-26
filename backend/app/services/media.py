@@ -7,32 +7,38 @@ class MediaProcessor:
         self.file_path = file_path
 
     def get_metadata(self):
+        """Возвращает (duration, width, height)"""
+        probe = self._get_probe()
+        if not probe:
+            return 0.0, 0, 0
+        
+        video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+        if not video_stream:
+            # Если видеопотока нет (обычная картинка), возвращаем нули
+            return 0.0, 0, 0
+            
         try:
-            probe = ffmpeg.probe(self.file_path)
-            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-            
-            # Если это картинка, ffmpeg может не найти video stream, или найти его как mjpeg
-            # Для картинок длительность будет недоступна в обычном виде
-            
-            if not video_stream:
-                 # Пытаемся понять, картинка ли это
-                 # Обычно для картинок probe возвращает один стрим с codec_type='video' (mjpeg/png)
-                 # Но duration там нет.
-                 return 0.0, 0, 0
-
-            width = int(video_stream['width'])
-            height = int(video_stream['height'])
-            
-            # Duration
+            # Иногда длительность есть в стриме, иногда в формате (для GIF часто в формате)
             duration = float(video_stream.get('duration', 0.0))
-            if duration == 0.0 and 'tags' in probe['format']:
-                 # Иногда длительность в формате
-                 duration = float(probe['format'].get('duration', 0.0))
-            
+            if duration == 0.0:
+                duration = float(probe['format'].get('duration', 0.0))
+
+            width = int(video_stream.get('width', 0))
+            height = int(video_stream.get('height', 0))
             return duration, width, height
         except Exception as e:
-            print(f"Metadata error: {e}")
+            print(f"Metadata parsing error: {e}")
             return 0.0, 0, 0
+        
+    def has_audio_stream(self) -> bool:
+        """Проверяет, есть ли в файле аудиодорожка"""
+        probe = self._get_probe()
+        if not probe:
+            return False
+        
+        # Ищем поток с типом 'audio'
+        audio_stream = next((s for s in probe['streams'] if s['codec_type'] == 'audio'), None)
+        return audio_stream is not None
 
     def generate_thumbnail(self, output_path: str):
         try:

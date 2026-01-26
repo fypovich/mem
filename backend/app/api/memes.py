@@ -104,18 +104,18 @@ async def upload_meme(
 ):
     """
     Загрузка мема. 
-    - Если есть аудио -> конвертируем в видео (MP4).
-    - Если это картинка без аудио -> сохраняем как картинку (dur=0).
-    - Если это видео -> сохраняем как видео (MP4).
+    - Автоматическое определение GIF (видео без звука).
+    - Поддержка изображений, видео и склейки картинка+аудио.
     """
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1].lower()
     
-    # 1. Проверяем, является ли файл картинкой
+    # 1. Проверяем, является ли файл картинкой по расширению
     is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
     
-    # 2. Определяем, будет ли финальный файл видео
-    # Видео = (Это картинка + Есть аудио) ИЛИ (Это изначально видео)
+    # 2. Определяем, будет ли финальный файл видео-контейнером (mp4)
+    # Если это картинка и нет аудио -> остается картинкой/gif
+    # Если это видео или есть доп. аудио -> будет видео
     is_final_video = True
     if is_image_input and not audio_file:
         is_final_video = False
@@ -136,7 +136,7 @@ async def upload_meme(
     processor = MediaProcessor(raw_path)
     
     try:
-        # 4. Обработка файла
+        # 4. Обработка файла (конвертация/склейка)
         if audio_file:
             # Сценарий: Накладываем аудио (конвертация в MP4)
             audio_ext = audio_file.filename.split('.')[-1]
@@ -154,7 +154,6 @@ async def upload_meme(
             # Сценарий: Картинка без звука (просто перемещаем)
             if raw_path != final_path:
                 shutil.move(raw_path, final_path)
-            # Для картинок процессор не нужен для конвертации, но путь обновим
             processor = MediaProcessor(final_path)
 
         else:
@@ -163,17 +162,39 @@ async def upload_meme(
                 shutil.move(raw_path, final_path)
             processor = MediaProcessor(final_path)
 
-        # 5. Получение метаданных
+        # 5. Получение метаданных и определение типа (GIF vs Video)
+        has_audio = False
+        
         if not is_final_video:
-            # Если это картинка, принудительно ставим длительность 0.0
+            # Для статических картинок или GIF/WebP
             duration = 0.0
-            width, height = 0, 0 # Можно доработать через Pillow, но для MVP хватит 0
-            
-            # Тумнейл для картинки - это копия самой картинки
+            width, height = 0, 0
             shutil.copy(final_path, thumbnail_path)
+            
+            # Пытаемся достать метаданные, вдруг это GIF (анимация)
+            try:
+                p_duration, p_width, p_height = processor.get_metadata()
+                if p_duration > 0:
+                    duration = p_duration
+                    width = p_width
+                    height = p_height
+            except:
+                pass
+            
+            # У картинок/гифок с этим расширением звука считаем что нет (или он не важен)
+            has_audio = False 
+
         else:
+            # Для видео-файлов (MP4, MOV и т.д.)
             duration, width, height = processor.get_metadata()
-            # Генерация превью (работает для видео)
+            
+            # Если мы явно клеили аудио, то звук точно есть
+            if audio_file:
+                has_audio = True
+            else:
+                # Иначе проверяем поток через ffprobe
+                has_audio = processor.has_audio_stream()
+            
             processor.generate_thumbnail(thumbnail_path)
         
     except Exception as e:
@@ -181,6 +202,7 @@ async def upload_meme(
         if os.path.exists(final_path): os.remove(final_path)
         if os.path.exists(thumbnail_path): os.remove(thumbnail_path)
         if os.path.exists(raw_path): os.remove(raw_path)
+        print(f"Error processing media: {e}")
         raise HTTPException(500, detail=f"Media processing error: {str(e)}")
 
     # 6. Обработка Тегов
@@ -210,14 +232,15 @@ async def upload_meme(
 
     # 8. Сохранение в БД
     new_meme = Meme(
-        title=title,
+        title=title, 
         description=description,
         media_url=f"/static/{final_filename}",
         thumbnail_url=f"/static/{thumbnail_filename}",
-        duration=duration,
-        width=width,
+        duration=duration, 
+        width=width, 
         height=height,
-        user_id=current_user.id,
+        has_audio=has_audio, # <-- Важное поле для фронтенда (GIF vs Video)
+        user_id=current_user.id, 
         status="approved",
         subject_id=db_subject.id if db_subject else None
     )
@@ -242,19 +265,21 @@ async def upload_meme(
         print(f"Meilisearch indexing warning: {e}")
 
     # 10. Уведомления подписчикам
-    followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
-    followers_res = await db.execute(followers_stmt)
-    follower_ids = followers_res.scalars().all()
-    
-    for fid in follower_ids:
-        db.add(Notification(
-            user_id=fid, 
-            sender_id=current_user.id, 
-            type=NotificationType.NEW_MEME, 
-            meme_id=new_meme.id
-        ))
-    
-    await db.commit()
+    try:
+        followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
+        followers_res = await db.execute(followers_stmt)
+        follower_ids = followers_res.scalars().all()
+        
+        for fid in follower_ids:
+            db.add(Notification(
+                user_id=fid, 
+                sender_id=current_user.id, 
+                type=NotificationType.NEW_MEME, 
+                meme_id=new_meme.id
+            ))
+        await db.commit()
+    except Exception as e:
+        print(f"Notification error: {e}")
 
     # 11. Возврат результата
     res = await db.execute(

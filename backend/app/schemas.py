@@ -58,6 +58,7 @@ class MemeResponse(MemeBase):
     duration: float
     width: int
     height: int
+    has_audio: bool = False
     views_count: int
     created_at: datetime
     user: UserResponse
