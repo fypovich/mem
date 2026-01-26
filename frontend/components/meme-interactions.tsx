@@ -1,11 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Heart, MessageCircle, Share2, Flag, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -35,12 +35,12 @@ export function MemeInteractions({
   // --- STATES ---
   const [likes, setLikes] = useState(initialLikes);
   const [isLiked, setIsLiked] = useState(initialLiked);
-  const [isLikeLoading, setIsLikeLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
-  // Share state
+  // Share
   const [isCopied, setIsCopied] = useState(false);
 
-  // Report state
+  // Report
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
   const [reportReason, setReportReason] = useState("spam");
@@ -68,14 +68,12 @@ export function MemeInteractions({
       return;
     }
 
-    if (isLikeLoading) return;
-
     const prevLikes = likes;
     const prevLiked = isLiked;
 
     setIsLiked(!isLiked);
     setLikes(prevLiked ? prevLikes - 1 : prevLikes + 1);
-    setIsLikeLoading(true);
+    setIsLoading(true);
 
     try {
       const res = await fetch(`${API_URL}/api/v1/memes/${memeId}/like`, {
@@ -93,7 +91,7 @@ export function MemeInteractions({
       setLikes(prevLikes);
       setIsLiked(prevLiked);
     } finally {
-      setIsLikeLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -101,23 +99,23 @@ export function MemeInteractions({
   const handleShare = async () => {
     const url = `${window.location.origin}/meme/${memeId}`;
     
-    // 1. Пробуем нативный шеринг (мобилки)
+    // 1. Native Share (Mobile)
     if (navigator.share) {
         try {
             await navigator.share({ title: 'Смотри какой мем!', url: url });
             return;
         } catch (err) {
-            // Если отменили или ошибка - фоллбек на копирование
+            // Fallback to copy
         }
     }
 
-    // 2. Копирование в буфер
+    // 2. Copy to clipboard
     try {
         await navigator.clipboard.writeText(url);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
-        alert("Не удалось скопировать ссылку");
+        alert("Не удалось скопировать");
     }
   };
 
@@ -125,7 +123,6 @@ export function MemeInteractions({
   const handleReportSubmit = async () => {
     const token = localStorage.getItem("token");
     if (!token) {
-        alert("Нужно войти в аккаунт");
         router.push("/login");
         return;
     }
@@ -144,9 +141,9 @@ export function MemeInteractions({
         if (res.ok) {
             setIsReportOpen(false);
             setReportDesc("");
-            alert("Жалоба отправлена. Спасибо за бдительность!");
+            alert("Жалоба отправлена.");
         } else {
-            alert("Ошибка при отправке жалобы");
+            alert("Ошибка при отправке");
         }
     } catch (e) {
         console.error(e);
@@ -166,25 +163,25 @@ export function MemeInteractions({
   return (
     <div className="flex items-center gap-2 mt-4 md:mt-0">
       
-      {/* КНОПКА ЛАЙКА */}
+      {/* LIKE */}
       <Button 
         variant="secondary" 
         size="sm" 
         onClick={handleLike}
-        disabled={isLikeLoading}
+        disabled={isLoading}
         className={`gap-2 transition-colors ${isLiked ? "bg-rose-500/10 text-rose-500 hover:bg-rose-500/20" : ""}`}
       >
         <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
         <span>{likes}</span>
       </Button>
 
-      {/* КНОПКА КОММЕНТАРИЕВ */}
+      {/* COMMENTS */}
       <Button variant="secondary" size="sm" className="gap-2" onClick={scrollToComments}>
         <MessageCircle className="w-4 h-4" />
         <span>{commentsCount}</span>
       </Button>
 
-      {/* КНОПКА ПОДЕЛИТЬСЯ */}
+      {/* SHARE */}
       <Button 
         variant="ghost" 
         size="icon" 
@@ -198,7 +195,7 @@ export function MemeInteractions({
         )}
       </Button>
       
-      {/* КНОПКА ПОЖАЛОВАТЬСЯ (ОТКРЫВАЕТ ДИАЛОГ) */}
+      {/* REPORT FLAG */}
       <Button 
         variant="ghost" 
         size="icon" 
@@ -208,13 +205,13 @@ export function MemeInteractions({
         <Flag className="w-4 h-4" />
       </Button>
 
-      {/* МОДАЛЬНОЕ ОКНО ЖАЛОБЫ */}
+      {/* REPORT MODAL */}
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent>
             <DialogHeader>
-                <DialogTitle>Пожаловаться на контент</DialogTitle>
+                <DialogTitle>Пожаловаться</DialogTitle>
                 <DialogDescription>
-                    Если вы считаете, что этот мем нарушает правила, сообщите нам.
+                    Сообщите о нарушении правил.
                 </DialogDescription>
             </DialogHeader>
             
@@ -227,14 +224,14 @@ export function MemeInteractions({
                         onChange={(e) => setReportReason(e.target.value)}
                     >
                         <option value="spam">Спам</option>
-                        <option value="violence">Насилие / Жестокость</option>
-                        <option value="porn">Порнография 18+</option>
+                        <option value="violence">Насилие</option>
+                        <option value="porn">Порнография</option>
                         <option value="copyright">Авторские права</option>
                         <option value="other">Другое</option>
                     </select>
                 </div>
                 <div className="space-y-2">
-                    <Label>Комментарий (необязательно)</Label>
+                    <Label>Комментарий</Label>
                     <Textarea 
                         placeholder="Опишите детали..."
                         value={reportDesc}
