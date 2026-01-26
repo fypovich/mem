@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Send, Loader2, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea"; // Используем Textarea вместо Input
+import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -75,13 +75,15 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
   };
 
   return (
-    <div className="bg-card border border-border/50 rounded-xl p-4 h-full flex flex-col max-h-[600px]">
-      <h3 className="font-semibold mb-4 flex items-center gap-2">
+    // ИСПРАВЛЕНИЕ 2: Фиксированная высота h-[600px] вместо max-h. 
+    // Это заставит ScrollArea работать корректно внутри flex-контейнера.
+    <div className="bg-card border border-border/50 rounded-xl p-4 flex flex-col h-[600px]">
+      <h3 className="font-semibold mb-4 flex items-center gap-2 flex-shrink-0">
         <MessageCircle className="w-4 h-4" /> Комментарии ({comments.length})
       </h3>
 
       {/* Список комментариев */}
-      <ScrollArea className="flex-1 pr-4 -mr-2 mb-4">
+      <ScrollArea className="flex-1 w-full pr-4 -mr-2 mb-4">
         {isLoading ? (
             <div className="flex justify-center py-8">
                 <Loader2 className="animate-spin w-6 h-6 text-muted-foreground" />
@@ -93,25 +95,28 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
         ) : (
             <div className="space-y-4">
                 {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-3">
-                        <Link href={`/user/${comment.user.username}`}>
+                    <div key={comment.id} className="flex gap-3 items-start w-full">
+                        <Link href={`/user/${comment.user.username}`} className="shrink-0">
                             <Avatar className="w-8 h-8 cursor-pointer hover:opacity-80 transition-opacity">
                                 <AvatarImage src={comment.user.avatar_url ? `${API_URL}${comment.user.avatar_url}` : undefined} />
                                 <AvatarFallback>{comment.user.username[0]}</AvatarFallback>
                             </Avatar>
                         </Link>
-                        <div className="flex-1 min-w-0">
+                        
+                        {/* ИСПРАВЛЕНИЕ 1: min-w-0 и w-full заставляют flex-элемент уважать границы родителя */}
+                        <div className="flex-1 min-w-0 w-full">
                             <div className="bg-secondary/30 rounded-lg p-3">
-                                <div className="flex justify-between items-baseline mb-1">
-                                    <Link href={`/user/${comment.user.username}`} className="font-semibold text-xs hover:underline">
+                                <div className="flex justify-between items-baseline mb-1 gap-2">
+                                    <Link href={`/user/${comment.user.username}`} className="font-semibold text-xs hover:underline truncate max-w-[150px]">
                                         {comment.user.username}
                                     </Link>
-                                    <span className="text-[10px] text-muted-foreground">
+                                    <span className="text-[10px] text-muted-foreground shrink-0">
                                         {new Date(comment.created_at).toLocaleDateString()}
                                     </span>
                                 </div>
-                                {/* Исправленный блок текста */}
-                                <p className="text-sm text-foreground break-words whitespace-pre-wrap leading-relaxed">
+                                
+                                {/* break-words переносит слова, whitespace-pre-wrap сохраняет абзацы */}
+                                <p className="text-sm text-foreground break-words whitespace-pre-wrap leading-relaxed overflow-hidden">
                                     {comment.text}
                                 </p>
                             </div>
@@ -122,36 +127,38 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
         )}
       </ScrollArea>
 
-      {/* Форма отправки */}
-      {token ? (
-        <div className="space-y-2">
-            <div className="relative">
-                <Textarea
-                    placeholder="Написать комментарий..."
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    maxLength={500}
-                    className="min-h-[80px] pr-12 resize-none bg-background focus-visible:ring-primary/20"
-                />
-                <Button 
-                    size="icon" 
-                    className="absolute bottom-2 right-2 h-8 w-8 rounded-full" 
-                    onClick={handleSend}
-                    disabled={!text.trim() || isSending}
-                >
-                    {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </Button>
+      {/* Форма отправки (прибита к низу благодаря flex-col и flex-1 у списка) */}
+      <div className="flex-shrink-0 pt-2">
+        {token ? (
+            <div className="space-y-2">
+                <div className="relative">
+                    <Textarea
+                        placeholder="Написать комментарий..."
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        maxLength={500}
+                        className="min-h-[80px] pr-12 resize-none bg-background focus-visible:ring-primary/20"
+                    />
+                    <Button 
+                        size="icon" 
+                        className="absolute bottom-2 right-2 h-8 w-8 rounded-full" 
+                        onClick={handleSend}
+                        disabled={!text.trim() || isSending}
+                    >
+                        {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    </Button>
+                </div>
+                <div className="text-[10px] text-muted-foreground text-right px-1">
+                    {text.length}/500
+                </div>
             </div>
-            <div className="text-[10px] text-muted-foreground text-right px-1">
-                {text.length}/500
+        ) : (
+            <div className="text-center p-4 bg-secondary/20 rounded-lg text-sm">
+                <Link href="/login" className="text-primary hover:underline font-medium">Войдите</Link>, чтобы оставить комментарий
             </div>
-        </div>
-      ) : (
-        <div className="text-center p-4 bg-secondary/20 rounded-lg text-sm">
-            <Link href="/login" className="text-primary hover:underline font-medium">Войдите</Link>, чтобы оставить комментарий
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
