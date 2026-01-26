@@ -16,7 +16,7 @@ from app.models.models import (
     Meme, User, Like, Comment, Tag, Subject, 
     meme_tags, Notification, NotificationType, follows, SubjectCategory
 )
-from app.schemas import MemeResponse, CommentCreate, CommentResponse
+from app.schemas import MemeResponse, CommentCreate, CommentResponse, MemeUpdate
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from app.core import security
@@ -710,8 +710,12 @@ async def update_meme(
     current_user: User = Depends(get_current_user)
 ):
     """Редактирование заголовка, описания и тегов мема"""
-    # 1. Ищем мем
-    meme = await db.get(Meme, meme_id)
+    
+    # 1. Ищем мем СРАЗУ с тегами, чтобы можно было их менять
+    query = select(Meme).options(selectinload(Meme.tags)).where(Meme.id == meme_id)
+    result = await db.execute(query)
+    meme = result.scalars().first()
+
     if not meme:
         raise HTTPException(status_code=404, detail="Meme not found")
     
@@ -719,7 +723,7 @@ async def update_meme(
     if meme.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not authorized to edit this meme")
 
-    # 3. Обновляем поля
+    # 3. Обновляем простые поля
     if meme_update.title is not None:
         meme.title = meme_update.title
     
@@ -728,24 +732,30 @@ async def update_meme(
 
     # 4. Обновляем теги (если переданы)
     if meme_update.tags is not None:
-        # Очищаем старые теги (в Many-to-Many это делается через присваивание нового списка)
+        # Парсим строку тегов
         tag_list_names = [t.strip().lower().replace("#", "") for t in meme_update.tags.split(",") if t.strip()]
         new_tags = []
+        
         for t_name in tag_list_names:
-            # Ищем или создаем тег
-            res = await db.execute(select(Tag).where(Tag.name == t_name))
-            tag = res.scalars().first()
+            # Ищем существующий тег
+            tag_query = select(Tag).where(Tag.name == t_name)
+            tag_res = await db.execute(tag_query)
+            tag = tag_res.scalars().first()
+            
+            # Если нет - создаем
             if not tag:
                 tag = Tag(name=t_name)
                 db.add(tag)
-                await db.flush() # чтобы получить ID
+                await db.flush() # Получаем ID нового тега
+            
             new_tags.append(tag)
         
+        # SQLAlchemy (с selectinload) позволяет просто присвоить новый список
         meme.tags = new_tags
 
     await db.commit()
     
-    # 5. Обновляем индекс поиска (Meilisearch)
+    # 5. Обновляем индекс поиска (Meilisearch) - Опционально, в try/except чтобы не ломать основной флоу
     try:
         search = get_search_service()
         if search:
@@ -760,10 +770,13 @@ async def update_meme(
     except Exception as e:
         print(f"Meili update error: {e}")
 
-    # Перезагружаем с зависимостями для ответа
-    res = await db.execute(
+    # 6. Возвращаем обновленный объект с полными данными для Pydantic схемы
+    # Нам нужно перезагрузить объект или вернуть текущий, если мы уверены в связях.
+    # Для надежности сделаем выборку с join-ами как в других методах.
+    final_query = (
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
         .where(Meme.id == meme.id)
     )
-    return res.scalars().first()
+    final_res = await db.execute(final_query)
+    return final_res.scalars().first()
