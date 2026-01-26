@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Heart, MessageCircle, Share2, Flag, Check, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
+import { Heart, Share2, Flag, Check, Loader2 } from "lucide-react"; // Убрал MessageCircle
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -12,8 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -21,21 +21,22 @@ interface MemeInteractionsProps {
   memeId: string;
   initialLikes: number;
   initialLiked: boolean;
-  commentsCount: number;
+  authorUsername: string; // <-- Добавили, чтобы знать, кто автор
 }
 
 export function MemeInteractions({ 
   memeId, 
   initialLikes, 
   initialLiked,
-  commentsCount
+  authorUsername
 }: MemeInteractionsProps) {
   const router = useRouter();
   
   // --- STATES ---
   const [likes, setLikes] = useState(initialLikes);
   const [isLiked, setIsLiked] = useState(initialLiked);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLikeLoading, setIsLikeLoading] = useState(false);
+  const [isOwner, setIsOwner] = useState(false); // <-- Являюсь ли я автором?
   
   // Share
   const [isCopied, setIsCopied] = useState(false);
@@ -46,9 +47,17 @@ export function MemeInteractions({
   const [reportReason, setReportReason] = useState("spam");
   const [reportDesc, setReportDesc] = useState("");
 
-  // --- LIKE LOGIC ---
+  // --- INIT LOGIC ---
   useEffect(() => {
     const token = localStorage.getItem("token");
+    const currentUsername = localStorage.getItem("username");
+
+    // 1. Проверяем, владелец ли я
+    if (currentUsername === authorUsername) {
+        setIsOwner(true);
+    }
+
+    // 2. Актуализируем лайк
     if (token) {
       fetch(`${API_URL}/api/v1/memes/${memeId}/status`, {
         headers: { "Authorization": `Bearer ${token}` }
@@ -59,7 +68,7 @@ export function MemeInteractions({
       })
       .catch(err => console.error(err));
     }
-  }, [memeId]);
+  }, [memeId, authorUsername]);
 
   const handleLike = async () => {
     const token = localStorage.getItem("token");
@@ -68,12 +77,14 @@ export function MemeInteractions({
       return;
     }
 
+    if (isLikeLoading) return;
+
     const prevLikes = likes;
     const prevLiked = isLiked;
 
     setIsLiked(!isLiked);
     setLikes(prevLiked ? prevLikes - 1 : prevLikes + 1);
-    setIsLoading(true);
+    setIsLikeLoading(true);
 
     try {
       const res = await fetch(`${API_URL}/api/v1/memes/${memeId}/like`, {
@@ -91,25 +102,20 @@ export function MemeInteractions({
       setLikes(prevLikes);
       setIsLiked(prevLiked);
     } finally {
-      setIsLoading(false);
+      setIsLikeLoading(false);
     }
   };
 
-  // --- SHARE LOGIC ---
   const handleShare = async () => {
     const url = `${window.location.origin}/meme/${memeId}`;
     
-    // 1. Native Share (Mobile)
     if (navigator.share) {
         try {
             await navigator.share({ title: 'Смотри какой мем!', url: url });
             return;
-        } catch (err) {
-            // Fallback to copy
-        }
+        } catch (err) {}
     }
 
-    // 2. Copy to clipboard
     try {
         await navigator.clipboard.writeText(url);
         setIsCopied(true);
@@ -119,7 +125,6 @@ export function MemeInteractions({
     }
   };
 
-  // --- REPORT LOGIC ---
   const handleReportSubmit = async () => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -153,35 +158,22 @@ export function MemeInteractions({
     }
   };
 
-  const scrollToComments = () => {
-      const commentsSection = document.getElementById("comments-section");
-      if (commentsSection) {
-          commentsSection.scrollIntoView({ behavior: "smooth" });
-      }
-  };
-
   return (
     <div className="flex items-center gap-2 mt-4 md:mt-0">
       
-      {/* LIKE */}
+      {/* КНОПКА ЛАЙКА */}
       <Button 
         variant="secondary" 
         size="sm" 
         onClick={handleLike}
-        disabled={isLoading}
+        disabled={isLikeLoading}
         className={`gap-2 transition-colors ${isLiked ? "bg-rose-500/10 text-rose-500 hover:bg-rose-500/20" : ""}`}
       >
         <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
         <span>{likes}</span>
       </Button>
 
-      {/* COMMENTS */}
-      <Button variant="secondary" size="sm" className="gap-2" onClick={scrollToComments}>
-        <MessageCircle className="w-4 h-4" />
-        <span>{commentsCount}</span>
-      </Button>
-
-      {/* SHARE */}
+      {/* КНОПКА ПОДЕЛИТЬСЯ */}
       <Button 
         variant="ghost" 
         size="icon" 
@@ -195,26 +187,25 @@ export function MemeInteractions({
         )}
       </Button>
       
-      {/* REPORT FLAG */}
-      <Button 
-        variant="ghost" 
-        size="icon" 
-        className="text-muted-foreground hover:text-white"
-        onClick={() => setIsReportOpen(true)}
-      >
-        <Flag className="w-4 h-4" />
-      </Button>
+      {/* КНОПКА ПОЖАЛОВАТЬСЯ (Только если не автор) */}
+      {!isOwner && (
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="text-muted-foreground hover:text-white"
+            onClick={() => setIsReportOpen(true)}
+          >
+            <Flag className="w-4 h-4" />
+          </Button>
+      )}
 
-      {/* REPORT MODAL */}
+      {/* МОДАЛЬНОЕ ОКНО */}
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent>
             <DialogHeader>
                 <DialogTitle>Пожаловаться</DialogTitle>
-                <DialogDescription>
-                    Сообщите о нарушении правил.
-                </DialogDescription>
+                <DialogDescription>Сообщите о нарушении правил.</DialogDescription>
             </DialogHeader>
-            
             <div className="space-y-4 py-2">
                 <div className="space-y-2">
                     <Label>Причина</Label>
@@ -239,7 +230,6 @@ export function MemeInteractions({
                     />
                 </div>
             </div>
-
             <DialogFooter>
                 <Button variant="outline" onClick={() => setIsReportOpen(false)}>Отмена</Button>
                 <Button variant="destructive" onClick={handleReportSubmit} disabled={isReporting}>
@@ -249,7 +239,6 @@ export function MemeInteractions({
             </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }

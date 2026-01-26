@@ -1,15 +1,13 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Calendar, Eye, Hash, User as UserIcon } from "lucide-react"; 
+import { Calendar, Eye, User as UserIcon } from "lucide-react"; 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge"; 
 import { MemeInteractions } from "@/components/meme-interactions"; 
 import { CommentsSection } from "@/components/comments-section";
 import { MemeGrid } from "@/components/meme-grid";
 import { MemeOwnerActions } from "@/components/meme-owner-actions";
-
-// УБРАЛ: import { MemeViewerActions } ...
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -57,6 +55,7 @@ export default async function MemePage({ params }: { params: Params }) {
     <div className="container max-w-4xl mx-auto py-6 px-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         
+        {/* ЛЕВАЯ КОЛОНКА */}
         <div className="lg:col-span-2 space-y-8">
           
           <div className="space-y-6">
@@ -103,15 +102,17 @@ export default async function MemePage({ params }: { params: Params }) {
                      </Link>
 
                      <div className="flex items-center gap-2">
-                        {/* Кнопки лайка, шеринга и жалобы теперь все внутри MemeInteractions */}
+                        {/* MemeInteractions теперь принимает authorUsername
+                            и сам скрывает Flag если это автор 
+                        */}
                         <MemeInteractions 
                             memeId={meme.id} 
                             initialLikes={meme.likes_count} 
                             initialLiked={meme.is_liked}
-                            commentsCount={meme.comments_count || 0} 
+                            authorUsername={meme.user.username} 
                         />
 
-                        {/* Только для владельца */}
+                        {/* Меню владельца (Редактировать/Удалить) */}
                         <MemeOwnerActions 
                             memeId={meme.id} 
                             authorUsername={meme.user.username}
@@ -159,6 +160,7 @@ export default async function MemePage({ params }: { params: Params }) {
           )}
         </div>
 
+        {/* ПРАВАЯ КОЛОНКА: Комментарии */}
         <div id="comments-section" className="hidden lg:block space-y-4 sticky top-24 h-fit">
             <CommentsSection memeId={meme.id} />
         </div>
