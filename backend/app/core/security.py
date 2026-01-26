@@ -1,16 +1,15 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Union, Optional
-from jose import jwt
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 
-# Секретный ключ для подписи токенов. 
-# В продакшене это должно быть в .env! Для теста сойдет строка.
+# Секретный ключ. В продакшене вынесите в .env
 SECRET_KEY = "super-secret-key-change-me-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 RESET_PASSWORD_EXPIRE_MINUTES = 15
 
-# Настройка хеширования (используем bcrypt)
+# Настройка хеширования
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -18,32 +17,34 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    """Превращает пароль '12345' в кашу вроде '$2b$12$EixZa...'"""
+    """Хеширует пароль"""
     return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None) -> str:
-    """Генерирует JWT токен"""
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Генерирует токен доступа (JWT)"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 def create_password_reset_token(email: str) -> str:
-    """Генерирует токен, который живет 15 минут"""
-    expire = datetime.utcnow() + timedelta(minutes=RESET_PASSWORD_EXPIRE_MINUTES)
+    """Генерирует токен для сброса пароля"""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=RESET_PASSWORD_EXPIRE_MINUTES)
     to_encode = {"sub": email, "type": "password_reset", "exp": expire}
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    # ИСПРАВЛЕНО: используем SECRET_KEY вместо settings.SECRET_KEY
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 def verify_password_reset_token(token: str) -> Optional[str]:
-    """Проверяет токен и возвращает email, если всё ок"""
+    """Проверяет токен сброса и возвращает email"""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        # ИСПРАВЛЕНО: используем SECRET_KEY вместо settings.SECRET_KEY
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "password_reset":
             return None
         email: str = payload.get("sub")
