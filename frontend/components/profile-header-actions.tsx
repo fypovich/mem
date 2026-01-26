@@ -20,14 +20,35 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
   const [token, setToken] = useState<string | null>(null);
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   
+  // Инициализируем из пропсов, но будем обновлять
   const [isFollowing, setIsFollowing] = useState(user?.is_following || false);
-  const [isBlocked, setIsBlocked] = useState(user?.is_blocked || false); // <-- Состояние блокировки
+  const [isBlocked, setIsBlocked] = useState(user?.is_blocked || false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    setToken(localStorage.getItem("token"));
-    setCurrentUsername(localStorage.getItem("username"));
-  }, []);
+    const t = localStorage.getItem("token");
+    const u = localStorage.getItem("username");
+    setToken(t);
+    setCurrentUsername(u);
+
+    // --- НОВАЯ ЛОГИКА ---
+    // Если мы залогинены, нужно получить актуальный статус с сервера,
+    // потому что SSR-рендеринг не знал про наш токен.
+    if (t && user?.username) {
+        fetch(`${API_URL}/api/v1/users/${user.username}`, {
+            headers: {
+                "Authorization": `Bearer ${t}`
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            // Обновляем состояние на основе реальных данных для текущего юзера
+            setIsFollowing(data.is_following);
+            setIsBlocked(data.is_blocked);
+        })
+        .catch(err => console.error("Error refreshing user state:", err));
+    }
+  }, [user?.username]);
 
   if (!user || currentUsername === user.username) {
     return null;
@@ -44,7 +65,8 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
       if (res.ok) {
         const data = await res.json();
         setIsFollowing(data.is_following);
-        window.location.reload(); 
+        // Не перезагружаем страницу, просто меняем состояние кнопки
+        // window.location.reload(); 
       }
     } catch (e) {
       console.error(e);
@@ -54,7 +76,7 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
   };
 
   const handleBlock = async () => {
-    if (!confirm(`Вы уверены, что хотите заблокировать @${user.username}?`)) return;
+    if (!confirm(`Вы уверены, что хотите заблокировать @${user.username}? Вы перестанете видеть его контент.`)) return;
     
     try {
       const res = await fetch(`${API_URL}/api/v1/users/${user.id}/block`, {
@@ -62,10 +84,10 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setIsBlocked(true); // Обновляем состояние
-        setIsFollowing(false); // Блок сбрасывает подписку
+        setIsBlocked(true);
+        setIsFollowing(false);
         alert("Пользователь заблокирован");
-        window.location.href = "/"; 
+        window.location.href = "/"; // Уходим на главную
       }
     } catch (e) {
       alert("Ошибка сети");
@@ -81,7 +103,7 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setIsBlocked(false); // Обновляем состояние
+        setIsBlocked(false);
         alert("Пользователь разблокирован");
       }
     } catch (e) {
@@ -95,7 +117,7 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         variant={isFollowing ? "outline" : "default"} 
         size="sm" 
         onClick={handleFollow}
-        disabled={!token || isLoading || isBlocked} // Нельзя подписаться, если заблокирован
+        disabled={!token || isLoading || isBlocked}
         className="min-w-[140px]"
       >
         {isFollowing ? (
@@ -117,8 +139,8 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {isBlocked ? (
-             <DropdownMenuItem onClick={handleUnblock} className="cursor-pointer">
-                <ShieldCheck className="w-4 h-4 mr-2 text-green-600" />
+             <DropdownMenuItem onClick={handleUnblock} className="cursor-pointer text-green-600 focus:text-green-600">
+                <ShieldCheck className="w-4 h-4 mr-2" />
                 Разблокировать
              </DropdownMenuItem>
           ) : (
