@@ -50,6 +50,7 @@ class UserProfile(BaseModel):
     following_count: int = 0
     is_following: bool = False
     is_me: bool = False
+    is_blocked: bool = False
 
     class Config:
         from_attributes = True

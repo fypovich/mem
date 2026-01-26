@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { UserPlus, UserCheck, MoreVertical, Ban, ShieldAlert } from "lucide-react";
+import { UserPlus, UserCheck, MoreVertical, Ban, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,6 +21,7 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   
   const [isFollowing, setIsFollowing] = useState(user?.is_following || false);
+  const [isBlocked, setIsBlocked] = useState(user?.is_blocked || false); // <-- Состояние блокировки
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -53,7 +54,7 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
   };
 
   const handleBlock = async () => {
-    if (!confirm(`Вы уверены, что хотите заблокировать @${user.username}? Вы перестанете видеть его контент.`)) return;
+    if (!confirm(`Вы уверены, что хотите заблокировать @${user.username}?`)) return;
     
     try {
       const res = await fetch(`${API_URL}/api/v1/users/${user.id}/block`, {
@@ -61,8 +62,27 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
+        setIsBlocked(true); // Обновляем состояние
+        setIsFollowing(false); // Блок сбрасывает подписку
         alert("Пользователь заблокирован");
-        window.location.href = "/"; // Уходим с профиля заблокированного
+        window.location.href = "/"; 
+      }
+    } catch (e) {
+      alert("Ошибка сети");
+    }
+  };
+
+  const handleUnblock = async () => {
+    if (!confirm(`Разблокировать @${user.username}?`)) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/v1/users/${user.id}/unblock`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setIsBlocked(false); // Обновляем состояние
+        alert("Пользователь разблокирован");
       }
     } catch (e) {
       alert("Ошибка сети");
@@ -75,7 +95,7 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         variant={isFollowing ? "outline" : "default"} 
         size="sm" 
         onClick={handleFollow}
-        disabled={!token || isLoading}
+        disabled={!token || isLoading || isBlocked} // Нельзя подписаться, если заблокирован
         className="min-w-[140px]"
       >
         {isFollowing ? (
@@ -96,10 +116,17 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={handleBlock} className="text-red-600 focus:text-red-600 cursor-pointer">
-            <Ban className="w-4 h-4 mr-2" />
-            Заблокировать
-          </DropdownMenuItem>
+          {isBlocked ? (
+             <DropdownMenuItem onClick={handleUnblock} className="cursor-pointer">
+                <ShieldCheck className="w-4 h-4 mr-2 text-green-600" />
+                Разблокировать
+             </DropdownMenuItem>
+          ) : (
+             <DropdownMenuItem onClick={handleBlock} className="text-red-600 focus:text-red-600 cursor-pointer">
+                <Ban className="w-4 h-4 mr-2" />
+                Заблокировать
+             </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

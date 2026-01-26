@@ -146,14 +146,16 @@ async def read_user(
         select(func.count()).select_from(follows).where(follows.c.follower_id == user.id)
     )
 
-    # 3. Проверяем, подписан ли ТЕКУЩИЙ (current_user) на ЭТОГО (user)
+    # 3. Проверяем подписку и БЛОКИРОВКУ
     is_following = False
     is_me = False
+    is_blocked = False # <--- Новая переменная
     
     if current_user:
         if current_user.id == user.id:
             is_me = True
         else:
+            # Проверка подписки
             check_follow = await db.scalar(
                 select(exists().where(
                     (follows.c.follower_id == current_user.id) & 
@@ -162,12 +164,22 @@ async def read_user(
             )
             is_following = check_follow
 
-    # Заполняем поля Pydantic модели вручную (так как они не маппятся 1-в-1 на поля БД)
+            # Проверка блокировки (Я заблокировал ЕГО?)
+            check_block = await db.scalar(
+                select(exists().where(
+                    (Block.blocker_id == current_user.id) & 
+                    (Block.blocked_id == user.id)
+                ))
+            )
+            is_blocked = check_block
+
+    # Заполняем поля
     user_response = UserProfile.from_orm(user)
     user_response.followers_count = followers_count or 0
     user_response.following_count = following_count or 0
     user_response.is_following = is_following
     user_response.is_me = is_me
+    user_response.is_blocked = is_blocked # <--- Передаем статус
     
     return user_response
 
