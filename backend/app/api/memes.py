@@ -104,109 +104,30 @@ async def upload_meme(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Загрузка мема. 
-    - Автоматическое определение GIF (видео без звука).
-    - Поддержка изображений, видео и склейки картинка+аудио.
+    Загрузка мема с фоновой обработкой (Celery).
+    Файл сохраняется, создается запись 'processing', и задача уходит воркеру.
+    Воркер сам определит тип (GIF/Video), длительность и сгенерирует тумбу.
     """
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1].lower()
     
-    # 1. Проверяем, является ли файл картинкой по расширению
-    is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
-    
-    # 2. Определяем, будет ли финальный файл видео-контейнером (mp4)
-    # Если это картинка и нет аудио -> остается картинкой/gif
-    # Если это видео или есть доп. аудио -> будет видео
-    is_final_video = True
-    if is_image_input and not audio_file:
-        is_final_video = False
-
+    # 1. Сохраняем основной файл
     raw_filename = f"raw_{file_id}.{ext}"
-    # Имя финального файла: .mp4 для видео, оригинальное расширение для картинок
-    final_filename = f"{file_id}.mp4" if is_final_video else f"{file_id}.{ext}"
-    thumbnail_filename = f"{file_id}_thumb.jpg"
-
     raw_path = os.path.join(UPLOAD_DIR, raw_filename)
-    final_path = os.path.join(UPLOAD_DIR, final_filename)
-    thumbnail_path = os.path.join(UPLOAD_DIR, thumbnail_filename)
-
-    # 3. Сохраняем исходный файл
+    
     async with aiofiles.open(raw_path, 'wb') as f:
         await f.write(await file.read())
 
-    processor = MediaProcessor(raw_path)
-    
-    try:
-        # 4. Обработка файла (конвертация/склейка)
-        if audio_file:
-            # Сценарий: Накладываем аудио (конвертация в MP4)
-            audio_ext = audio_file.filename.split('.')[-1]
-            audio_path = os.path.join(UPLOAD_DIR, f"audio_{file_id}.{audio_ext}")
-            async with aiofiles.open(audio_path, 'wb') as f:
-                await f.write(await audio_file.read())
-            
-            processor.process_video_with_audio(audio_path, final_path)
-            processor = MediaProcessor(final_path) # Переключаемся на результат
-            
-            if os.path.exists(audio_path): os.remove(audio_path)
-            if os.path.exists(raw_path): os.remove(raw_path)
-        
-        elif not is_final_video:
-            # Сценарий: Картинка без звука (просто перемещаем)
-            if raw_path != final_path:
-                shutil.move(raw_path, final_path)
-            processor = MediaProcessor(final_path)
+    # 2. Если есть аудио-файл, сохраняем его тоже
+    audio_path = None
+    if audio_file:
+        audio_ext = audio_file.filename.split('.')[-1].lower()
+        audio_filename = f"audio_{file_id}.{audio_ext}"
+        audio_path = os.path.join(UPLOAD_DIR, audio_filename)
+        async with aiofiles.open(audio_path, 'wb') as f:
+            await f.write(await audio_file.read())
 
-        else:
-            # Сценарий: Видео без дополнительного аудио (просто перемещаем)
-            if raw_path != final_path:
-                shutil.move(raw_path, final_path)
-            processor = MediaProcessor(final_path)
-
-        # 5. Получение метаданных и определение типа (GIF vs Video)
-        has_audio = False
-        
-        if not is_final_video:
-            # Для статических картинок или GIF/WebP
-            duration = 0.0
-            width, height = 0, 0
-            shutil.copy(final_path, thumbnail_path)
-            
-            # Пытаемся достать метаданные, вдруг это GIF (анимация)
-            try:
-                p_duration, p_width, p_height = processor.get_metadata()
-                if p_duration > 0:
-                    duration = p_duration
-                    width = p_width
-                    height = p_height
-            except:
-                pass
-            
-            # У картинок/гифок с этим расширением звука считаем что нет (или он не важен)
-            has_audio = False 
-
-        else:
-            # Для видео-файлов (MP4, MOV и т.д.)
-            duration, width, height = processor.get_metadata()
-            
-            # Если мы явно клеили аудио, то звук точно есть
-            if audio_file:
-                has_audio = True
-            else:
-                # Иначе проверяем поток через ffprobe
-                has_audio = processor.has_audio_stream()
-            
-            processor.generate_thumbnail(thumbnail_path)
-        
-    except Exception as e:
-        # Очистка мусора при ошибке
-        if os.path.exists(final_path): os.remove(final_path)
-        if os.path.exists(thumbnail_path): os.remove(thumbnail_path)
-        if os.path.exists(raw_path): os.remove(raw_path)
-        print(f"Error processing media: {e}")
-        raise HTTPException(500, detail=f"Media processing error: {str(e)}")
-
-    # 6. Обработка Тегов
+    # 3. Обработка Тегов (Синхронно, это быстро)
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -219,7 +140,7 @@ async def upload_meme(
                 await db.flush()
             db_tags.append(tag)
 
-    # 7. Обработка Персонажа (Subject)
+    # 4. Обработка Персонажа (Subject)
     db_subject = None
     if subject:
         clean_name = subject.strip()
@@ -231,58 +152,38 @@ async def upload_meme(
             db.add(db_subject)
             await db.flush()
 
-    # 8. Сохранение в БД
+    # 5. Создаем запись в БД (Status = processing)
+    # Media URL временно указывает на сырой файл или заглушку. 
+    # Воркер обновит его на финальный .mp4 или оптимизированный .jpg
+    
     new_meme = Meme(
         title=title, 
         description=description,
-        media_url=f"/static/{final_filename}",
-        thumbnail_url=f"/static/{thumbnail_filename}",
-        duration=duration, 
-        width=width, 
-        height=height,
-        has_audio=has_audio, # <-- Важное поле для фронтенда (GIF vs Video)
+        media_url=f"/static/{raw_filename}", # Временная ссылка
+        thumbnail_url="/static/processing_placeholder.jpg", # Заглушка
+        duration=0, 
+        width=0, 
+        height=0,
+        has_audio=False,
         user_id=current_user.id, 
-        status="approved",
+        status="processing", # <--- ВАЖНО
         subject_id=db_subject.id if db_subject else None
     )
     new_meme.tags = db_tags
     
     db.add(new_meme)
     await db.commit()
+    await db.refresh(new_meme)
 
-    # 9. Индексация в Meilisearch
-    try:
-        search = get_search_service()
-        if search:
-            search.add_meme({
-                "id": str(new_meme.id),
-                "title": new_meme.title,
-                "description": new_meme.description,
-                "thumbnail_url": new_meme.thumbnail_url,
-                "media_url": new_meme.media_url,
-                "views_count": new_meme.views_count
-            })
-    except Exception as e:
-        print(f"Meilisearch indexing warning: {e}")
+    # 6. Отправляем задачу в Celery
+    # Передаем ID мема, путь к исходнику и путь к аудио (если есть)
+    process_meme_task.delay(
+        meme_id=str(new_meme.id), 
+        file_path=raw_path, 
+        audio_path=audio_path
+    )
 
-    # 10. Уведомления подписчикам
-    try:
-        followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
-        followers_res = await db.execute(followers_stmt)
-        follower_ids = followers_res.scalars().all()
-        
-        for fid in follower_ids:
-            db.add(Notification(
-                user_id=fid, 
-                sender_id=current_user.id, 
-                type=NotificationType.NEW_MEME, 
-                meme_id=new_meme.id
-            ))
-        await db.commit()
-    except Exception as e:
-        print(f"Notification error: {e}")
-
-    # 11. Возврат результата
+    # 7. Возвращаем результат
     res = await db.execute(
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
