@@ -454,18 +454,30 @@ async def create_comment(
     db: AsyncSession = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    """Добавление комментария + Уведомление"""
-    # --- НОВОЕ: Проверка длины ---
+    """Добавление комментария (или ответа)"""
     if len(comment.text) > 500:
         raise HTTPException(status_code=400, detail="Комментарий не может быть длиннее 500 символов")
-    # -----------------------------
 
     meme = await db.get(Meme, meme_id)
     if not meme: raise HTTPException(404, "Meme not found")
 
-    new_comm = Comment(text=comment.text, user_id=current_user.id, meme_id=meme_id)
+    # Если это ответ, проверяем существование родителя
+    if comment.parent_id:
+        parent = await db.get(Comment, comment.parent_id)
+        if not parent:
+            raise HTTPException(404, "Parent comment not found")
+        # Необязательно: проверка, что родитель относится к тому же мему
+
+    new_comm = Comment(
+        text=comment.text, 
+        user_id=current_user.id, 
+        meme_id=meme_id,
+        parent_id=comment.parent_id # <-- Сохраняем parent_id
+    )
     db.add(new_comm)
     
+    # Уведомления (автору мема или автору комментария, на который отвечают)
+    # Упрощенная логика: уведомляем автора мема, если это не он сам
     if meme.user_id != current_user.id:
         db.add(Notification(
             user_id=meme.user_id, 

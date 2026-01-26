@@ -13,33 +13,66 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
   meilisearch:
     image: getmeili/meilisearch:v1.6
+    container_name: memegiphy_meili
+    restart: always
+    environment:
+      - MEILI_MASTER_KEY=masterKey
     ports:
       - "7700:7700"
-    environment:
-      - MEILI_MASTER_KEY=masterKey123  # В продакшене вынести в .env
     volumes:
       - meili_data:/meili_data
-    networks:
-      - app-network
+
+  # ВАЖНО: Сервис должен называться именно "backend", так как bot на него ссылается
+  backend:
+    build: ./backend
+    container_name: memegiphy_backend
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/memegiphy
+      - SECRET_KEY=supersecretkey
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_MASTER_KEY=masterKey
+      # Внимание: для локальной разработки (localhost)
+      - BASE_MEDIA_URL=http://localhost:8000 
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - meilisearch
+
+  frontend:
+    build: ./frontend
+    container_name: memegiphy_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      # Важно: URL бэкенда для браузера (клиентский)
+      - NEXT_PUBLIC_API_URL=http://localhost:8000 
+    depends_on:
+      - backend
 
   bot:
     build: ./telegram_bot
+    container_name: memegiphy_bot
+    restart: always
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - BACKEND_URL=http://backend:8000/api/v1
-      # ЗАМЕНИТЕ НА ВАШ NGROK URL ИЛИ ПУБЛИЧНЫЙ IP ДЛЯ ТЕСТА:
-      - BASE_MEDIA_URL=https://ВАШ-URL.ngrok-free.app 
+      # Внутри сети Docker мы обращаемся по имени сервиса "backend"
+      - BACKEND_URL=http://backend:8000/api/v1 
+      - BASE_MEDIA_URL=http://backend:8000
     depends_on:
       - backend
-    networks:
-      - app-network
 
 volumes:
   postgres_data:
   meili_data:
-
-networks:
-  app-network:
-    driver: bridge

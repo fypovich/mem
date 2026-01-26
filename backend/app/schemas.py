@@ -79,14 +79,18 @@ class MemeResponse(MemeBase):
 class CommentBase(BaseModel):
     text: str
 
-class CommentCreate(CommentBase):
-    pass
+class CommentCreate(BaseModel):
+    text: str
+    parent_id: Optional[uuid.UUID] = None
 
-class CommentResponse(CommentBase):
-    id: int
+class CommentResponse(BaseModel):
+    id: uuid.UUID
+    text: str
     created_at: datetime
-    user: UserResponse 
-    
+    user: UserResponse
+    meme_id: uuid.UUID
+    parent_id: Optional[uuid.UUID] = None # <-- Добавили
+
     class Config:
         from_attributes = True
 

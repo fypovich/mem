@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from sqlalchemy import String, Text, Float, Integer, ForeignKey, DateTime, Table, Column, Boolean, Enum as PgEnum
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -133,13 +133,26 @@ class Like(Base):
 
 class Comment(Base):
     __tablename__ = "comments"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
-    meme_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memes.id"))
-    text: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    user: Mapped["User"] = relationship(back_populates="comments")
-    meme: Mapped["Meme"] = relationship(back_populates="comments")
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    text = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    meme_id = Column(UUID(as_uuid=True), ForeignKey("memes.id", ondelete="CASCADE"), nullable=False)
+    
+    # НОВОЕ ПОЛЕ: Ссылка на родительский комментарий
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("comments.id", ondelete="CASCADE"), nullable=True)
+
+    # Связи
+    user = relationship("User", backref="comments")
+    meme = relationship("Meme", backref="comments")
+    
+    # Рекурсивная связь для ответов
+    replies = relationship("Comment", 
+        backref=backref("parent", remote_side=[id]),
+        cascade="all, delete-orphan"
+    )
 
 # НОВОЕ: Модель Уведомления
 class Notification(Base):
