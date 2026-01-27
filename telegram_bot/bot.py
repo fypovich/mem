@@ -25,7 +25,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"User {user.id} ({user.username}) started bot")
     
     keyboard = [
-        [InlineKeyboardButton("📱 Открыть MemeApp", web_app=WebAppInfo(url=WEB_APP_URL))]
+        [InlineKeyboardButton("📱 Открыть MemeApp (в браузере)", url=WEB_APP_URL)]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     

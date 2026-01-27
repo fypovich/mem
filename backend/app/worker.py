@@ -1,6 +1,6 @@
 import os
 import shutil
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from celery import shared_task
 
