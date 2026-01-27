@@ -9,7 +9,7 @@ import { ProfileSettingsButton } from "@/components/profile-settings-button";
 import { ProfileHeaderActions } from "@/components/profile-header-actions";
 import { MemeGrid } from "@/components/meme-grid";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function getUser(username: string) {
   try {
