@@ -35,6 +35,12 @@ class User(Base):
     website = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # --- НОВЫЕ ПОЛЯ НАСТРОЕК (Добавили их сюда) ---
+    notify_on_like = Column(Boolean, default=True)
+    notify_on_comment = Column(Boolean, default=True)
+    notify_on_new_follower = Column(Boolean, default=True)
+    notify_on_new_meme = Column(Boolean, default=True)
+
     # Явные связи (чтобы избежать конфликтов backref)
     memes = relationship("Meme", back_populates="user", cascade="all, delete-orphan")
     likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
@@ -43,11 +49,6 @@ class User(Base):
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan") 
 
     notifications = relationship("Notification", foreign_keys="[Notification.user_id]", back_populates="user", cascade="all, delete-orphan")
-    # --- НОВЫЕ ПОЛЯ: Настройки уведомлений ---
-    notify_on_like = Column(Boolean, default=True)
-    notify_on_comment = Column(Boolean, default=True)
-    notify_on_new_follower = Column(Boolean, default=True)
-    notify_on_new_meme = Column(Boolean, default=True)
 
     followers = relationship(
         "User",
