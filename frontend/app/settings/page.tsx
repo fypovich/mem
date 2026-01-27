@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Upload, Save, Loader2, Image as ImageIcon, Link as LinkIcon, 
-  User, Lock, Bell, LogOut, CheckCircle
+  User, Lock, Bell, LogOut 
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -25,24 +25,20 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   
-  // Данные пользователя
   const [user, setUser] = useState<any>(null);
   
-  // Данные форм
   const [formData, setFormData] = useState({
       full_name: "",
       bio: "",
       website: ""
   });
   
-  // Файлы
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   
   const [headerFile, setHeaderFile] = useState<File | null>(null);
   const [headerPreview, setHeaderPreview] = useState<string | null>(null);
 
-  // Пароль
   const [passData, setPassData] = useState({ current: "", new: "", confirm: "" });
 
   // 1. ЗАГРУЗКА ДАННЫХ
@@ -54,8 +50,10 @@ export default function SettingsPage() {
     }
     setToken(storedToken);
 
-    fetch(`${API_URL}/api/v1/users/me`, {
-        headers: { "Authorization": `Bearer ${storedToken}` }
+    // Добавлено: cache: "no-store" и timestamp для избежания кэша
+    fetch(`${API_URL}/api/v1/users/me?ts=${Date.now()}`, {
+        headers: { "Authorization": `Bearer ${storedToken}` },
+        cache: "no-store" 
     })
     .then(res => {
         if (!res.ok) throw new Error("Failed");
@@ -73,7 +71,6 @@ export default function SettingsPage() {
     .finally(() => setIsLoading(false));
   }, [router]);
 
-  // 2. ХЕНДЛЕРЫ ФАЙЛОВ
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'header') => {
     if (e.target.files?.[0]) {
       const file = e.target.files[0];
@@ -88,7 +85,6 @@ export default function SettingsPage() {
     }
   };
 
-  // 3. СОХРАНЕНИЕ ПРОФИЛЯ
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -110,7 +106,6 @@ export default function SettingsPage() {
 
       if (!res.ok) throw new Error();
 
-      // Обновляем локальные данные
       const updatedUser = await res.json();
       setUser(updatedUser);
       alert("Профиль обновлен!");
@@ -123,7 +118,6 @@ export default function SettingsPage() {
     }
   };
 
-  // 4. СМЕНА ПАРОЛЯ
   const handlePasswordSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (passData.new !== passData.confirm) {
@@ -159,11 +153,14 @@ export default function SettingsPage() {
 
   // 5. УВЕДОМЛЕНИЯ
   const toggleNotification = async (key: string, value: boolean) => {
+      // Сохраняем предыдущее состояние для отката
+      const prevUser = { ...user };
+      
       // Оптимистичное обновление
-      setUser({ ...user, [key]: value });
+      setUser((prev: any) => ({ ...prev, [key]: value }));
       
       try {
-          await fetch(`${API_URL}/api/v1/users/me/settings`, {
+          const res = await fetch(`${API_URL}/api/v1/users/me/settings`, {
               method: "PATCH",
               headers: { 
                   "Content-Type": "application/json",
@@ -171,9 +168,17 @@ export default function SettingsPage() {
               },
               body: JSON.stringify({ [key]: value })
           });
+          
+          if (!res.ok) throw new Error("Failed to update");
+          
+          // Обновляем состояние данными с сервера, чтобы убедиться
+          const updatedUser = await res.json();
+          setUser(updatedUser);
+
       } catch (e) {
           console.error(e);
-          setUser({ ...user, [key]: !value }); // Откат
+          setUser(prevUser); // Откат при ошибке
+          alert("Не удалось сохранить настройку");
       }
   };
 
@@ -186,7 +191,6 @@ export default function SettingsPage() {
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin" /></div>;
 
-  // Формируем URL картинок
   const avatarUrl = avatarPreview || (user?.avatar_url?.startsWith('http') ? user.avatar_url : `${API_URL}${user.avatar_url}`);
   const headerUrl = headerPreview || (user?.header_url?.startsWith('http') ? user.header_url : `${API_URL}${user.header_url}`);
 
@@ -196,7 +200,6 @@ export default function SettingsPage() {
 
       <Tabs defaultValue="profile" className="flex flex-col md:flex-row gap-8">
         
-        {/* === МЕНЮ === */}
         <aside className="w-full md:w-64 shrink-0">
           <TabsList className="flex md:flex-col h-auto bg-transparent p-0 gap-2 w-full justify-start">
             <TabsTrigger value="profile" className="w-full justify-start gap-2 px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary border border-transparent">
@@ -217,10 +220,8 @@ export default function SettingsPage() {
           </Button>
         </aside>
 
-        {/* === КОНТЕНТ === */}
         <div className="flex-1">
             
-          {/* ПРОФИЛЬ */}
           <TabsContent value="profile" className="mt-0 space-y-6">
             <form onSubmit={handleProfileSubmit}>
                 <Card className="mb-6">
@@ -286,8 +287,6 @@ export default function SettingsPage() {
             </form>
           </TabsContent>
 
-
-          {/* АККАУНТ */}
           <TabsContent value="account" className="mt-0 space-y-6">
              <Card>
               <CardHeader>
@@ -323,8 +322,6 @@ export default function SettingsPage() {
              </Card>
           </TabsContent>
 
-
-          {/* УВЕДОМЛЕНИЯ */}
           <TabsContent value="notifications" className="mt-0 space-y-6">
             <Card>
               <CardHeader>
@@ -345,7 +342,8 @@ export default function SettingsPage() {
                         </Label>
                         <Switch 
                             id={item.id} 
-                            checked={user?.[item.id] ?? true} 
+                            // Важно: проверяем наличие поля, если нет - считаем true
+                            checked={user?.[item.id] !== undefined ? user[item.id] : true} 
                             onCheckedChange={(c) => toggleNotification(item.id, c)}
                         />
                     </div>
