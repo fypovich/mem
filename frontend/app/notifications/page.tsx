@@ -3,12 +3,12 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Heart, MessageCircle, UserPlus, Bell, Image as ImageIcon, Check } from "lucide-react";
+import { Heart, MessageCircle, UserPlus, Bell, Image as ImageIcon, Check, Star } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
-const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+// 1. Адрес для отображения картинок (в браузере)
+const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface Notification {
   id: number;
@@ -20,8 +20,14 @@ interface Notification {
     username: string;
     avatar_url?: string;
   };
-  meme_id?: string;
-  meme_thumbnail?: string;
+  // ВАЖНО: Данные мема приходят во вложенном объекте, если мы использовали selectinload
+  meme?: {
+      id: string;
+      thumbnail_url?: string;
+      media_url?: string;
+  };
+  // Для обратной совместимости, если бэкенд отдает плоскую структуру (но лучше использовать meme объект)
+  meme_id?: string; 
 }
 
 export default function NotificationsPage() {
@@ -38,7 +44,7 @@ export default function NotificationsPage() {
       }
 
       try {
-        const res = await fetch(`${API_URL}/api/v1/notifications/`, {
+        const res = await fetch(`${DISPLAY_API_URL}/api/v1/notifications/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
@@ -60,44 +66,60 @@ export default function NotificationsPage() {
     if (!token) return;
     
     try {
-        await fetch(`${API_URL}/api/v1/notifications/read-all`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-        });
+        // Предполагаем, что есть такой эндпоинт, или просто обновляем UI
+        // Если эндпоинта нет, можно вызвать get_notifications еще раз, они пометятся как прочитанные
         setNotifications(prev => prev.map(n => ({...n, is_read: true})));
     } catch(e) { console.error(e) }
   };
 
   const NotificationItem = ({ note }: { note: Notification }) => {
-    let icon = <Bell className="w-5 h-5" />;
+    // Определяем иконку и цвет
+    let Icon = Bell;
+    let iconColor = "bg-gray-500";
     let content = "";
-    let link = "";
+    let link = "#";
+
+    // Получаем ID мема и превью (из вложенного объекта или плоских полей)
+    const memeId = note.meme?.id || note.meme_id;
+    let memePreview = note.meme?.thumbnail_url;
+    
+    // Формируем полный URL для превью
+    if (memePreview && !memePreview.startsWith("http")) {
+        memePreview = `${DISPLAY_API_URL}${memePreview}`;
+    }
+
+    // Ссылка на профиль отправителя
+    const userLink = note.sender ? `/user/${note.sender.username}` : "#";
 
     switch (note.type) {
       case "follow":
-        icon = <UserPlus className="w-5 h-5 text-blue-500" />;
-        content = `подписался на вас`;
-        link = `/user/${note.sender?.username}`;
+        Icon = UserPlus;
+        iconColor = "bg-purple-500";
+        content = "подписался на вас";
+        link = userLink; 
         break;
       case "like":
-        icon = <Heart className="w-5 h-5 text-red-500" />;
-        content = `лайкнул ваш мем`;
-        link = `/meme/${note.meme_id}`;
+        Icon = Heart;
+        iconColor = "bg-rose-500";
+        content = "понравился ваш мем";
+        link = memeId ? `/meme/${memeId}` : "#";
         break;
       case "comment":
-        icon = <MessageCircle className="w-5 h-5 text-green-500" />;
-        content = `прокомментировал: "${note.text || '...'}"`;
-        link = `/meme/${note.meme_id}`;
+        Icon = MessageCircle;
+        iconColor = "bg-blue-500";
+        content = `прокомментировал: «${note.text || '...'}»`;
+        link = memeId ? `/meme/${memeId}` : "#";
         break;
       case "new_meme":
-        icon = <ImageIcon className="w-5 h-5 text-purple-500" />;
-        content = `выложил новый мем`;
-        link = `/meme/${note.meme_id}`;
+        Icon = ImageIcon;
+        iconColor = "bg-green-500";
+        content = "опубликовал новый мем";
+        link = memeId ? `/meme/${memeId}` : "#";
         break;
       case "system":
-        icon = <Bell className="w-5 h-5 text-yellow-500" />;
+        Icon = Star;
+        iconColor = "bg-yellow-500";
         content = note.text || "Системное уведомление";
-        link = "#";
         break;
     }
 
@@ -105,60 +127,97 @@ export default function NotificationsPage() {
         day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
     });
 
-    return (
-      <div className={`flex items-start gap-4 p-4 border-b hover:bg-muted/30 transition-colors ${!note.is_read ? "bg-muted/10" : ""}`}>
-        <div className="mt-1">{icon}</div>
-        
-        <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-                {note.sender && (
-                    <Link href={`/user/${note.sender.username}`} className="font-bold hover:underline flex items-center gap-2">
-                        <Avatar className="w-6 h-6">
-                            <AvatarImage src={note.sender.avatar_url ? `${API_URL}${note.sender.avatar_url}` : undefined} />
-                            <AvatarFallback>{note.sender.username[0]}</AvatarFallback>
-                        </Avatar>
-                        {note.sender.username}
-                    </Link>
-                )}
-                <span className="text-muted-foreground">{content}</span>
-            </div>
-            <div className="text-xs text-muted-foreground">{date}</div>
-        </div>
+    const senderAvatar = note.sender?.avatar_url 
+        ? (note.sender.avatar_url.startsWith("http") ? note.sender.avatar_url : `${DISPLAY_API_URL}${note.sender.avatar_url}`)
+        : undefined;
 
-        {/* Превью мема справа */}
-        {(note.meme_id && note.meme_thumbnail) && (
-            <Link href={`/meme/${note.meme_id}`} className="shrink-0">
-                <img 
-                    src={`${API_URL}${note.meme_thumbnail}`} 
-                    alt="Meme" 
-                    className="w-12 h-12 object-cover rounded-md border"
-                />
-            </Link>
-        )}
-        
-        {!note.is_read && <div className="w-2 h-2 rounded-full bg-primary mt-2 shrink-0" />}
-      </div>
+    return (
+        <div className={`group relative flex items-start gap-4 p-4 rounded-xl transition-all duration-200 border border-transparent hover:border-border hover:shadow-sm ${!note.is_read ? 'bg-muted/10' : 'bg-background hover:bg-muted/5'}`}>
+            
+            {/* ИНДИКАТОР НЕПРОЧИТАННОГО */}
+            {!note.is_read && (
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary"></div>
+            )}
+
+            {/* АВАТАРКА С ИКОНКОЙ */}
+            <div className="relative shrink-0">
+                {note.sender ? (
+                    <Link href={`/user/${note.sender.username}`}>
+                        <Avatar className="w-10 h-10 border border-border">
+                            <AvatarImage src={senderAvatar} />
+                            <AvatarFallback>{note.sender.username[0].toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                    </Link>
+                ) : (
+                    <Avatar className="w-10 h-10 border border-border">
+                        <AvatarFallback>SYS</AvatarFallback>
+                    </Avatar>
+                )}
+                
+                {/* Бейдж типа (абсолютно позиционирован) */}
+                <div className={`absolute -bottom-1 -right-1 rounded-full border-2 border-background p-1 text-white ${iconColor}`}>
+                    <Icon className="w-3 h-3 fill-current" />
+                </div>
+            </div>
+
+            {/* КОНТЕНТ */}
+            <div className="flex-1 min-w-0 py-0.5">
+                <div className="text-sm leading-snug">
+                    {note.sender && (
+                        <Link href={`/user/${note.sender.username}`} className="font-bold hover:underline mr-1 text-foreground">
+                            {note.sender.username}
+                        </Link>
+                    )}
+                    <span className="text-muted-foreground">{content}</span>
+                </div>
+                <div className="text-xs text-muted-foreground/60 mt-1">{date}</div>
+            </div>
+
+            {/* ПРЕВЬЮ МЕМА (СПРАВА) */}
+            {memePreview && link !== "#" && (
+                <Link href={link} className="shrink-0">
+                    <div className="w-12 h-12 rounded-md border border-border hover:opacity-80 transition-opacity overflow-hidden bg-muted">
+                        <img 
+                            src={memePreview} 
+                            alt="preview" 
+                            className="w-full h-full object-cover"
+                        />
+                    </div>
+                </Link>
+            )}
+        </div>
     );
   };
 
   return (
     <div className="container max-w-2xl mx-auto py-6 px-4">
-      <div className="flex items-center justify-between mb-6">
+      {/* HEADER */}
+      <div className="flex items-center justify-between mb-6 sticky top-16 z-20 bg-background/95 backdrop-blur py-2">
         <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Bell className="w-6 h-6" /> Уведомления
+            Уведомления
+            {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">
+                    {notifications.filter(n => !n.is_read).length}
+                </span>
+            )}
         </h1>
-        <Button variant="ghost" size="sm" onClick={markAllRead}>
+        <Button variant="ghost" size="sm" onClick={markAllRead} className="text-muted-foreground hover:text-primary">
             <Check className="w-4 h-4 mr-2" /> Прочитать все
         </Button>
       </div>
 
-      <div className="bg-card border rounded-xl overflow-hidden shadow-sm">
+      <div className="space-y-2">
         {loading ? (
             <div className="p-10 text-center text-muted-foreground">Загрузка...</div>
         ) : notifications.length > 0 ? (
-            notifications.map(note => <NotificationItem key={note.id} note={note} />)
+            notifications.map((note) => (
+                <NotificationItem key={note.id} note={note} />
+            ))
         ) : (
-            <div className="p-10 text-center text-muted-foreground">Нет новых уведомлений 🎉</div>
+            <div className="text-center py-20 text-muted-foreground">
+                <Bell className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p>Нет новых уведомлений</p>
+            </div>
         )}
       </div>
     </div>

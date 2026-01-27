@@ -109,7 +109,6 @@ async def upload_meme(
     
     is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
     
-    # Определяем, будет ли финальный файл видео (нужна обработка) или картинка (сразу готова)
     is_final_video = True
     if is_image_input and not audio_file:
         is_final_video = False
@@ -122,11 +121,9 @@ async def upload_meme(
     final_path = os.path.join(UPLOAD_DIR, final_filename)
     thumbnail_path = os.path.join(UPLOAD_DIR, thumbnail_filename)
 
-    # 1. Сохраняем исходник
     async with aiofiles.open(raw_path, 'wb') as f:
         await f.write(await file.read())
 
-    # Сохраняем аудио, если есть
     audio_path = None
     if audio_file:
         audio_ext = audio_file.filename.split('.')[-1]
@@ -134,35 +131,27 @@ async def upload_meme(
         async with aiofiles.open(audio_path, 'wb') as f:
             await f.write(await audio_file.read())
 
-    # 2. Подготовка метаданных
     duration, width, height = 0.0, 0, 0
     has_audio = False
     status = "processing"
     media_url = f"/static/{final_filename}"
-    thumbnail_url = "/static/processing_placeholder.jpg" # Заглушка по умолчанию
+    thumbnail_url = "/static/processing_placeholder.jpg"
 
-    # 3. ЛОГИКА ОБРАБОТКИ
+    # Обработка картинок (без воркера)
     if not is_final_video:
-        # --- СЦЕНАРИЙ: КАРТИНКА (БЕЗ ОБРАБОТКИ ВОРКЕРОМ) ---
-        # Сразу копируем в финальный путь
         shutil.copy(raw_path, final_path)
-        # Сразу создаем превью (копия оригинала)
         shutil.copy(final_path, thumbnail_path)
-        
-        # Получаем размеры
         try:
             processor = MediaProcessor(final_path)
             _, width, height = processor.get_metadata()
         except: pass
         
-        # Для картинок статус сразу APPROVED и реальная ссылка на превью
         status = "approved"
         thumbnail_url = f"/static/{thumbnail_filename}"
         
-        # Удаляем raw, он больше не нужен
         if os.path.exists(raw_path): os.remove(raw_path)
 
-    # 4. Сохранение Тегов и Персонажа
+    # Теги и Персонаж
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -186,9 +175,8 @@ async def upload_meme(
             db.add(db_subject)
             await db.flush()
 
-    # 5. Создание записи в БД
     new_meme = Meme(
-        id=uuid.UUID(file_id), # Явно задаем ID, чтобы передать в воркер
+        id=uuid.UUID(file_id),
         title=title, 
         description=description,
         media_url=media_url,
@@ -206,13 +194,11 @@ async def upload_meme(
     db.add(new_meme)
     await db.commit()
 
-    # 6. Если это ВИДЕО -> Запускаем фоновую задачу Celery
+    # Запускаем Celery ТОЛЬКО для видео
     if is_final_video:
-        # Импорт внутри функции чтобы избежать циклического импорта, если он есть
-        # Но celery_app.send_task надежнее
         celery_app.send_task("app.worker.process_meme_task", args=[file_id, raw_path, audio_path])
 
-    # 7. Индексация в Meilisearch (если approved)
+    # Индексация (только если уже approved)
     if status == "approved":
         try:
             search = get_search_service()
@@ -225,28 +211,32 @@ async def upload_meme(
                     "media_url": new_meme.media_url,
                     "views_count": new_meme.views_count
                 })
-        except Exception as e:
-            print(f"Meilisearch indexing warning: {e}")
-
-    # 8. Уведомления (только если approved, иначе воркер отправит)
-    if status == "approved":
+        except Exception: pass
+        
+        # Уведомления подписчикам (с проверкой настроек)
         try:
-            followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
-            followers_res = await db.execute(followers_stmt)
-            follower_ids = followers_res.scalars().all()
+            # Выбираем подписчиков
+            stmt = (
+                select(User)
+                .join(follows, follows.c.follower_id == User.id)
+                .where(follows.c.followed_id == current_user.id)
+            )
+            followers_res = await db.execute(stmt)
+            followers = followers_res.scalars().all()
             
-            for fid in follower_ids:
-                db.add(Notification(
-                    user_id=fid, 
-                    sender_id=current_user.id, 
-                    type=NotificationType.NEW_MEME, 
-                    meme_id=new_meme.id
-                ))
+            for follower in followers:
+                # Проверяем флаг уведомлений (используем getattr для совместимости)
+                if getattr(follower, 'notify_on_new_meme', True):
+                    db.add(Notification(
+                        user_id=follower.id, 
+                        sender_id=current_user.id, 
+                        type=NotificationType.NEW_MEME, 
+                        meme_id=new_meme.id
+                    ))
             await db.commit()
         except Exception as e:
             print(f"Notification error: {e}")
 
-    # Возврат результата
     res = await db.execute(
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
@@ -264,24 +254,15 @@ async def read_memes(
     tag: Optional[str] = None,
     subject: Optional[str] = None,
     category: Optional[str] = None, 
-    sort: str = "new", # new, popular, smart (for you)
+    sort: str = "new",              
     period: str = "all",            
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user) 
 ):
-    """
-    Получение списка мемов.
-    Sort options:
-    - 'new': По дате (сначала новые)
-    - 'popular': По количеству лайков
-    - 'smart': Алгоритм гравитации (Лайки / Возраст) - для вкладки "Для вас"
-    """
-    
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
-    # Подзапросы для подсчета лайков и комментов
     likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
     comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
     
@@ -289,7 +270,6 @@ async def read_memes(
     if current_user:
         is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id))
 
-    # Базовый запрос
     query = (
         select(
             Meme, 
@@ -305,12 +285,11 @@ async def read_memes(
         .where(Meme.status == "approved")
     )
     
-    # --- БЛОКИРОВКИ ---
+    # Блокировки
     if current_user:
         blocked_users_query = select(Block.blocked_id).where(Block.blocker_id == current_user.id)
         query = query.where(Meme.user_id.not_in(blocked_users_query))
 
-    # --- ФИЛЬТРЫ ---
     if username:
         query = query.join(User, Meme.user_id == User.id).where(User.username == username)
     if tag:
@@ -326,7 +305,6 @@ async def read_memes(
         if not uid: return [] 
         query = query.join(Like, Meme.id == Like.meme_id).where(Like.user_id == uid)
 
-    # --- ПЕРИОД ---
     if period == "week":
         week_ago = datetime.utcnow() - timedelta(days=7)
         query = query.where(Meme.created_at >= week_ago)
@@ -334,30 +312,15 @@ async def read_memes(
         month_ago = datetime.utcnow() - timedelta(days=30)
         query = query.where(Meme.created_at >= month_ago)
 
-    # --- СОРТИРОВКА (ГЛАВНАЯ ЛОГИКА) ---
     if sort == "popular":
-        # Просто много лайков + просмотров
         query = query.order_by(desc("likes_count"), desc(Meme.views_count))
-        
     elif sort == "smart":
-        # Алгоритм "Hacker News Gravity" адаптированный:
-        # Score = (Likes + 1) / (Age_In_Hours + 2)^1.5
-        # Чем свежее мем, тем меньше лайков ему нужно, чтобы быть в топе.
-        
-        # Вычисляем возраст в часах
-        # EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600
         age_in_hours = (extract('epoch', func.now() - Meme.created_at) / 3600)
-        
-        # Формула гравитации
         gravity_score = (likes_count + 1) / func.power((age_in_hours + 2), 1.5)
-        
         query = query.order_by(desc(gravity_score))
-        
     else:
-        # По умолчанию: самые новые
         query = query.order_by(Meme.created_at.desc())
 
-    # Пагинация
     query = query.offset(skip).limit(limit)
     
     result = await db.execute(query)
@@ -380,9 +343,6 @@ async def read_meme(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    """Получение одного мема + инкремент просмотров"""
-    
-    # Инкремент
     await db.execute(
         sa.update(Meme).where(Meme.id == meme_id).values(views_count=Meme.views_count + 1)
     )
@@ -429,7 +389,6 @@ async def like_meme(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Лайк/Дизлайк + Уведомление"""
     meme = await db.get(Meme, meme_id)
     if not meme: raise HTTPException(404, "Meme not found")
 
@@ -444,17 +403,18 @@ async def like_meme(
         db.add(new_like)
         action = "liked"
         
-        # Уведомление
         if meme.user_id != current_user.id:
-            db.add(Notification(
-                user_id=meme.user_id,
-                sender_id=current_user.id,
-                type=NotificationType.LIKE,
-                meme_id=meme.id
-            ))
+            # Проверяем настройки уведомлений владельца (используем getattr для безопасности)
+            meme_owner = await db.get(User, meme.user_id)
+            if meme_owner and getattr(meme_owner, 'notify_on_like', True):
+                db.add(Notification(
+                    user_id=meme.user_id,
+                    sender_id=current_user.id,
+                    type=NotificationType.LIKE,
+                    meme_id=meme.id
+                ))
 
     await db.commit()
-    
     count = await db.scalar(select(func.count()).select_from(Like).where(Like.meme_id == meme_id))
     return {"action": action, "likes_count": count}
 
@@ -466,38 +426,36 @@ async def create_comment(
     db: AsyncSession = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    """Добавление комментария (или ответа)"""
     if len(comment.text) > 500:
         raise HTTPException(status_code=400, detail="Комментарий не может быть длиннее 500 символов")
 
     meme = await db.get(Meme, meme_id)
     if not meme: raise HTTPException(404, "Meme not found")
 
-    # Если это ответ, проверяем существование родителя
     if comment.parent_id:
         parent = await db.get(Comment, comment.parent_id)
         if not parent:
             raise HTTPException(404, "Parent comment not found")
-        # Необязательно: проверка, что родитель относится к тому же мему
 
     new_comm = Comment(
         text=comment.text, 
         user_id=current_user.id, 
         meme_id=meme_id,
-        parent_id=comment.parent_id # <-- Сохраняем parent_id
+        parent_id=comment.parent_id 
     )
     db.add(new_comm)
     
-    # Уведомления (автору мема или автору комментария, на который отвечают)
-    # Упрощенная логика: уведомляем автора мема, если это не он сам
     if meme.user_id != current_user.id:
-        db.add(Notification(
-            user_id=meme.user_id, 
-            sender_id=current_user.id, 
-            type=NotificationType.COMMENT, 
-            meme_id=meme.id, 
-            text=comment.text[:50]
-        ))
+        # Проверяем настройки уведомлений владельца
+        meme_owner = await db.get(User, meme.user_id)
+        if meme_owner and getattr(meme_owner, 'notify_on_comment', True):
+            db.add(Notification(
+                user_id=meme.user_id, 
+                sender_id=current_user.id, 
+                type=NotificationType.COMMENT, 
+                meme_id=meme.id, 
+                text=comment.text[:50]
+            ))
     
     await db.commit()
     
@@ -514,7 +472,6 @@ async def get_comments(
     limit: int = 50,
     db: AsyncSession = Depends(get_db)
 ):
-    """Получение списка комментариев"""
     query = (
         select(Comment)
         .where(Comment.meme_id == meme_id)
@@ -533,12 +490,9 @@ async def check_meme_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Проверка статуса / лайка"""
-    # Для целей фронтенда часто используется для проверки is_liked
     is_liked = await db.scalar(
         select(exists().where((Like.meme_id == meme_id) & (Like.user_id == current_user.id)))
     )
-    # Также можно вернуть статус процессинга, если нужно
     meme = await db.get(Meme, meme_id)
     status = meme.status if meme else "not_found"
     
@@ -552,10 +506,6 @@ async def get_similar_memes(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    """
-    Получает список похожих мемов на основе тегов и персонажа.
-    """
-    # 1. Получаем исходный мем с тегами
     current_meme_query = (
         select(Meme)
         .options(selectinload(Meme.tags))
@@ -570,7 +520,6 @@ async def get_similar_memes(
     tag_ids = [t.id for t in current_meme.tags]
     subject_id = current_meme.subject_id
 
-    # 2. Подготавливаем запрос для похожих (копируем логику с лайками из read_memes)
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
     MyLike = aliased(Like)
@@ -591,29 +540,22 @@ async def get_similar_memes(
             selectinload(Meme.tags),    
             selectinload(Meme.subject) 
         )
-        .where(Meme.id != meme_id) # Исключаем текущий мем
+        .where(Meme.id != meme_id) 
         .where(Meme.status == "approved")
     )
 
-    # 3. Фильтрация по похожести
     conditions = []
     if subject_id:
-        # Сильное условие: тот же персонаж
         conditions.append(Meme.subject_id == subject_id)
     
     if tag_ids:
-        # Условие: совпадение хотя бы по одному тегу
         conditions.append(Meme.tags.any(Tag.id.in_(tag_ids)))
 
     if conditions:
         query = query.where(or_(*conditions))
     else:
-        # Если у мема нет ни тегов, ни персонажа, возвращаем просто случайные/новые
-        # Но для "похожих" лучше вернуть пустоту или популярные, если совсем нет зацепок.
-        # Вернем просто популярные
         query = query.order_by(desc("likes_count"))
 
-    # Сортируем в случайном порядке, чтобы рекомендации менялись
     query = query.order_by(func.random()).limit(limit)
 
     result = await db.execute(query)
@@ -635,7 +577,6 @@ async def delete_meme(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Удаление мема (доступно только автору)"""
     meme = await db.get(Meme, meme_id)
     if not meme:
         raise HTTPException(status_code=404, detail="Meme not found")
@@ -643,7 +584,6 @@ async def delete_meme(
     if meme.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not authorized to delete this meme")
 
-    # 1. Удаляем файлы с диска
     try:
         if meme.media_url:
             filename = meme.media_url.split("/")[-1]
@@ -659,7 +599,6 @@ async def delete_meme(
     except Exception as e:
         print(f"Error deleting files: {e}")
 
-    # 2. Удаляем из Meilisearch (если подключен)
     try:
         search = get_search_service()
         if search:
@@ -667,22 +606,12 @@ async def delete_meme(
     except Exception as e:
         print(f"Meilisearch delete error: {e}")
 
-    # 3. Очистка зависимостей в БД (Ручной каскад)
-    # Важно: Сначала удаляем всё, что ссылается на мем!
-    
-    # Удаляем уведомления, связанные с этим мемом
     await db.execute(sa.delete(Notification).where(Notification.meme_id == meme_id))
-    
-    # Удаляем лайки этого мема
     await db.execute(sa.delete(Like).where(Like.meme_id == meme_id))
-    
-    # Удаляем комментарии к этому мему
     await db.execute(sa.delete(Comment).where(Comment.meme_id == meme_id))
-    
-    # Удаляем связи с тегами
     await db.execute(sa.delete(meme_tags).where(meme_tags.c.meme_id == meme_id))
+    await db.execute(sa.delete(Report).where(Report.meme_id == meme_id))
 
-    # 4. Теперь безопасно удаляем сам мем
     await db.delete(meme)
     await db.commit()
     
@@ -696,9 +625,6 @@ async def update_meme(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Редактирование заголовка, описания и тегов мема"""
-    
-    # 1. Ищем мем СРАЗУ с тегами, чтобы можно было их менять
     query = select(Meme).options(selectinload(Meme.tags)).where(Meme.id == meme_id)
     result = await db.execute(query)
     meme = result.scalars().first()
@@ -706,43 +632,35 @@ async def update_meme(
     if not meme:
         raise HTTPException(status_code=404, detail="Meme not found")
     
-    # 2. Проверяем права
     if meme.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not authorized to edit this meme")
 
-    # 3. Обновляем простые поля
     if meme_update.title is not None:
         meme.title = meme_update.title
     
     if meme_update.description is not None:
         meme.description = meme_update.description
 
-    # 4. Обновляем теги (если переданы)
     if meme_update.tags is not None:
-        # Парсим строку тегов
         tag_list_names = [t.strip().lower().replace("#", "") for t in meme_update.tags.split(",") if t.strip()]
         new_tags = []
         
         for t_name in tag_list_names:
-            # Ищем существующий тег
             tag_query = select(Tag).where(Tag.name == t_name)
             tag_res = await db.execute(tag_query)
             tag = tag_res.scalars().first()
             
-            # Если нет - создаем
             if not tag:
                 tag = Tag(name=t_name)
                 db.add(tag)
-                await db.flush() # Получаем ID нового тега
+                await db.flush()
             
             new_tags.append(tag)
         
-        # SQLAlchemy (с selectinload) позволяет просто присвоить новый список
         meme.tags = new_tags
 
     await db.commit()
     
-    # 5. Обновляем индекс поиска (Meilisearch) - Опционально, в try/except чтобы не ломать основной флоу
     try:
         search = get_search_service()
         if search:
@@ -757,9 +675,6 @@ async def update_meme(
     except Exception as e:
         print(f"Meili update error: {e}")
 
-    # 6. Возвращаем обновленный объект с полными данными для Pydantic схемы
-    # Нам нужно перезагрузить объект или вернуть текущий, если мы уверены в связях.
-    # Для надежности сделаем выборку с join-ами как в других методах.
     final_query = (
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
@@ -768,7 +683,6 @@ async def update_meme(
     final_res = await db.execute(final_query)
     return final_res.scalars().first()
 
-# --- НОВЫЙ МЕТОД: ЖАЛОБА ---
 @router.post("/{meme_id}/report", status_code=201)
 async def report_meme(
     meme_id: uuid.UUID,
@@ -776,7 +690,6 @@ async def report_meme(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Отправить жалобу на мем"""
     meme = await db.get(Meme, meme_id)
     if not meme: raise HTTPException(404, "Meme not found")
 

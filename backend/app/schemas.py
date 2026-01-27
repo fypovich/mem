@@ -25,6 +25,10 @@ class UserResponse(UserBase):
     followers_count: int = 0
     following_count: int = 0
     created_at: datetime
+    notify_on_like: bool
+    notify_on_comment: bool
+    notify_on_new_follower: bool
+    notify_on_new_meme: bool
 
     class Config:
         from_attributes = True
@@ -169,3 +173,15 @@ class ReportCreate(BaseModel):
 class BlockResponse(BaseModel):
     is_blocked: bool
     user_id: uuid.UUID
+
+# Схема для смены пароля
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+# Схема для обновления настроек (добавьте к UserUpdate или создайте новую)
+class UserUpdateSettings(BaseModel):
+    notify_on_like: Optional[bool] = None
+    notify_on_comment: Optional[bool] = None
+    notify_on_new_follower: Optional[bool] = None
+    notify_on_new_meme: Optional[bool] = None

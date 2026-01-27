@@ -12,15 +12,13 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.models import User, follows, Notification, NotificationType, Block
 from app.api.memes import get_current_user, get_optional_current_user
-from app.schemas import UserResponse, UserProfile, UserUpdate, BlockResponse 
+from app.schemas import UserResponse, UserProfile, UserUpdate, BlockResponse, ChangePasswordRequest, UserUpdateSettings 
+from app.core.security import verify_password, get_password_hash
 
 router = APIRouter()
 UPLOAD_DIR = "uploads"
 
 # --- ЭНДПОИНТЫ ПОДПИСОК ---
-
-# ... импорты ...
-from app.models.models import User, follows, Notification, NotificationType
 
 @router.post("/{username}/follow")
 async def follow_user(
@@ -28,10 +26,10 @@ async def follow_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. Ищем цель подписки (переменная target_user)
+    # 1. Ищем цель подписки
     query = select(User).where(User.username == username)
     result = await db.execute(query)
-    target_user = result.scalars().first() # <-- Было target_user
+    target_user = result.scalars().first()
     
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -42,32 +40,34 @@ async def follow_user(
     # 2. Проверяем подписку
     stmt = select(follows).where(
         (follows.c.follower_id == current_user.id) & 
-        (follows.c.followed_id == target_user.id) # <-- Используем target_user
+        (follows.c.followed_id == target_user.id)
     )
     result = await db.execute(stmt)
     existing_follow = result.first()
 
     if existing_follow:
         await db.execute(
-            delete(follows).where(
+            sa.delete(follows).where(
                 (follows.c.follower_id == current_user.id) & 
-                (follows.c.followed_id == target_user.id) # <-- Используем target_user
+                (follows.c.followed_id == target_user.id)
             )
         )
         action = "unfollowed"
     else:
         await db.execute(
-            insert(follows).values(follower_id=current_user.id, followed_id=target_user.id) # <-- Используем target_user
+            sa.insert(follows).values(follower_id=current_user.id, followed_id=target_user.id)
         )
         action = "followed"
         
-        # --- УВЕДОМЛЕНИЕ ---
-        notif = Notification(
-            user_id=target_user.id,          # Кому: target_user
-            sender_id=current_user.id,
-            type=NotificationType.FOLLOW
-        )
-        db.add(notif)
+        # --- УВЕДОМЛЕНИЕ С ПРОВЕРКОЙ НАСТРОЕК ---
+        # Проверяем, хочет ли пользователь получать уведомления о новых подписчиках
+        if getattr(target_user, 'notify_on_new_follower', True):
+            notif = Notification(
+                user_id=target_user.id,          # Кому: target_user
+                sender_id=current_user.id,
+                type=NotificationType.FOLLOW
+            )
+            db.add(notif)
 
     await db.commit()
     
@@ -220,6 +220,39 @@ async def update_user_me(
     await db.commit()
     await db.refresh(current_user)
     
+    return current_user
+
+# 1. Эндпоинт смены пароля
+@router.post("/me/password", status_code=204)
+async def change_password(
+    body: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Проверяем старый пароль
+    if not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+    
+    # Хэшируем и сохраняем новый
+    current_user.hashed_password = get_password_hash(body.new_password)
+    db.add(current_user)
+    await db.commit()
+    return None
+
+# 2. Эндпоинт обновления настроек
+@router.patch("/me/settings", response_model=UserResponse)
+async def update_settings(
+    settings: UserUpdateSettings,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    update_data = settings.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(current_user, key, value)
+    
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
     return current_user
 
 @router.post("/{user_id}/block", response_model=BlockResponse)
