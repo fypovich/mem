@@ -103,31 +103,65 @@ async def upload_meme(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Загрузка мема с фоновой обработкой (Celery).
-    Файл сохраняется, создается запись 'processing', и задача уходит воркеру.
-    Воркер сам определит тип (GIF/Video), длительность и сгенерирует тумбу.
-    """
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1].lower()
     
-    # 1. Сохраняем основной файл
-    raw_filename = f"raw_{file_id}.{ext}"
-    raw_path = os.path.join(UPLOAD_DIR, raw_filename)
+    is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
     
+    # Определяем, будет ли финальный файл видео (нужна обработка) или картинка (сразу готова)
+    is_final_video = True
+    if is_image_input and not audio_file:
+        is_final_video = False
+
+    raw_filename = f"raw_{file_id}.{ext}"
+    final_filename = f"{file_id}.mp4" if is_final_video else f"{file_id}.{ext}"
+    thumbnail_filename = f"{file_id}_thumb.jpg"
+
+    raw_path = os.path.join(UPLOAD_DIR, raw_filename)
+    final_path = os.path.join(UPLOAD_DIR, final_filename)
+    thumbnail_path = os.path.join(UPLOAD_DIR, thumbnail_filename)
+
+    # 1. Сохраняем исходник
     async with aiofiles.open(raw_path, 'wb') as f:
         await f.write(await file.read())
 
-    # 2. Если есть аудио-файл, сохраняем его тоже
+    # Сохраняем аудио, если есть
     audio_path = None
     if audio_file:
-        audio_ext = audio_file.filename.split('.')[-1].lower()
-        audio_filename = f"audio_{file_id}.{audio_ext}"
-        audio_path = os.path.join(UPLOAD_DIR, audio_filename)
+        audio_ext = audio_file.filename.split('.')[-1]
+        audio_path = os.path.join(UPLOAD_DIR, f"audio_{file_id}.{audio_ext}")
         async with aiofiles.open(audio_path, 'wb') as f:
             await f.write(await audio_file.read())
 
-    # 3. Обработка Тегов (Синхронно, это быстро)
+    # 2. Подготовка метаданных
+    duration, width, height = 0.0, 0, 0
+    has_audio = False
+    status = "processing"
+    media_url = f"/static/{final_filename}"
+    thumbnail_url = "/static/processing_placeholder.jpg" # Заглушка по умолчанию
+
+    # 3. ЛОГИКА ОБРАБОТКИ
+    if not is_final_video:
+        # --- СЦЕНАРИЙ: КАРТИНКА (БЕЗ ОБРАБОТКИ ВОРКЕРОМ) ---
+        # Сразу копируем в финальный путь
+        shutil.copy(raw_path, final_path)
+        # Сразу создаем превью (копия оригинала)
+        shutil.copy(final_path, thumbnail_path)
+        
+        # Получаем размеры
+        try:
+            processor = MediaProcessor(final_path)
+            _, width, height = processor.get_metadata()
+        except: pass
+        
+        # Для картинок статус сразу APPROVED и реальная ссылка на превью
+        status = "approved"
+        thumbnail_url = f"/static/{thumbnail_filename}"
+        
+        # Удаляем raw, он больше не нужен
+        if os.path.exists(raw_path): os.remove(raw_path)
+
+    # 4. Сохранение Тегов и Персонажа
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -140,7 +174,6 @@ async def upload_meme(
                 await db.flush()
             db_tags.append(tag)
 
-    # 4. Обработка Персонажа (Subject)
     db_subject = None
     if subject:
         clean_name = subject.strip()
@@ -152,38 +185,67 @@ async def upload_meme(
             db.add(db_subject)
             await db.flush()
 
-    # 5. Создаем запись в БД (Status = processing)
-    # Media URL временно указывает на сырой файл или заглушку. 
-    # Воркер обновит его на финальный .mp4 или оптимизированный .jpg
-    
+    # 5. Создание записи в БД
     new_meme = Meme(
+        id=uuid.UUID(file_id), # Явно задаем ID, чтобы передать в воркер
         title=title, 
         description=description,
-        media_url=f"/static/{raw_filename}", # Временная ссылка
-        thumbnail_url="/static/processing_placeholder.jpg", # Заглушка
-        duration=0, 
-        width=0, 
-        height=0,
-        has_audio=False,
+        media_url=media_url,
+        thumbnail_url=thumbnail_url,
+        duration=duration, 
+        width=width, 
+        height=height,
+        has_audio=has_audio,
         user_id=current_user.id, 
-        status="processing", # <--- ВАЖНО
+        status=status,
         subject_id=db_subject.id if db_subject else None
     )
     new_meme.tags = db_tags
     
     db.add(new_meme)
     await db.commit()
-    await db.refresh(new_meme)
 
-    # 6. Отправляем задачу в Celery
-    # Передаем ID мема, путь к исходнику и путь к аудио (если есть)
-    process_meme_task.delay(
-        meme_id=str(new_meme.id), 
-        file_path=raw_path, 
-        audio_path=audio_path
-    )
+    # 6. Если это ВИДЕО -> Запускаем фоновую задачу Celery
+    if is_final_video:
+        # Импорт внутри функции чтобы избежать циклического импорта, если он есть
+        # Но celery_app.send_task надежнее
+        celery_app.send_task("app.worker.process_meme_task", args=[file_id, raw_path, audio_path])
 
-    # 7. Возвращаем результат
+    # 7. Индексация в Meilisearch (если approved)
+    if status == "approved":
+        try:
+            search = get_search_service()
+            if search:
+                search.add_meme({
+                    "id": str(new_meme.id),
+                    "title": new_meme.title,
+                    "description": new_meme.description,
+                    "thumbnail_url": new_meme.thumbnail_url,
+                    "media_url": new_meme.media_url,
+                    "views_count": new_meme.views_count
+                })
+        except Exception as e:
+            print(f"Meilisearch indexing warning: {e}")
+
+    # 8. Уведомления (только если approved, иначе воркер отправит)
+    if status == "approved":
+        try:
+            followers_stmt = select(follows.c.follower_id).where(follows.c.followed_id == current_user.id)
+            followers_res = await db.execute(followers_stmt)
+            follower_ids = followers_res.scalars().all()
+            
+            for fid in follower_ids:
+                db.add(Notification(
+                    user_id=fid, 
+                    sender_id=current_user.id, 
+                    type=NotificationType.NEW_MEME, 
+                    meme_id=new_meme.id
+                ))
+            await db.commit()
+        except Exception as e:
+            print(f"Notification error: {e}")
+
+    # Возврат результата
     res = await db.execute(
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))

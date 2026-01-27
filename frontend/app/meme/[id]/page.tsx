@@ -9,11 +9,16 @@ import { CommentsSection } from "@/components/comments-section";
 import { MemeGrid } from "@/components/meme-grid";
 import { MemeOwnerActions } from "@/components/meme-owner-actions";
 
-const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+// 1. Адрес для запросов СЕРВЕРА (внутри Docker)
+const FETCH_API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+// 2. Адрес для отображения в БРАУЗЕРЕ (картинки, видео)
+const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function getMeme(id: string) {
   try {
-    const res = await fetch(`${API_URL}/api/v1/memes/${id}`, { cache: "no-store" });
+    // Используем FETCH_API_URL для общения между контейнерами
+    const res = await fetch(`${FETCH_API_URL}/api/v1/memes/${id}`, { cache: "no-store" });
     if (!res.ok) return null;
     return res.json();
   } catch (e) {
@@ -23,7 +28,8 @@ async function getMeme(id: string) {
 
 async function getSimilarMemes(id: string) {
   try {
-    const res = await fetch(`${API_URL}/api/v1/memes/${id}/similar`, { cache: "no-store" });
+    // Используем FETCH_API_URL для общения между контейнерами
+    const res = await fetch(`${FETCH_API_URL}/api/v1/memes/${id}/similar`, { cache: "no-store" });
     if (!res.ok) return [];
     return res.json();
   } catch (e) {
@@ -42,12 +48,15 @@ export default async function MemePage({ params }: { params: Params }) {
 
   if (!meme) return notFound();
 
+  // Для аватарок используем DISPLAY_API_URL (чтобы грузилось в браузере)
   const avatarUrl = meme.user.avatar_url 
-      ? (meme.user.avatar_url.startsWith("http") ? meme.user.avatar_url : `${API_URL}${meme.user.avatar_url}`)
+      ? (meme.user.avatar_url.startsWith("http") ? meme.user.avatar_url : `${DISPLAY_API_URL}${meme.user.avatar_url}`)
       : `https://api.dicebear.com/7.x/avataaars/svg?seed=${meme.user.username}`;
   
   const date = new Date(meme.created_at).toLocaleDateString("ru-RU", { day: 'numeric', month: 'long', year: 'numeric' });
-  const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${API_URL}${meme.media_url}`;
+  
+  // Для видео/картинок мема используем DISPLAY_API_URL
+  const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${DISPLAY_API_URL}${meme.media_url}`;
   
   const isMp4 = meme.media_url.endsWith(".mp4");
 
@@ -68,6 +77,7 @@ export default async function MemePage({ params }: { params: Params }) {
                         loop 
                         muted={!meme.has_audio} 
                         playsInline
+                        crossOrigin="anonymous"
                         className="w-full h-full object-contain"
                     />
                 ) : (
@@ -102,9 +112,6 @@ export default async function MemePage({ params }: { params: Params }) {
                      </Link>
 
                      <div className="flex items-center gap-2">
-                        {/* MemeInteractions теперь принимает authorUsername
-                            и сам скрывает Flag если это автор 
-                        */}
                         <MemeInteractions 
                             memeId={meme.id} 
                             initialLikes={meme.likes_count} 
@@ -112,7 +119,6 @@ export default async function MemePage({ params }: { params: Params }) {
                             authorUsername={meme.user.username} 
                         />
 
-                        {/* Меню владельца (Редактировать/Удалить) */}
                         <MemeOwnerActions 
                             memeId={meme.id} 
                             authorUsername={meme.user.username}

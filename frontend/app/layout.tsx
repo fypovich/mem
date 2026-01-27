@@ -3,9 +3,6 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/header";
 import { Sidebar } from "@/components/sidebar";
-// Toaster удален, так как файла компонента нет в проекте.
-// Когда добавите components/ui/toaster.tsx, раскомментируйте строку ниже:
-// import { Toaster } from "@/components/ui/toaster";
 
 const inter = Inter({ subsets: ["latin", "cyrillic"] });
 
@@ -20,20 +17,27 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" suppressHydrationWarning>
-      <body className={inter.className}>
-        <div className="flex min-h-screen flex-col bg-background">
+    // ВЕРНУЛИ className="dark" — теперь сайт снова будет черным
+    <html lang="ru" className="dark" suppressHydrationWarning>
+      <body className={`${inter.className} min-h-screen bg-background font-sans antialiased`}>
+        <div className="relative flex min-h-screen flex-col">
+          {/* ШАПКА */}
           <Header />
+          
           <div className="flex flex-1">
-            <aside className="hidden md:flex w-64 flex-col border-r fixed inset-y-0 z-40 mt-16 bg-background">
+            {/* САЙДБАР (Вернули фиксированное позиционирование как было раньше) */}
+            <aside className="fixed top-14 bottom-0 left-0 z-30 hidden w-64 border-r bg-background md:block overflow-y-auto py-6 px-4">
                <Sidebar />
             </aside>
-            <main className="flex-1 md:pl-64 pt-16">
-                {children}
+
+            {/* ОСНОВНОЙ КОНТЕНТ (Отступ слева md:pl-64 чтобы не наезжал на сайдбар) */}
+            <main className="flex w-full flex-col overflow-hidden md:pl-64">
+               <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+                   {children}
+               </div>
             </main>
           </div>
         </div>
-        {/* <Toaster /> */}
       </body>
     </html>
   );
