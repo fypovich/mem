@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Устанавливаем системные пакеты (ffmpeg и gcc для сборки psycopg2)
+# Устанавливаем системные утилиты: ffmpeg, компилятор gcc и libpq для Postgres
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libpq-dev \

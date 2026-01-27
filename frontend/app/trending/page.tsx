@@ -1,27 +1,47 @@
 import React from "react";
+import { MemeGrid } from "@/components/meme-grid";
 import { Flame } from "lucide-react";
-import { MemeGrid } from "@/components/meme-grid"; // <-- Импорт
 
-const API_URL = "http://127.0.0.1:8000";
+export const dynamic = "force-dynamic";
+
+// Умный выбор адреса: если мы на сервере — берем внутренний, если в браузере — внешний
+const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function getTrendingMemes() {
   try {
-    const res = await fetch(`${API_URL}/api/v1/memes/?limit=50&sort=popular&period=week`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/api/v1/memes/?sort=popular&period=week`, { 
+        cache: "no-store" 
+    });
     if (!res.ok) return [];
     return res.json();
-  } catch (e) { return []; }
+  } catch (e) {
+    console.error("Trending fetch error:", e);
+    return [];
+  }
 }
 
 export default async function TrendingPage() {
   const memes = await getTrendingMemes();
 
   return (
-    <div className="container max-w-6xl mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-8 flex items-center gap-3">
-        <Flame className="w-8 h-8 text-orange-500 fill-orange-500" /> Тренды недели
-      </h1>
+    <div className="container mx-auto py-6 px-4">
+      <div className="flex items-center gap-2 mb-8">
+        <div className="p-3 bg-orange-500/10 rounded-full">
+            <Flame className="w-6 h-6 text-orange-500" />
+        </div>
+        <div>
+            <h1 className="text-3xl font-extrabold">В тренде</h1>
+            <p className="text-muted-foreground">Самое популярное за неделю</p>
+        </div>
+      </div>
 
-      <MemeGrid items={memes} />
+      {memes.length > 0 ? (
+          <MemeGrid items={memes} />
+      ) : (
+          <div className="text-center py-20 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+              Пока тихо... Станьте первым, кто создаст тренд!
+          </div>
+      )}
     </div>
   );
 }
