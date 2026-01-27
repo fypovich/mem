@@ -18,29 +18,37 @@ async def get_notifications(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Получение списка уведомлений"""
     query = (
         select(Notification)
         .where(Notification.user_id == current_user.id)
         .options(
-            selectinload(Notification.sender),
-            selectinload(Notification.meme)
+             selectinload(Notification.sender),
+             # ВАЖНОЕ ИСПРАВЛЕНИЕ: Глубокая загрузка связей мема
+             selectinload(Notification.meme).options(
+                 selectinload(Meme.tags),
+                 selectinload(Meme.subject),
+                 selectinload(Meme.user)
+             )
         )
-        .order_by(desc(Notification.created_at))
+        .order_by(Notification.created_at.desc())
         .offset(skip)
         .limit(limit)
     )
     result = await db.execute(query)
     notifications = result.scalars().all()
     
-    # Формируем ответ, добавляя meme_thumbnail вручную, если есть мем
-    response = []
-    for notif in notifications:
-        item = NotificationResponse.from_orm(notif)
-        if notif.meme:
-            item.meme_thumbnail = notif.meme.thumbnail_url
-        response.append(item)
+    # Помечаем как прочитанные
+    if notifications:
+        notif_ids = [n.id for n in notifications]
+        await db.execute(
+            update(Notification)
+            .where(Notification.id.in_(notif_ids))
+            .values(is_read=True)
+        )
+        await db.commit()
         
-    return response
+    return notifications
 
 @router.patch("/{id}/read")
 async def mark_as_read(
@@ -76,9 +84,9 @@ async def get_unread_count(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    count = await db.scalar(
-        select(func.count())
-        .select_from(Notification)
-        .where((Notification.user_id == current_user.id) & (Notification.is_read == False))
+    """Получение количества непрочитанных"""
+    query = select(func.count()).select_from(Notification).where(
+        (Notification.user_id == current_user.id) & (Notification.is_read == False)
     )
-    return {"count": count}
+    count = await db.scalar(query)
+    return {"count": count or 0}
