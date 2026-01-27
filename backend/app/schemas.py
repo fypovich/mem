@@ -17,18 +17,27 @@ class UserCreate(BaseModel):
     password: str
     full_name: Optional[str] = None
 
+# --- ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ ---
 class UserResponse(UserBase):
     id: uuid.UUID
     email: str
     full_name: Optional[str] = None
-    is_following: bool = False
+    created_at: datetime
+    
+    # Статистика
     followers_count: int = 0
     following_count: int = 0
-    created_at: datetime
-    notify_on_like: bool
-    notify_on_comment: bool
-    notify_on_new_follower: bool
-    notify_on_new_meme: bool
+    
+    # Флаги состояния
+    is_following: bool = False
+    is_me: bool = False       # <--- Добавлено
+    is_blocked: bool = False  # <--- Добавлено
+
+    # Настройки уведомлений (теперь они точно попадут в ответ)
+    notify_on_like: bool = True
+    notify_on_comment: bool = True
+    notify_on_new_follower: bool = True
+    notify_on_new_meme: bool = True
 
     class Config:
         from_attributes = True
@@ -37,12 +46,11 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     bio: Optional[str] = None
     website: Optional[str] = None
-    # Password update is usually handled separately or requires logic
     
+# UserProfile используется для ЧУЖИХ профилей (без настроек и email)
 class UserProfile(BaseModel):
     id: uuid.UUID
     username: str
-    email: str 
     full_name: Optional[str]
     avatar_url: Optional[str]
     header_url: Optional[str]
@@ -71,6 +79,7 @@ class SubjectResponse(BaseModel):
     name: str
     slug: str
     category: str
+    image_url: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -83,10 +92,9 @@ class CommentResponse(BaseModel):
     id: uuid.UUID
     text: str
     created_at: datetime
-    user: UserResponse
+    user: UserResponse # Можно заменить на UserProfile, если не хотим светить настройки автора коммента
     meme_id: uuid.UUID
     parent_id: Optional[uuid.UUID] = None
-    
     class Config:
         from_attributes = True
 
@@ -95,11 +103,10 @@ class MemeBase(BaseModel):
     title: str
     description: Optional[str] = None
 
-# Схема для обновления мема
 class MemeUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    tags: Optional[str] = None # Принимаем строку через запятую для упрощения
+    tags: Optional[str] = None 
 
 class MemeResponse(MemeBase):
     id: uuid.UUID
@@ -121,7 +128,7 @@ class MemeResponse(MemeBase):
     status: str
     created_at: datetime
     
-    user: UserResponse
+    user: UserResponse # Или UserProfile
     tags: List[TagResponse] = []
     subject: Optional[SubjectResponse] = None
     
@@ -166,7 +173,7 @@ class PasswordResetConfirm(BaseModel):
 
 # --- Report ---
 class ReportCreate(BaseModel):
-    reason: str # spam, violence, etc.
+    reason: str
     description: Optional[str] = None
 
 # --- Block ---
@@ -174,12 +181,10 @@ class BlockResponse(BaseModel):
     is_blocked: bool
     user_id: uuid.UUID
 
-# Схема для смены пароля
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
-# Схема для обновления настроек (добавьте к UserUpdate или создайте новую)
 class UserUpdateSettings(BaseModel):
     notify_on_like: Optional[bool] = None
     notify_on_comment: Optional[bool] = None

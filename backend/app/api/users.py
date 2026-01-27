@@ -1,5 +1,5 @@
-import os
 import uuid
+import os
 import aiofiles
 import sqlalchemy as sa
 from datetime import datetime
@@ -26,18 +26,15 @@ async def follow_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. Ищем цель подписки
     query = select(User).where(User.username == username)
     result = await db.execute(query)
     target_user = result.scalars().first()
     
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-        
     if target_user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot follow self")
 
-    # 2. Проверяем подписку
     stmt = select(follows).where(
         (follows.c.follower_id == current_user.id) & 
         (follows.c.followed_id == target_user.id)
@@ -59,11 +56,10 @@ async def follow_user(
         )
         action = "followed"
         
-        # --- УВЕДОМЛЕНИЕ С ПРОВЕРКОЙ НАСТРОЕК ---
-        # Проверяем, хочет ли пользователь получать уведомления о новых подписчиках
+        # УВЕДОМЛЕНИЕ (С ПРОВЕРКОЙ НАСТРОЕК)
         if getattr(target_user, 'notify_on_new_follower', True):
             notif = Notification(
-                user_id=target_user.id,          # Кому: target_user
+                user_id=target_user.id,
                 sender_id=current_user.id,
                 type=NotificationType.FOLLOW
             )
@@ -79,167 +75,120 @@ async def follow_user(
         "followers_count": count.scalar()
     }
 
-# --- ПОЛУЧЕНИЕ СПИСКОВ ---
-
 @router.get("/{username}/followers", response_model=List[UserProfile])
-async def get_user_followers(username: str, db: AsyncSession = Depends(get_db)):
-    # Находим пользователя
-    user_stmt = select(User).where(User.username == username)
-    user_res = await db.execute(user_stmt)
+async def get_followers(username: str, db: AsyncSession = Depends(get_db)):
+    user_res = await db.execute(select(User).where(User.username == username))
     user = user_res.scalars().first()
-    if not user: raise HTTPException(status_code=404)
+    if not user: return []
 
-    # Выбираем всех юзеров, которые являются фолловерами
-    query = (
+    stmt = (
         select(User)
-        .join(follows, User.id == follows.c.follower_id)
+        .join(follows, follows.c.follower_id == User.id)
         .where(follows.c.followed_id == user.id)
     )
-    res = await db.execute(query)
+    res = await db.execute(stmt)
     return res.scalars().all()
 
 @router.get("/{username}/following", response_model=List[UserProfile])
-async def get_user_following(username: str, db: AsyncSession = Depends(get_db)):
-    # Находим пользователя
-    user_stmt = select(User).where(User.username == username)
-    user_res = await db.execute(user_stmt)
+async def get_following(username: str, db: AsyncSession = Depends(get_db)):
+    user_res = await db.execute(select(User).where(User.username == username))
     user = user_res.scalars().first()
-    if not user: raise HTTPException(status_code=404)
+    if not user: return []
 
-    # Выбираем всех юзеров, на которых подписан user
-    query = (
+    stmt = (
         select(User)
-        .join(follows, User.id == follows.c.followed_id)
+        .join(follows, follows.c.followed_id == User.id)
         .where(follows.c.follower_id == user.id)
     )
-    res = await db.execute(query)
+    res = await db.execute(stmt)
     return res.scalars().all()
 
+@router.get("/{user_id}/check-follow")
+async def check_follow(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    stmt = select(follows).where(
+        (follows.c.follower_id == current_user.id) & 
+        (follows.c.followed_id == user_id)
+    )
+    result = await db.execute(stmt)
+    return {"is_following": result.first() is not None}
 
-# --- ЧТЕНИЕ ПРОФИЛЯ ---
+# --- ПРОФИЛЬ ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ ---
 
-@router.get("/me", response_model=UserProfile)
-async def read_users_me(current_user: User = Depends(get_current_user)):
-    # Для /me статистика тоже нужна, но пока вернем как есть, можно расширить
+@router.get("/me", response_model=UserResponse) # <--- ИСПРАВЛЕНО: UserResponse (содержит настройки)
+async def read_users_me(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    followers = await db.scalar(select(func.count()).select_from(follows).where(follows.c.followed_id == current_user.id))
+    following = await db.scalar(select(func.count()).select_from(follows).where(follows.c.follower_id == current_user.id))
+    
+    current_user.followers_count = followers
+    current_user.following_count = following
+    
+    # Явно проставляем флаги для схемы
     current_user.is_me = True
+    current_user.is_following = False
+    current_user.is_blocked = False
+
     return current_user
 
-@router.get("/{username}", response_model=UserProfile)
-async def read_user(
-    username: str, 
-    db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user)
-):
-    query = select(User).where(User.username == username)
-    result = await db.execute(query)
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # 1. Считаем подписчиков
-    followers_count = await db.scalar(
-        select(func.count()).select_from(follows).where(follows.c.followed_id == user.id)
-    )
-    
-    # 2. Считаем подписки
-    following_count = await db.scalar(
-        select(func.count()).select_from(follows).where(follows.c.follower_id == user.id)
-    )
-
-    # 3. Проверяем подписку и БЛОКИРОВКУ
-    is_following = False
-    is_me = False
-    is_blocked = False # <--- Новая переменная
-    
-    if current_user:
-        if current_user.id == user.id:
-            is_me = True
-        else:
-            # Проверка подписки
-            check_follow = await db.scalar(
-                select(exists().where(
-                    (follows.c.follower_id == current_user.id) & 
-                    (follows.c.followed_id == user.id)
-                ))
-            )
-            is_following = check_follow
-
-            # Проверка блокировки (Я заблокировал ЕГО?)
-            check_block = await db.scalar(
-                select(exists().where(
-                    (Block.blocker_id == current_user.id) & 
-                    (Block.blocked_id == user.id)
-                ))
-            )
-            is_blocked = check_block
-
-    # Заполняем поля
-    user_response = UserProfile.from_orm(user)
-    user_response.followers_count = followers_count or 0
-    user_response.following_count = following_count or 0
-    user_response.is_following = is_following
-    user_response.is_me = is_me
-    user_response.is_blocked = is_blocked # <--- Передаем статус
-    
-    return user_response
-
-# --- ОБНОВЛЕНИЕ ПРОФИЛЯ ---
-@router.patch("/me", response_model=UserProfile)
+@router.patch("/me", response_model=UserResponse)
 async def update_user_me(
     full_name: Optional[str] = Form(None),
     bio: Optional[str] = Form(None),
     website: Optional[str] = Form(None),
     avatar_file: UploadFile = File(None),
     header_file: UploadFile = File(None),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    if avatar_file:
-        file_ext = avatar_file.filename.split(".")[-1]
-        filename = f"avatar_{current_user.id}.{file_ext}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        async with aiofiles.open(file_path, 'wb') as out_file:
-            content = await avatar_file.read()
-            await out_file.write(content)
-        current_user.avatar_url = f"/static/{filename}"
-
-    if header_file:
-        file_ext = header_file.filename.split(".")[-1]
-        filename = f"header_{current_user.id}.{file_ext}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        async with aiofiles.open(file_path, 'wb') as out_file:
-            content = await header_file.read()
-            await out_file.write(content)
-        current_user.header_url = f"/static/{filename}"
-
     if full_name is not None: current_user.full_name = full_name
     if bio is not None: current_user.bio = bio
     if website is not None: current_user.website = website
+
+    if avatar_file:
+        ext = avatar_file.filename.split('.')[-1]
+        filename = f"avatar_{current_user.id}.{ext}"
+        path = os.path.join(UPLOAD_DIR, filename)
+        async with aiofiles.open(path, 'wb') as f:
+            await f.write(await avatar_file.read())
+        current_user.avatar_url = f"/static/{filename}"
+
+    if header_file:
+        ext = header_file.filename.split('.')[-1]
+        filename = f"header_{current_user.id}.{ext}"
+        path = os.path.join(UPLOAD_DIR, filename)
+        async with aiofiles.open(path, 'wb') as f:
+            await f.write(await header_file.read())
+        current_user.header_url = f"/static/{filename}"
 
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
     
+    # Для ответа
+    current_user.is_me = True
+    
     return current_user
 
-# 1. Эндпоинт смены пароля
 @router.post("/me/password", status_code=204)
 async def change_password(
     body: ChangePasswordRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Проверяем старый пароль
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Неверный текущий пароль")
     
-    # Хэшируем и сохраняем новый
     current_user.hashed_password = get_password_hash(body.new_password)
     db.add(current_user)
     await db.commit()
     return None
 
-# 2. Эндпоинт обновления настроек
 @router.patch("/me/settings", response_model=UserResponse)
 async def update_settings(
     settings: UserUpdateSettings,
@@ -253,7 +202,55 @@ async def update_settings(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+    
+    current_user.is_me = True
     return current_user
+
+# --- ПУБЛИЧНЫЙ ПРОФИЛЬ ---
+
+@router.get("/{username}", response_model=UserProfile) # <--- ЧУЖОЙ ПРОФИЛЬ (БЕЗ НАСТРОЕК)
+async def read_user(
+    username: str, 
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    query = select(User).where(User.username == username)
+    result = await db.execute(query)
+    user = result.scalars().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    followers = await db.scalar(select(func.count()).select_from(follows).where(follows.c.followed_id == user.id))
+    following = await db.scalar(select(func.count()).select_from(follows).where(follows.c.follower_id == user.id))
+    
+    user.followers_count = followers
+    user.following_count = following
+
+    if current_user:
+        user.is_me = (user.id == current_user.id)
+        
+        # Проверка подписки
+        is_following_query = select(follows).where(
+            (follows.c.follower_id == current_user.id) & 
+            (follows.c.followed_id == user.id)
+        )
+        user.is_following = (await db.execute(is_following_query)).first() is not None
+        
+        # Проверка блокировки
+        is_blocked_query = select(Block).where(
+            (Block.blocker_id == current_user.id) & 
+            (Block.blocked_id == user.id)
+        )
+        user.is_blocked = (await db.execute(is_blocked_query)).first() is not None
+    else:
+        user.is_me = False
+        user.is_following = False
+        user.is_blocked = False
+
+    return user
+
+# --- БЛОКИРОВКИ ---
 
 @router.post("/{user_id}/block", response_model=BlockResponse)
 async def block_user(
@@ -261,31 +258,23 @@ async def block_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Заблокировать пользователя"""
     if user_id == current_user.id:
-        raise HTTPException(400, "Cannot block yourself")
-    
-    # Проверяем существование
-    target_user = await db.get(User, user_id)
-    if not target_user:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(status_code=400, detail="Cannot block self")
 
     # Проверяем, есть ли уже блок
     query = select(Block).where((Block.blocker_id == current_user.id) & (Block.blocked_id == user_id))
     existing = await db.execute(query)
     if existing.scalars().first():
-        return {"is_blocked": True, "user_id": user_id} # Уже заблокирован
+        return {"is_blocked": True, "user_id": user_id} 
 
     # Создаем блок
     new_block = Block(blocker_id=current_user.id, blocked_id=user_id)
     db.add(new_block)
     
-    # ВАЖНО: При блокировке нужно отписаться друг от друга
-    # 1. Я отписываюсь от него
+    # При блокировке нужно отписаться друг от друга
     await db.execute(sa.delete(follows).where(
         (follows.c.follower_id == current_user.id) & (follows.c.followed_id == user_id)
     ))
-    # 2. Он отписывается от меня (принудительно)
     await db.execute(sa.delete(follows).where(
         (follows.c.follower_id == user_id) & (follows.c.followed_id == current_user.id)
     ))
@@ -299,13 +288,12 @@ async def unblock_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Разблокировать пользователя"""
     query = select(Block).where((Block.blocker_id == current_user.id) & (Block.blocked_id == user_id))
     result = await db.execute(query)
-    block_entry = result.scalars().first()
-
-    if block_entry:
-        await db.delete(block_entry)
+    block = result.scalars().first()
+    
+    if block:
+        await db.delete(block)
         await db.commit()
     
     return {"is_blocked": False, "user_id": user_id}
