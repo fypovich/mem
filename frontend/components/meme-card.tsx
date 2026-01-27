@@ -2,30 +2,67 @@
 
 import React from "react";
 import Link from "next/link";
-import { Play, Heart, MessageCircle, Volume2, Image as ImageIcon, FileVideo } from "lucide-react";
+import { 
+  Heart, 
+  MessageCircle, 
+  Volume2, 
+  Image as ImageIcon, 
+  Film, 
+  Play 
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+// 1. Адрес для отображения (через прокси Next.js или прямой)
+const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface MemeCardProps {
   meme: any;
 }
 
 export function MemeCard({ meme }: MemeCardProps) {
-  // Определяем URL
-  const mediaUrl = meme.media_url.startsWith('http') ? meme.media_url : `${API_URL}${meme.media_url}`;
-  const thumbUrl = meme.thumbnail_url.startsWith('http') ? meme.thumbnail_url : `${API_URL}${meme.thumbnail_url}`;
+  // Формируем правильную ссылку на медиа и превью
+  const mediaUrl = meme.media_url.startsWith("http") 
+    ? meme.media_url 
+    : `${DISPLAY_API_URL}${meme.media_url}`;
 
-  // --- ЛОГИКА ТИПОВ ---
-  const isVideoFile = meme.duration > 0.1;
-  const isGif = isVideoFile && !meme.has_audio;
-  const isRealVideo = isVideoFile && meme.has_audio;
-  
-  // Является ли файл MP4 (нужен тег <video>) или картинкой (тег <img>)
-  // Важно: для MP4-гифок мы хотим использовать <video>, чтобы они двигались
-  const isMp4Format = meme.media_url.endsWith('.mp4');
+  const thumbUrl = meme.thumbnail_url 
+    ? (meme.thumbnail_url.startsWith("http") ? meme.thumbnail_url : `${DISPLAY_API_URL}${meme.thumbnail_url}`)
+    : mediaUrl; // Если превью нет, пробуем оригинал (для картинок)
+
+  // Получаем расширение файла
+  const ext = meme.media_url.split('.').pop()?.toLowerCase();
+
+  // Определяем технический тип для выбора тега (video или img)
+  const isMp4Format = ext === "mp4" || ext === "webm" || ext === "mov";
+
+  // --- ЛОГИКА ОПРЕДЕЛЕНИЯ ИКОНКИ ---
+  const getTypeIcon = () => {
+    // 1. Это GIF (настоящий gif файл)
+    if (ext === "gif") {
+        return <span className="text-[10px] font-bold leading-none text-white tracking-widest">GIF</span>;
+    }
+
+    // 2. Это WebP (Анимированный)
+    // Бэкенд ставит duration=1.0 для анимированных webp, и 0 для статики
+    if (ext === "webp" && meme.duration > 0) {
+        return <span className="text-[10px] font-bold leading-none text-white tracking-widest">ANIM</span>;
+    }
+
+    // 3. Это Видео (MP4/WebM)
+    if (isMp4Format) {
+      if (meme.has_audio) {
+        return <Volume2 className="w-3 h-3 text-white" />; // Видео со звуком
+      }
+      // Видео без звука (или сконвертированный gif)
+      return <Film className="w-3 h-3 text-white" />; 
+    }
+
+    // 4. Обычная картинка (jpg, png, статичный webp)
+    return <ImageIcon className="w-3 h-3 text-white" />;
+  };
 
   const formatDuration = (seconds: number) => {
+    if (!seconds) return "0:00";
     const min = Math.floor(seconds / 60);
     const sec = Math.floor(seconds % 60);
     return `${min}:${sec.toString().padStart(2, "0")}`;
@@ -36,8 +73,9 @@ export function MemeCard({ meme }: MemeCardProps) {
       <div className="group relative rounded-xl overflow-hidden cursor-pointer transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/10 bg-stone-900 border border-border/50">
         
         <div className="w-full relative min-h-[100px] bg-muted/10">
-            {/* ЕСЛИ ЭТО MP4 (даже без звука) -> Рендерим Video для "живого" превью 
-               ЕСЛИ ЭТО GIF/WEBP -> Рендерим Img (они сами анимируются)
+            {/* Рендерим контент:
+                - Если это видео-формат (даже без звука, например конвертированный гиф) -> <video>
+                - Иначе -> <img> 
             */}
             {isMp4Format ? (
                 <video
@@ -47,12 +85,12 @@ export function MemeCard({ meme }: MemeCardProps) {
                     loop
                     autoPlay
                     playsInline
-                    // Отключаем controls, чтобы выглядело как гифка
+                    crossOrigin="anonymous"
+                    // pointerEvents-none чтобы нельзя было нажать на паузу кликом, перейдя по ссылке
+                    style={{ pointerEvents: 'none' }} 
                 />
             ) : (
                 <img 
-                    // Для GIF используем thumbUrl, так как бэкенд копирует туда оригинал gif
-                    // Для WebP тоже
                     src={thumbUrl} 
                     alt={meme.title} 
                     className="w-full h-auto object-cover"
@@ -62,29 +100,31 @@ export function MemeCard({ meme }: MemeCardProps) {
             
             {/* --- ОВЕРЛЕИ --- */}
 
-            {/* 1. ВИДЕО СО ЗВУКОМ */}
-            {isRealVideo && (
-                <>
-                    <div className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <Volume2 className="w-3 h-3 text-white" />
-                    </div>
-                    <Badge className="absolute bottom-2 right-2 bg-black/60 hover:bg-black/70 text-white text-[10px] border-0 px-1.5 h-5 z-10">
-                        {formatDuration(meme.duration)}
-                    </Badge>
-                </>
+            {/* Бейдж типа контента (Верхний правый угол) */}
+            <div className="absolute top-2 right-2 z-20">
+               <Badge variant="secondary" className="bg-black/60 hover:bg-black/70 backdrop-blur-sm border-0 px-2 py-1 h-6 flex items-center justify-center">
+                  {getTypeIcon()}
+               </Badge>
+            </div>
+
+            {/* Длительность (только для видео со звуком) */}
+            {isMp4Format && meme.has_audio && (
+                <Badge className="absolute bottom-2 right-2 bg-black/60 hover:bg-black/70 text-white text-[10px] border-0 px-1.5 h-5 z-20">
+                    {formatDuration(meme.duration)}
+                </Badge>
             )}
 
-            {/* 2. GIF (Видео без звука) */}
-            {isGif && (
-                 <div className="absolute top-2 right-2 z-10">
-                    <Badge variant="secondary" className="bg-black/60 text-white hover:bg-black/70 border-0 font-bold tracking-wider text-[9px] px-1.5 py-0.5 h-5 backdrop-blur-md">
-                        GIF
-                    </Badge>
-                 </div>
+            {/* Иконка Play по центру (только для видео, появляется при наведении) */}
+            {isMp4Format && (
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+                <div className="w-12 h-12 rounded-full bg-primary/90 flex items-center justify-center shadow-xl transform scale-75 group-hover:scale-100 transition-transform">
+                   <Play className="w-5 h-5 text-primary-foreground fill-current ml-0.5" />
+                </div>
+              </div>
             )}
         </div>
 
-        {/* Инфо (градиент) */}
+        {/* Инфо (градиент снизу) */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4 z-20">
             <h3 className="text-white font-bold text-lg leading-tight line-clamp-2 drop-shadow-md">
                 {meme.title}
