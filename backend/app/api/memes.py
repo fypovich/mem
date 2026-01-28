@@ -139,7 +139,6 @@ async def upload_meme(
     media_url = f"/static/{final_filename}"
     thumbnail_url = "/static/processing_placeholder.jpg"
 
-    # Обработка картинок (без воркера)
     if not is_final_video:
         shutil.copy(raw_path, final_path)
         shutil.copy(final_path, thumbnail_path)
@@ -153,7 +152,6 @@ async def upload_meme(
         
         if os.path.exists(raw_path): os.remove(raw_path)
 
-    # Теги и Персонаж
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -195,13 +193,12 @@ async def upload_meme(
     
     db.add(new_meme)
     await db.commit()
-    # ВАЖНО: Обновляем объект после коммита, иначе поля будут недоступны
-    await db.refresh(new_meme)
+    # --- ВАЖНО: Обновляем объект, чтобы подгрузить поля для уведомлений ---
+    await db.refresh(new_meme) 
 
     if is_final_video:
         celery_app.send_task("app.worker.process_meme_task", args=[file_id, raw_path, audio_path])
 
-    # Индексация (только для готовых)
     if status == "approved":
         try:
             search = get_search_service()
@@ -216,9 +213,7 @@ async def upload_meme(
                 })
         except Exception: pass
 
-    # --- УВЕДОМЛЕНИЯ (ДЛЯ ВСЕХ ТИПОВ) ---
-    # Мы вынесли это из блока "if approved", чтобы уведомления приходили
-    # даже если видео еще обрабатывается (пользователи увидят плейсхолдер)
+    # --- УВЕДОМЛЕНИЯ (Теперь работают для ВСЕХ типов и без ошибок Greenlet) ---
     try:
         stmt = (
             select(User)
@@ -239,12 +234,9 @@ async def upload_meme(
                     sender=current_user,
                     meme=new_meme
                 )
-        print(f"Notifications sent to {len(followers)} followers.")
     except Exception as e:
         print(f"Notification error: {e}")
-    # ------------------------------------
 
-    # Возвращаем результат
     res = await db.execute(
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
