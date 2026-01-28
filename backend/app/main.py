@@ -1,4 +1,5 @@
 import os
+import asyncio
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +8,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.api import memes, auth, users, notifications, search
 from app.services.search import get_search_service
-# ИСПРАВЛЕНО: Импортируем правильное имя фабрики сессий из вашего database.py
+# ИСПРАВЛЕНО: Импортируем правильное имя фабрики сессий
 from app.core.database import AsyncSessionLocal 
 from app.models.models import Meme
 
@@ -43,15 +44,28 @@ app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
 # --- ФУНКЦИЯ СИНХРОНИЗАЦИИ ---
 async def sync_search_index():
     """Синхронизирует мемы из БД в Meilisearch при старте"""
-    try:
-        search_service = get_search_service()
-        if not search_service:
-            print("⚠️ Search service not available, skipping sync.")
-            return
+    search_service = None
+    
+    # Попытка подключения (3 раза с паузой)
+    for i in range(3):
+        try:
+            search_service = get_search_service()
+            if search_service:
+                # Проверяем здоровье индекса
+                search_service.client.health()
+                break
+        except Exception:
+            print(f"⏳ Waiting for Meilisearch... ({i+1}/3)")
+            await asyncio.sleep(2)
+            
+    if not search_service:
+        print("⚠️ Search service not available, skipping sync.")
+        return
 
-        print("🔄 Starting background search sync...")
-        
-        # ИСПРАВЛЕНО: Используем AsyncSessionLocal
+    print("🔄 Starting background search sync...")
+    
+    try:
+        # Используем AsyncSessionLocal
         async with AsyncSessionLocal() as db:
             # Берем все одобренные мемы
             query = select(Meme).where(Meme.status == 'approved')
@@ -64,6 +78,7 @@ async def sync_search_index():
 
             documents = []
             for meme in memes:
+                # Важно: преобразуем UUID в строку для JSON
                 documents.append({
                     "id": str(meme.id),
                     "title": meme.title,
@@ -71,10 +86,9 @@ async def sync_search_index():
                     "thumbnail_url": meme.thumbnail_url,
                     "media_url": meme.media_url,
                     "views_count": meme.views_count,
-                    # Можно добавить лайки, если нужно сортировать по ним в поиске
                 })
             
-            # Обновляем индекс (add_documents обновляет существующие или создает новые)
+            # Обновляем индекс (batch-загрузка)
             search_service.index_memes.add_documents(documents)
             print(f"✅ Synced {len(documents)} memes to search index.")
             
@@ -85,5 +99,5 @@ async def sync_search_index():
 @app.on_event("startup")
 async def startup_event():
     print("🚀 Starting up application...")
-    # Запускаем синхронизацию
-    await sync_search_index()
+    # Запускаем синхронизацию в фоне, чтобы не блокировать старт API
+    asyncio.create_task(sync_search_index())
