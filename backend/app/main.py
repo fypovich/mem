@@ -7,7 +7,8 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.api import memes, auth, users, notifications, search
 from app.services.search import get_search_service
-from app.core.database import async_session_maker
+# ИСПРАВЛЕНО: Импортируем правильное имя фабрики сессий из вашего database.py
+from app.core.database import AsyncSessionLocal 
 from app.models.models import Meme
 
 app = FastAPI(
@@ -49,7 +50,9 @@ async def sync_search_index():
             return
 
         print("🔄 Starting background search sync...")
-        async with async_session_maker() as db:
+        
+        # ИСПРАВЛЕНО: Используем AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
             # Берем все одобренные мемы
             query = select(Meme).where(Meme.status == 'approved')
             result = await db.execute(query)
