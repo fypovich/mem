@@ -24,6 +24,7 @@ from app.services.media import MediaProcessor
 from app.services.search import get_search_service
 from app.worker import process_meme_task
 from app.core.celery_app import celery_app  # <--- ВАЖНО: Добавьте этот импорт
+from app.api.auth import get_current_user
 from app.utils.notifier import send_notification
 
 router = APIRouter()
@@ -216,7 +217,7 @@ async def upload_meme(
         
         # Уведомления подписчикам (с проверкой настроек)
         try:
-            # Выбираем подписчиков
+            # Выбираем подписчиков через модель Follow
             stmt = (
                 select(User)
                 .join(Follow, Follow.follower_id == User.id)
@@ -226,21 +227,20 @@ async def upload_meme(
             followers = followers_res.scalars().all()
             
             for follower in followers:
-                # Проверяем флаг уведомлений
                 if getattr(follower, 'notify_on_new_meme', True):
-                    # ИСПОЛЬЗУЕМ send_notification ВМЕСТО ПРЯМОЙ ВСТАВКИ
+                    # Отправляем через WebSocket + Redis + DB
                     await send_notification(
                         db=db,
-                        user_id=follower.id,          # Кому
-                        sender_id=current_user.id,    # От кого
+                        user_id=follower.id,
+                        sender_id=current_user.id,
                         type=NotificationType.NEW_MEME, 
                         meme_id=new_meme.id,
-                        sender=current_user,          # Передаем объекты для формирования JSON
+                        sender=current_user,
                         meme=new_meme
                     )
-            # commit уже делается внутри send_notification, но в цикле это безопасно
         except Exception as e:
             print(f"Notification error: {e}")
+        # --------------------------------------
 
     res = await db.execute(
         select(Meme)

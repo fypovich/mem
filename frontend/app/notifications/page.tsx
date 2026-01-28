@@ -69,7 +69,7 @@ export default function NotificationsPage() {
         });
         setNotifications(prev => prev.map(n => ({...n, is_read: true})));
         
-        // ОБНОВЛЕНИЕ: Сообщаем шапке, что счетчик нужно сбросить
+        // Сбросить счетчик в шапке
         window.dispatchEvent(new Event("notifications-updated"));
     } catch(e) { console.error(e) }
   };
@@ -111,7 +111,7 @@ export default function NotificationsPage() {
             // Обновляем локально (убираем точку)
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
             
-            // ОБНОВЛЕНИЕ: Сообщаем шапке, что нужно уменьшить счетчик
+            // Обновить счетчик в шапке
             window.dispatchEvent(new Event("notifications-updated"));
             
         } catch (e) { console.error(e) }

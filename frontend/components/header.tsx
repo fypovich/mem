@@ -109,6 +109,10 @@ export function Header() {
     const handleAuthChange = () => fetchUserData();
     window.addEventListener("auth-change", handleAuthChange);
 
+    // --- НОВОЕ: Слушаем обновление уведомлений ---
+    const handleNotifUpdate = () => fetchUserData();
+    window.addEventListener("notifications-updated", handleNotifUpdate);
+
     const token = localStorage.getItem("token");
     if (token) {
         connectWebSocket(token);
@@ -116,6 +120,7 @@ export function Header() {
 
     return () => {
         window.removeEventListener("auth-change", handleAuthChange);
+        window.removeEventListener("notifications-updated", handleNotifUpdate); // <--- Добавлено
         if (ws.current) ws.current.close();
     };
   }, []);
