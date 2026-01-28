@@ -2,6 +2,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Union, Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from app.core.database import AsyncSessionLocal
+from sqlalchemy import select
+from app.models.models import User
 
 # Секретный ключ. В продакшене вынесите в .env
 SECRET_KEY = "super-secret-key-change-me-in-production"
@@ -51,3 +54,17 @@ def verify_password_reset_token(token: str) -> Optional[str]:
         return email
     except JWTError:
         return None
+    
+async def get_current_user_ws(token: str) -> User | None:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+    except JWTError:
+        return None
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.username == username))
+        user = result.scalars().first()
+        return user

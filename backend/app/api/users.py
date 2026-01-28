@@ -58,12 +58,14 @@ async def follow_user(
         
         # УВЕДОМЛЕНИЕ (С ПРОВЕРКОЙ НАСТРОЕК)
         if getattr(target_user, 'notify_on_new_follower', True):
-            notif = Notification(
+             await send_notification(
+                db=db,
                 user_id=target_user.id,
                 sender_id=current_user.id,
-                type=NotificationType.FOLLOW
+                type=NotificationType.FOLLOW,
+                sender=current_user
+                # meme_id тут не нужен
             )
-            db.add(notif)
 
     await db.commit()
     

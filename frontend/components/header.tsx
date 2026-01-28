@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, Bell, Upload, LogOut, User, Menu, Settings } from "lucide-react";
@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "@/components/sidebar";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const WS_URL = API_URL.replace(/^http/, 'ws');
 
 export function Header() {
   const router = useRouter();
@@ -26,8 +27,9 @@ export function Header() {
   const [user, setUser] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+  
+  const ws = useRef<WebSocket | null>(null);
 
-  // Функция загрузки данных пользователя
   const fetchUserData = async () => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -37,7 +39,6 @@ export function Header() {
     }
 
     try {
-        // 1. Грузим профиль "me"
         const resMe = await fetch(`${API_URL}/api/v1/users/me`, {
             headers: { Authorization: `Bearer ${token}` }
         });
@@ -47,16 +48,14 @@ export function Header() {
             setUser(userData);
             setIsAuthenticated(true);
             
-            // 2. Грузим счетчик уведомлений
             const resNotif = await fetch(`${API_URL}/api/v1/notifications/unread-count`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            // Если эндпоинта count нет, можно получить список и посчитать длину (fallback)
+            
             if (resNotif.ok) {
                 const data = await resNotif.json();
                 setUnreadCount(data.count !== undefined ? data.count : 0);
             } else {
-                 // Fallback: запрашиваем список, если нет отдельного count
                  const resList = await fetch(`${API_URL}/api/v1/notifications/?limit=10`, {
                     headers: { Authorization: `Bearer ${token}` }
                  });
@@ -66,7 +65,6 @@ export function Header() {
                  }
             }
         } else {
-            // Токен протух
             handleLogout();
         }
     } catch (e) {
@@ -74,22 +72,51 @@ export function Header() {
     }
   };
 
+  const connectWebSocket = (token: string) => {
+      if (ws.current) return;
+
+      const socket = new WebSocket(`${WS_URL}/api/v1/notifications/ws?token=${token}`);
+      
+      socket.onopen = () => {
+          console.log("WS Connected 🟢");
+      };
+
+      socket.onmessage = (event) => {
+          try {
+              const data = JSON.parse(event.data);
+              console.log("New Notification:", data);
+              setUnreadCount(prev => prev + 1);
+          } catch (e) {
+              console.error("WS Parse error", e);
+          }
+      };
+
+      socket.onclose = () => {
+          console.log("WS Closed 🔴. Reconnecting...");
+          ws.current = null;
+          setTimeout(() => {
+              const t = localStorage.getItem("token");
+              if (t) connectWebSocket(t);
+          }, 3000);
+      };
+
+      ws.current = socket;
+  };
+
   useEffect(() => {
     fetchUserData();
 
-    // Слушаем событие входа/выхода
     const handleAuthChange = () => fetchUserData();
     window.addEventListener("auth-change", handleAuthChange);
 
-    // --- НОВОЕ: Авто-обновление уведомлений каждые 15 сек ---
-    const interval = setInterval(() => {
-        const token = localStorage.getItem("token");
-        if (token) fetchUserData();
-    }, 15000);
+    const token = localStorage.getItem("token");
+    if (token) {
+        connectWebSocket(token);
+    }
 
     return () => {
         window.removeEventListener("auth-change", handleAuthChange);
-        clearInterval(interval);
+        if (ws.current) ws.current.close();
     };
   }, []);
 
@@ -98,18 +125,21 @@ export function Header() {
     localStorage.removeItem("username");
     setIsAuthenticated(false);
     setUser(null);
+    if (ws.current) {
+        ws.current.close();
+        ws.current = null;
+    }
     router.push("/login");
     router.refresh();
   };
 
   const handleSearch = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && searchQuery.trim()) {
-      e.preventDefault();
+      e.preventDefault(); 
       router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
     }
   };
 
-  // Формируем URL аватарки
   const avatarUrl = user?.avatar_url 
     ? (user.avatar_url.startsWith("http") ? user.avatar_url : `${API_URL}${user.avatar_url}`)
     : undefined;
@@ -118,7 +148,6 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center gap-4 px-4 mx-auto max-w-7xl">
         
-        {/* Мобильное меню (Sheet) */}
         <div className="md:hidden mr-2">
           <Sheet>
             <SheetTrigger asChild>
@@ -134,13 +163,11 @@ export function Header() {
           </Sheet>
         </div>
 
-        {/* Логотип */}
         <Link href="/" className="flex items-center gap-2 font-bold text-xl mr-4 shrink-0">
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground">M</div>
           <span className="hidden sm:inline-block">MemeHUB</span>
         </Link>
 
-        {/* Поиск */}
         <div className="flex-1 max-w-xl relative hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -153,11 +180,9 @@ export function Header() {
           />
         </div>
 
-        {/* Правая часть */}
         <div className="flex items-center gap-2 md:gap-4 ml-auto">
           {isAuthenticated ? (
             <>
-              {/* Кнопка загрузки */}
               <Link href="/upload">
                 <Button size="sm" variant="ghost" className="hidden md:flex">
                   <Upload className="w-4 h-4 mr-2" />
@@ -168,19 +193,17 @@ export function Header() {
                 </Button>
               </Link>
 
-              {/* Уведомления */}
               <Link href="/notifications" className="relative">
                 <Button size="icon" variant="ghost">
                   <Bell className="w-5 h-5" />
                 </Button>
                 {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold pointer-events-none animate-in zoom-in">
+                    <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold pointer-events-none animate-pulse">
                         {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                 )}
               </Link>
 
-              {/* Профиль дропдаун */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Avatar className="w-8 h-8 cursor-pointer border border-border hover:border-primary transition-colors">

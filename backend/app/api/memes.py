@@ -24,6 +24,7 @@ from app.services.media import MediaProcessor
 from app.services.search import get_search_service
 from app.worker import process_meme_task
 from app.core.celery_app import celery_app  # <--- ВАЖНО: Добавьте этот импорт
+from app.utils.notifier import send_notification
 
 router = APIRouter()
 
@@ -406,13 +407,16 @@ async def like_meme(
         if meme.user_id != current_user.id:
             # Проверяем настройки уведомлений владельца (используем getattr для безопасности)
             meme_owner = await db.get(User, meme.user_id)
-            if meme_owner and getattr(meme_owner, 'notify_on_like', True):
-                db.add(Notification(
-                    user_id=meme.user_id,
-                    sender_id=current_user.id,
+            if getattr(meme.user, 'notify_on_like', True):
+                await send_notification(
+                    db=db,
+                    user_id=meme.user_id, # Кому (автор мема)
+                    sender_id=current_user.id, # От кого
                     type=NotificationType.LIKE,
-                    meme_id=meme.id
-                ))
+                    meme_id=meme.id,
+                    sender=current_user,
+                    meme=meme
+                )
 
     await db.commit()
     count = await db.scalar(select(func.count()).select_from(Like).where(Like.meme_id == meme_id))
@@ -448,14 +452,17 @@ async def create_comment(
     if meme.user_id != current_user.id:
         # Проверяем настройки уведомлений владельца
         meme_owner = await db.get(User, meme.user_id)
-        if meme_owner and getattr(meme_owner, 'notify_on_comment', True):
-            db.add(Notification(
-                user_id=meme.user_id, 
-                sender_id=current_user.id, 
-                type=NotificationType.COMMENT, 
-                meme_id=meme.id, 
-                text=comment.text[:50]
-            ))
+        if getattr(meme.user, 'notify_on_comment', True):
+             await send_notification(
+                db=db,
+                user_id=meme.user_id,
+                sender_id=current_user.id,
+                type=NotificationType.COMMENT,
+                meme_id=meme.id,
+                text=comment.text[:50], # Обрезаем текст
+                sender=current_user,
+                meme=meme
+            )
     
     await db.commit()
     
