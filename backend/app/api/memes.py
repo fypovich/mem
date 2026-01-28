@@ -219,22 +219,26 @@ async def upload_meme(
             # Выбираем подписчиков
             stmt = (
                 select(User)
-                .join(follows, follows.c.follower_id == User.id)
-                .where(follows.c.followed_id == current_user.id)
+                .join(Follow, Follow.follower_id == User.id)
+                .where(Follow.followed_id == current_user.id)
             )
             followers_res = await db.execute(stmt)
             followers = followers_res.scalars().all()
             
             for follower in followers:
-                # Проверяем флаг уведомлений (используем getattr для совместимости)
+                # Проверяем флаг уведомлений
                 if getattr(follower, 'notify_on_new_meme', True):
-                    db.add(Notification(
-                        user_id=follower.id, 
-                        sender_id=current_user.id, 
+                    # ИСПОЛЬЗУЕМ send_notification ВМЕСТО ПРЯМОЙ ВСТАВКИ
+                    await send_notification(
+                        db=db,
+                        user_id=follower.id,          # Кому
+                        sender_id=current_user.id,    # От кого
                         type=NotificationType.NEW_MEME, 
-                        meme_id=new_meme.id
-                    ))
-            await db.commit()
+                        meme_id=new_meme.id,
+                        sender=current_user,          # Передаем объекты для формирования JSON
+                        meme=new_meme
+                    )
+            # commit уже делается внутри send_notification, но в цикле это безопасно
         except Exception as e:
             print(f"Notification error: {e}")
 

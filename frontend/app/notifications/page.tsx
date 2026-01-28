@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface Notification {
-  id: string; // ВАЖНО: id должен быть string (UUID)
+  id: string;
   type: "follow" | "like" | "comment" | "new_meme" | "system";
   is_read: boolean;
   created_at: string;
@@ -68,6 +68,9 @@ export default function NotificationsPage() {
             headers: { Authorization: `Bearer ${token}` },
         });
         setNotifications(prev => prev.map(n => ({...n, is_read: true})));
+        
+        // ОБНОВЛЕНИЕ: Сообщаем шапке, что счетчик нужно сбросить
+        window.dispatchEvent(new Event("notifications-updated"));
     } catch(e) { console.error(e) }
   };
 
@@ -104,8 +107,13 @@ export default function NotificationsPage() {
                 method: "PATCH",
                 headers: { Authorization: `Bearer ${token}` }
             });
-            // Обновляем локально (убираем точку), не перезагружая список
+            
+            // Обновляем локально (убираем точку)
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+            
+            // ОБНОВЛЕНИЕ: Сообщаем шапке, что нужно уменьшить счетчик
+            window.dispatchEvent(new Event("notifications-updated"));
+            
         } catch (e) { console.error(e) }
     };
 

@@ -5,6 +5,7 @@ from passlib.context import CryptContext
 from app.core.database import AsyncSessionLocal
 from sqlalchemy import select
 from app.models.models import User
+import uuid
 
 # Секретный ключ. В продакшене вынесите в .env
 SECRET_KEY = "super-secret-key-change-me-in-production"
