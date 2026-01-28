@@ -24,7 +24,7 @@ from app.services.media import MediaProcessor
 from app.services.search import get_search_service
 from app.worker import process_meme_task
 from app.core.celery_app import celery_app  # <--- ВАЖНО: Добавьте этот импорт
-from app.api.auth import get_current_user
+from app.api.deps import get_current_user
 from app.utils.notifier import send_notification
 
 router = APIRouter()
