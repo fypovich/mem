@@ -21,6 +21,8 @@ app = FastAPI(
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "ws://localhost:3000", # Разрешаем WS с локалхоста
+    "ws://127.0.0.1:3000",
 ]
 
 app.add_middleware(
@@ -38,15 +40,16 @@ app.mount("/static", StaticFiles(directory="uploads"), name="static")
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(memes.router, prefix="/api/v1/memes", tags=["memes"])
+# ВАЖНО: notifications должен быть подключен
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
 
 # --- ФУНКЦИЯ СИНХРОНИЗАЦИИ ---
 async def sync_search_index():
-    """Синхронизирует ВСЕ данные (мемы, юзеры, теги) в Meilisearch при старте"""
+    """Полная пересинхронизация данных в Meilisearch"""
     search_service = None
     
-    # Попытка подключения (3 раза с паузой)
+    # 1. Ждем подключения к Meilisearch
     for i in range(3):
         try:
             search_service = get_search_service()
@@ -65,13 +68,17 @@ async def sync_search_index():
     
     try:
         async with AsyncSessionLocal() as db:
-            # 1. СИНХРОНИЗАЦИЯ МЕМОВ
+            # Очистка старого
+            search_service.index_memes.delete_all_documents()
+            search_service.index_users.delete_all_documents()
+            search_service.index_tags.delete_all_documents()
+
+            # 1. Мемы
             query = select(Meme).where(Meme.status == 'approved').options(
                 selectinload(Meme.tags),
                 selectinload(Meme.subject)
             )
-            result = await db.execute(query)
-            memes_list = result.scalars().all()
+            memes_list = (await db.execute(query)).scalars().all()
 
             if memes_list:
                 documents = []
@@ -86,44 +93,41 @@ async def sync_search_index():
                         "thumbnail_url": meme.thumbnail_url,
                         "media_url": meme.media_url,
                         "views_count": meme.views_count,
-                        "tags": tags_list,       # <-- Добавлено для поиска
-                        "subject": subject_name  # <-- Добавлено для поиска
+                        "tags": tags_list,
+                        "subject": subject_name
                     })
-                
                 search_service.index_memes.add_documents(documents)
                 print(f"✅ Synced {len(documents)} memes.")
 
-            # 2. СИНХРОНИЗАЦИЯ ПОЛЬЗОВАТЕЛЕЙ (ЧТОБЫ НАХОДИЛО СТРАНИЦЫ USER)
-            user_query = select(User)
-            user_result = await db.execute(user_query)
-            users_list = user_result.scalars().all()
-            
-            if users_list:
-                user_docs = []
-                for u in users_list:
-                    user_docs.append({
-                        "id": str(u.id),
-                        "username": u.username,
-                        "full_name": u.full_name,
-                        "avatar_url": u.avatar_url
-                    })
+            # 2. Юзеры
+            user_list = (await db.execute(select(User))).scalars().all()
+            if user_list:
+                user_docs = [{
+                    "id": str(u.id),
+                    "username": u.username,
+                    "full_name": u.full_name,
+                    "avatar_url": u.avatar_url
+                } for u in user_list]
                 search_service.index_users.add_documents(user_docs)
                 print(f"✅ Synced {len(user_docs)} users.")
 
-            # 3. СИНХРОНИЗАЦИЯ ТЕГОВ
-            tag_query = select(Tag)
-            tag_result = await db.execute(tag_query)
-            tags_list = tag_result.scalars().all()
+            # 3. Теги (только используемые)
+            tag_query = (
+                select(Tag)
+                .join(Tag.memes)
+                .where(Meme.status == 'approved')
+                .distinct()
+            )
+            tags_list = (await db.execute(tag_query)).scalars().all()
             
             if tags_list:
                 tag_docs = [{"id": t.id, "name": t.name} for t in tags_list]
                 search_service.index_tags.add_documents(tag_docs)
-                print(f"✅ Synced {len(tag_docs)} tags.")
+                print(f"✅ Synced {len(tag_docs)} active tags.")
             
     except Exception as e:
         print(f"❌ Search sync failed: {e}")
 
-# --- ИНИЦИАЛИЗАЦИЯ ПРИ СТАРТЕ ---
 @app.on_event("startup")
 async def startup_event():
     print("🚀 Starting up application...")
