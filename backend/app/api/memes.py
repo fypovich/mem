@@ -195,12 +195,13 @@ async def upload_meme(
     
     db.add(new_meme)
     await db.commit()
+    # ВАЖНО: Обновляем объект после коммита, иначе поля будут недоступны
+    await db.refresh(new_meme)
 
-    # Запускаем Celery ТОЛЬКО для видео
     if is_final_video:
         celery_app.send_task("app.worker.process_meme_task", args=[file_id, raw_path, audio_path])
 
-    # Индексация (только если уже approved)
+    # Индексация (только для готовых)
     if status == "approved":
         try:
             search = get_search_service()
@@ -214,34 +215,36 @@ async def upload_meme(
                     "views_count": new_meme.views_count
                 })
         except Exception: pass
-        
-        # Уведомления подписчикам (с проверкой настроек)
-        try:
-            # Выбираем подписчиков через модель Follow
-            stmt = (
-                select(User)
-                .join(Follow, Follow.follower_id == User.id)
-                .where(Follow.followed_id == current_user.id)
-            )
-            followers_res = await db.execute(stmt)
-            followers = followers_res.scalars().all()
-            
-            for follower in followers:
-                if getattr(follower, 'notify_on_new_meme', True):
-                    # Отправляем через WebSocket + Redis + DB
-                    await send_notification(
-                        db=db,
-                        user_id=follower.id,
-                        sender_id=current_user.id,
-                        type=NotificationType.NEW_MEME, 
-                        meme_id=new_meme.id,
-                        sender=current_user,
-                        meme=new_meme
-                    )
-        except Exception as e:
-            print(f"Notification error: {e}")
-        # --------------------------------------
 
+    # --- УВЕДОМЛЕНИЯ (ДЛЯ ВСЕХ ТИПОВ) ---
+    # Мы вынесли это из блока "if approved", чтобы уведомления приходили
+    # даже если видео еще обрабатывается (пользователи увидят плейсхолдер)
+    try:
+        stmt = (
+            select(User)
+            .join(Follow, Follow.follower_id == User.id)
+            .where(Follow.followed_id == current_user.id)
+        )
+        followers_res = await db.execute(stmt)
+        followers = followers_res.scalars().all()
+        
+        for follower in followers:
+            if getattr(follower, 'notify_on_new_meme', True):
+                await send_notification(
+                    db=db,
+                    user_id=follower.id,
+                    sender_id=current_user.id,
+                    type=NotificationType.NEW_MEME, 
+                    meme_id=new_meme.id,
+                    sender=current_user,
+                    meme=new_meme
+                )
+        print(f"Notifications sent to {len(followers)} followers.")
+    except Exception as e:
+        print(f"Notification error: {e}")
+    # ------------------------------------
+
+    # Возвращаем результат
     res = await db.execute(
         select(Meme)
         .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
