@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { UserPlus, UserCheck, MoreVertical, Ban, ShieldCheck } from "lucide-react";
+import { UserPlus, UserCheck, MoreVertical, Ban, ShieldCheck, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -17,10 +18,10 @@ interface ProfileHeaderActionsProps {
 }
 
 export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   
-  // Инициализируем из пропсов, но будем обновлять
   const [isFollowing, setIsFollowing] = useState(user?.is_following || false);
   const [isBlocked, setIsBlocked] = useState(user?.is_blocked || false);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,18 +32,12 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
     setToken(t);
     setCurrentUsername(u);
 
-    // --- НОВАЯ ЛОГИКА ---
-    // Если мы залогинены, нужно получить актуальный статус с сервера,
-    // потому что SSR-рендеринг не знал про наш токен.
     if (t && user?.username) {
         fetch(`${API_URL}/api/v1/users/${user.username}`, {
-            headers: {
-                "Authorization": `Bearer ${t}`
-            }
+            headers: { "Authorization": `Bearer ${t}` }
         })
         .then(res => res.json())
         .then(data => {
-            // Обновляем состояние на основе реальных данных для текущего юзера
             setIsFollowing(data.is_following);
             setIsBlocked(data.is_blocked);
         })
@@ -55,28 +50,37 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
   }
 
   const handleFollow = async () => {
-    if (!token) return;
+    if (!token || isLoading) return;
+    
+    // 1. OPTIMISTIC UPDATE: Меняем UI сразу
+    const previousState = isFollowing;
+    setIsFollowing(!previousState);
     setIsLoading(true);
+
     try {
       const res = await fetch(`${API_URL}/api/v1/users/${user.username}/follow`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
-        setIsFollowing(data.is_following);
-        // Не перезагружаем страницу, просто меняем состояние кнопки
-        // window.location.reload(); 
+      
+      if (!res.ok) {
+        throw new Error("Failed to follow");
       }
+      
+      // Данные успешно обновлены на сервере
+      // router.refresh(); // Можно вызвать refresh, но UI уже обновлен
     } catch (e) {
       console.error(e);
+      // 2. ROLLBACK: Если ошибка, возвращаем состояние назад
+      setIsFollowing(previousState);
+      alert("Не удалось изменить подписку");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleBlock = async () => {
-    if (!confirm(`Вы уверены, что хотите заблокировать @${user.username}? Вы перестанете видеть его контент.`)) return;
+    if (!confirm(`Вы уверены, что хотите заблокировать @${user.username}?`)) return;
     
     try {
       const res = await fetch(`${API_URL}/api/v1/users/${user.id}/block`, {
@@ -87,7 +91,7 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         setIsBlocked(true);
         setIsFollowing(false);
         alert("Пользователь заблокирован");
-        window.location.href = "/"; // Уходим на главную
+        window.location.href = "/";
       }
     } catch (e) {
       alert("Ошибка сети");
@@ -117,10 +121,12 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         variant={isFollowing ? "outline" : "default"} 
         size="sm" 
         onClick={handleFollow}
-        disabled={!token || isLoading || isBlocked}
-        className="min-w-[140px]"
+        disabled={!token || isBlocked}
+        className="min-w-[140px] transition-all duration-200"
       >
-        {isFollowing ? (
+        {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+        ) : isFollowing ? (
             <>
                 <UserCheck className="w-4 h-4 mr-2" /> Вы подписаны
             </>

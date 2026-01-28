@@ -16,9 +16,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Sidebar } from "@/components/sidebar"; // Импортируем ваш существующий сайдбар
+import { Sidebar } from "@/components/sidebar";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export function Header() {
   const router = useRouter();
@@ -51,9 +51,19 @@ export function Header() {
             const resNotif = await fetch(`${API_URL}/api/v1/notifications/unread-count`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+            // Если эндпоинта count нет, можно получить список и посчитать длину (fallback)
             if (resNotif.ok) {
                 const data = await resNotif.json();
-                setUnreadCount(data.count);
+                setUnreadCount(data.count !== undefined ? data.count : 0);
+            } else {
+                 // Fallback: запрашиваем список, если нет отдельного count
+                 const resList = await fetch(`${API_URL}/api/v1/notifications/?limit=10`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                 });
+                 if(resList.ok) {
+                     const list = await resList.json();
+                     setUnreadCount(list.filter((n: any) => !n.is_read).length);
+                 }
             }
         } else {
             // Токен протух
@@ -71,8 +81,15 @@ export function Header() {
     const handleAuthChange = () => fetchUserData();
     window.addEventListener("auth-change", handleAuthChange);
 
+    // --- НОВОЕ: Авто-обновление уведомлений каждые 15 сек ---
+    const interval = setInterval(() => {
+        const token = localStorage.getItem("token");
+        if (token) fetchUserData();
+    }, 15000);
+
     return () => {
         window.removeEventListener("auth-change", handleAuthChange);
+        clearInterval(interval);
     };
   }, []);
 
@@ -87,6 +104,7 @@ export function Header() {
 
   const handleSearch = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && searchQuery.trim()) {
+      e.preventDefault();
       router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
     }
   };
@@ -109,7 +127,6 @@ export function Header() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="p-0 w-72">
-               {/* Вставляем сайдбар внутрь мобильного меню, убирая скрытие */}
                <div className="px-4 py-6">
                  <Sidebar /> 
                </div>
@@ -157,7 +174,7 @@ export function Header() {
                   <Bell className="w-5 h-5" />
                 </Button>
                 {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold pointer-events-none">
+                    <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold pointer-events-none animate-in zoom-in">
                         {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                 )}
@@ -196,7 +213,7 @@ export function Header() {
               <Link href="/login">
                 <Button variant="ghost" size="sm">Вход</Button>
               </Link>
-              <Link href="/login"> {/* Обычно регистрация ведет на отдельную страницу или на таб регистрации */}
+              <Link href="/register">
                 <Button size="sm">Регистрация</Button>
               </Link>
             </>

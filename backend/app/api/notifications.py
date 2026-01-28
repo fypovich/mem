@@ -90,3 +90,30 @@ async def get_unread_count(
     )
     count = await db.scalar(query)
     return {"count": count or 0}
+
+# --- НОВЫЙ ЭНДПОИНТ: Пометить одно уведомление как прочитанное ---
+@router.patch("/{notification_id}/read", response_model=NotificationResponse)
+async def mark_notification_read(
+    notification_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = select(Notification).where(
+        (Notification.id == notification_id) & 
+        (Notification.user_id == current_user.id)
+    ).options(
+        selectinload(Notification.sender),
+        selectinload(Notification.meme)
+    )
+    result = await db.execute(query)
+    notification = result.scalars().first()
+
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = True
+    db.add(notification)
+    await db.commit()
+    await db.refresh(notification)
+    
+    return notification
