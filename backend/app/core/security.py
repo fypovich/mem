@@ -55,20 +55,32 @@ def verify_password_reset_token(token: str) -> Optional[str]:
     
 async def get_current_user_ws(token: str) -> Optional[User]:
     """
-    Получает пользователя по токену для WebSocket соединений.
-    Создает отдельную сессию БД, так как WebSocket не поддерживает Dependency Injection так же, как HTTP.
+    Получает пользователя по токену для WebSocket.
+    Пытается найти пользователя по username (так как обычно в sub лежит username).
     """
     try:
-        # ИСПРАВЛЕНО: используем локальные переменные SECRET_KEY и ALGORITHM
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        sub: str = payload.get("sub") # Может быть username или id
+        if sub is None:
             return None
     except JWTError:
         return None
 
-    # Используем асинхронный контекстный менеджер для сессии
     async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.username == username))
+        # Пробуем найти по username
+        query = select(User).where(User.username == sub)
+        result = await db.execute(query)
         user = result.scalars().first()
+        
+        # Если не нашли по username, возможно в токене лежит ID (UUID)
+        if not user:
+            try:
+                # Проверяем, является ли sub валидным UUID
+                user_uuid = uuid.UUID(sub)
+                query = select(User).where(User.id == user_uuid)
+                result = await db.execute(query)
+                user = result.scalars().first()
+            except ValueError:
+                pass # sub не является UUID
+
         return user

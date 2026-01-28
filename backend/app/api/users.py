@@ -14,6 +14,7 @@ from app.models.models import User, follows, Notification, NotificationType, Blo
 from app.api.memes import get_current_user, get_optional_current_user
 from app.schemas import UserResponse, UserProfile, UserUpdate, BlockResponse, ChangePasswordRequest, UserUpdateSettings 
 from app.core.security import verify_password, get_password_hash
+from app.utils.notifier import send_notification
 
 router = APIRouter()
 UPLOAD_DIR = "uploads"
