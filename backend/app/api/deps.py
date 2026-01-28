@@ -3,13 +3,13 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import uuid
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import User
 
-# Определяем схему авторизации здесь
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token") # Исправлен URL на /token
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme), 
@@ -23,13 +23,20 @@ async def get_current_user(
     try:
         # Используем ключи из настроек
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        sub: str = payload.get("sub")
+        if sub is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
     
-    query = select(User).where(User.username == username)
+    # Пытаемся найти по ID (так как в auth.py мы кладем str(user.id))
+    try:
+        user_uuid = uuid.UUID(sub)
+        query = select(User).where(User.id == user_uuid)
+    except ValueError:
+        # Если вдруг в старых токенах лежит username
+        query = select(User).where(User.username == sub)
+
     result = await db.execute(query)
     user = result.scalars().first()
     
