@@ -193,12 +193,13 @@ async def upload_meme(
     
     db.add(new_meme)
     await db.commit()
-    # --- ВАЖНО: Обновляем объект, чтобы подгрузить поля для уведомлений ---
+    # --- ВАЖНО: Обновляем объект, чтобы подгрузить поля ---
     await db.refresh(new_meme) 
 
     if is_final_video:
         celery_app.send_task("app.worker.process_meme_task", args=[file_id, raw_path, audio_path])
 
+    # Индексация (только если approved)
     if status == "approved":
         try:
             search = get_search_service()
@@ -213,8 +214,9 @@ async def upload_meme(
                 })
         except Exception: pass
 
-    # --- УВЕДОМЛЕНИЯ (Теперь работают для ВСЕХ типов и без ошибок Greenlet) ---
+    # --- УВЕДОМЛЕНИЯ ПОДПИСЧИКАМ (ВЫНЕСЕНО ИЗ УСЛОВИЙ) ---
     try:
+        # Используем явную модель Follow
         stmt = (
             select(User)
             .join(Follow, Follow.follower_id == User.id)
@@ -236,6 +238,7 @@ async def upload_meme(
                 )
     except Exception as e:
         print(f"Notification error: {e}")
+    # -----------------------------------------------------
 
     res = await db.execute(
         select(Meme)
