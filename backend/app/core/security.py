@@ -39,14 +39,12 @@ def create_password_reset_token(email: str) -> str:
     """Генерирует токен для сброса пароля"""
     expire = datetime.now(timezone.utc) + timedelta(minutes=RESET_PASSWORD_EXPIRE_MINUTES)
     to_encode = {"sub": email, "type": "password_reset", "exp": expire}
-    # ИСПРАВЛЕНО: используем SECRET_KEY вместо settings.SECRET_KEY
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 def verify_password_reset_token(token: str) -> Optional[str]:
     """Проверяет токен сброса и возвращает email"""
     try:
-        # ИСПРАВЛЕНО: используем SECRET_KEY вместо settings.SECRET_KEY
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "password_reset":
             return None
@@ -55,15 +53,21 @@ def verify_password_reset_token(token: str) -> Optional[str]:
     except JWTError:
         return None
     
-async def get_current_user_ws(token: str) -> User | None:
+async def get_current_user_ws(token: str) -> Optional[User]:
+    """
+    Получает пользователя по токену для WebSocket соединений.
+    Создает отдельную сессию БД, так как WebSocket не поддерживает Dependency Injection так же, как HTTP.
+    """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # ИСПРАВЛЕНО: используем локальные переменные SECRET_KEY и ALGORITHM
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             return None
     except JWTError:
         return None
 
+    # Используем асинхронный контекстный менеджер для сессии
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User).where(User.username == username))
         user = result.scalars().first()

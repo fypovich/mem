@@ -8,10 +8,9 @@ from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.models.models import Notification, User
+from app.models.models import Notification, User, Meme
 from app.schemas import NotificationResponse
 from app.api.memes import get_current_user
-from app.core.security import get_current_user_ws # Нужно будет создать или адаптировать
 from app.core.redis import redis_client
 
 router = APIRouter()
@@ -20,59 +19,62 @@ router = APIRouter()
 @router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket, 
-    token: str = Query(...) # Токен передаем в URL: ws://...?token=...
+    token: str = Query(...) 
 ):
     await websocket.accept()
     
-    # 1. Авторизация по токену
+    user = None
     try:
-        # Импорт здесь, чтобы избежать циклических ссылок, если security.py импортирует что-то
+        # Импорт здесь, чтобы избежать циклических ссылок
         from app.core.security import get_current_user_ws
-        async with AsyncSession(bind=None) as session: # Фиктивная сессия или DI хак, лучше использовать get_db внутри deps
-             # В WebSockets сложнее с DI, используем прямую проверку токена
-             pass
-        
         user = await get_current_user_ws(token)
+        
         if not user:
+            print(f"WS Auth Failed: User not found for token")
             await websocket.close(code=1008)
             return
+            
     except Exception as e:
         print(f"WS Auth Error: {e}")
         await websocket.close(code=1008)
         return
 
-    # 2. Подписка на Redis канал пользователя
+    # Подписка на Redis канал
     pubsub = redis_client.pubsub()
     channel = f"notify:{user.id}"
     await pubsub.subscribe(channel)
+    print(f"WS Connected: {user.username} -> {channel}")
 
     try:
         while True:
-            # Ждем сообщение из Redis (с таймаутом, чтобы цикл не вис намертво)
+            # Слушаем Redis
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             
             if message:
-                # Отправляем данные клиенту
+                print(f"WS Sending to {user.username}: {message['data']}")
                 await websocket.send_text(message["data"])
             
-            # Также нужно слушать сам сокет, чтобы понять, если клиент отключился
-            # Это простой способ (heartbeat), но для простоты можно просто ждать
-            # await asyncio.sleep(0.1) 
-            
-            # Более правильный паттерн для asyncio + websockets + redis:
-            # Запускаем listener в фоне, но так как starlette websocket блокирует поток на receive,
-            # мы делаем простой поллинг redis внутри цикла.
-            await asyncio.sleep(0.1) 
+            # Пингуем клиент, чтобы держать соединение (и обнаружить разрыв)
+            # Встроенный ping/pong есть, но полезно просто отдать управление event loop
+            try:
+                # Ждем данные от клиента (он вряд ли что-то шлет, но если разорвет - вылетит тут)
+                # Используем wait_for с таймаутом, чтобы не блокировать цикл
+                await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
+            except asyncio.TimeoutError:
+                pass # Таймаут - это ок, просто идем дальше слушать Redis
+            except WebSocketDisconnect:
+                print(f"WS Disconnected client: {user.username}")
+                break
 
-    except WebSocketDisconnect:
-        await pubsub.unsubscribe(channel)
     except Exception as e:
-        print(f"WS Error: {e}")
+        print(f"WS Loop Error: {e}")
+    finally:
         await pubsub.unsubscribe(channel)
+        try:
+            await websocket.close()
+        except:
+            pass
 
-
-# ... (Остальные методы get_notifications, unread-count, read-all оставляем как есть) ...
-# ... Только скопируйте их из предыдущего ответа ...
 
 @router.get("/", response_model=List[NotificationResponse])
 async def get_notifications(
@@ -81,12 +83,15 @@ async def get_notifications(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # ИСПРАВЛЕНИЕ: Подгружаем вложенные связи для мема!
     query = (
         select(Notification)
         .where(Notification.user_id == current_user.id)
         .options(
             selectinload(Notification.sender),
-            selectinload(Notification.meme)
+            # Важно: загружаем Meme, а внутри него tags и subject
+            selectinload(Notification.meme).selectinload(Meme.tags),
+            selectinload(Notification.meme).selectinload(Meme.subject)
         )
         .order_by(Notification.created_at.desc())
         .offset(skip)
@@ -126,12 +131,14 @@ async def mark_notification_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Здесь тоже нужно подгрузить связи, чтобы вернуть полный объект
     query = select(Notification).where(
         (Notification.id == notification_id) & 
         (Notification.user_id == current_user.id)
     ).options(
         selectinload(Notification.sender),
-        selectinload(Notification.meme)
+        selectinload(Notification.meme).selectinload(Meme.tags),
+        selectinload(Notification.meme).selectinload(Meme.subject)
     )
     result = await db.execute(query)
     notification = result.scalars().first()
@@ -143,4 +150,5 @@ async def mark_notification_read(
     db.add(notification)
     await db.commit()
     await db.refresh(notification)
+    
     return notification
