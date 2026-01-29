@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
 from app.api import memes, auth, users, notifications, search
@@ -26,6 +27,8 @@ origins = [
     "ws://127.0.0.1:3000",
 ]
 
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -44,6 +47,8 @@ app.include_router(memes.router, prefix="/api/v1/memes", tags=["memes"])
 # ВАЖНО: notifications должен быть подключен
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
+
+setup_admin(app)
 
 # --- ФУНКЦИЯ СИНХРОНИЗАЦИИ ---
 async def sync_search_index():
