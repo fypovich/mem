@@ -12,7 +12,12 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libgl1 \
     libglib2.0-0 \
+    imagemagick \
+    ghostscript \
+    fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
+
+RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
