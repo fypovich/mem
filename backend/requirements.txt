@@ -17,3 +17,5 @@ aiofiles
 ffmpeg-python
 psycopg2-binary
 bcrypt==4.0.1
+sqladmin>=0.16.0
+itsdangerous>=2.1.2

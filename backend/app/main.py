@@ -11,6 +11,7 @@ from app.api import memes, auth, users, notifications, search
 from app.services.search import get_search_service
 from app.core.database import AsyncSessionLocal 
 from app.models.models import Meme, User, Tag
+from app.core.admin import setup_admin
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

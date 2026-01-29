@@ -34,6 +34,7 @@ class User(Base):
     bio = Column(String, nullable=True)
     website = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    is_superuser: bool = Column(Boolean, default=False)
 
     # --- НОВЫЕ ПОЛЯ НАСТРОЕК (Добавили их сюда) ---
     notify_on_like = Column(Boolean, default=True)
