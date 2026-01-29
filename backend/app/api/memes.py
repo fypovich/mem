@@ -365,26 +365,49 @@ async def like_meme(
     existing_like = (await db.execute(query)).scalars().first()
 
     if existing_like:
+        # --- УДАЛЕНИЕ ЛАЙКА ---
         await db.delete(existing_like)
+        
+        # Удаляем уведомление, если оно было (чистим мусор и предотвращаем спам)
+        if meme.user_id != current_user.id:
+            await db.execute(
+                sa.delete(Notification).where(
+                    (Notification.sender_id == current_user.id) &
+                    (Notification.meme_id == meme.id) &
+                    (Notification.type == NotificationType.LIKE)
+                )
+            )
         action = "unliked"
     else:
+        # --- ДОБАВЛЕНИЕ ЛАЙКА ---
         new_like = Like(user_id=current_user.id, meme_id=meme_id)
         db.add(new_like)
         action = "liked"
         
         if meme.user_id != current_user.id:
-            # Проверяем настройки уведомлений владельца (используем getattr для безопасности)
             meme_owner = await db.get(User, meme.user_id)
             if getattr(meme.user, 'notify_on_like', True):
-                await send_notification(
-                    db=db,
-                    user_id=meme.user_id, # Кому (автор мема)
-                    sender_id=current_user.id, # От кого
-                    type=NotificationType.LIKE,
-                    meme_id=meme.id,
-                    sender=current_user,
-                    meme=meme
+                # ПРОВЕРКА: Есть ли уже уведомление об этом лайке?
+                existing_notif = await db.scalar(
+                    select(Notification).where(
+                        (Notification.sender_id == current_user.id) &
+                        (Notification.user_id == meme.user_id) &
+                        (Notification.meme_id == meme.id) &
+                        (Notification.type == NotificationType.LIKE)
+                    )
                 )
+                
+                # Отправляем только если уведомления еще нет
+                if not existing_notif:
+                    await send_notification(
+                        db=db,
+                        user_id=meme.user_id,
+                        sender_id=current_user.id,
+                        type=NotificationType.LIKE,
+                        meme_id=meme.id,
+                        sender=current_user,
+                        meme=meme
+                    )
 
     await db.commit()
     count = await db.scalar(select(func.count()).select_from(Like).where(Like.meme_id == meme_id))

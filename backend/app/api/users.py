@@ -45,29 +45,47 @@ async def follow_user(
     existing_follow = result.first()
 
     if existing_follow:
+        # --- ОТПИСКА ---
         await db.execute(
             sa.delete(follows).where(
                 (follows.c.follower_id == current_user.id) & 
                 (follows.c.followed_id == target_user.id)
             )
         )
+        # Удаляем уведомление о подписке при отписке
+        await db.execute(
+            sa.delete(Notification).where(
+                (Notification.sender_id == current_user.id) &
+                (Notification.user_id == target_user.id) &
+                (Notification.type == NotificationType.FOLLOW)
+            )
+        )
         action = "unfollowed"
     else:
+        # --- ПОДПИСКА ---
         await db.execute(
             sa.insert(follows).values(follower_id=current_user.id, followed_id=target_user.id)
         )
         action = "followed"
         
-        # УВЕДОМЛЕНИЕ (С ПРОВЕРКОЙ НАСТРОЕК)
         if getattr(target_user, 'notify_on_new_follower', True):
-             await send_notification(
-                db=db,
-                user_id=target_user.id,
-                sender_id=current_user.id,
-                type=NotificationType.FOLLOW,
-                sender=current_user
-                # meme_id тут не нужен
-            )
+             # ПРОВЕРКА: Есть ли уже уведомление о подписке от этого юзера?
+             existing_notif = await db.scalar(
+                select(Notification).where(
+                    (Notification.sender_id == current_user.id) &
+                    (Notification.user_id == target_user.id) &
+                    (Notification.type == NotificationType.FOLLOW)
+                )
+             )
+             
+             if not existing_notif:
+                 await send_notification(
+                    db=db,
+                    user_id=target_user.id,
+                    sender_id=current_user.id,
+                    type=NotificationType.FOLLOW,
+                    sender=current_user
+                )
 
     await db.commit()
     
