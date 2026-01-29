@@ -23,19 +23,14 @@ class DateTimeEncoder(json.JSONEncoder):
             return obj.isoformat()
         if isinstance(obj, uuid.UUID):
             return str(obj)
-        if hasattr(obj, 'value'):
-            return obj.value
+        # Удалена проверка .value, так как NotificationType это str
         return super().default(obj)
 
 @shared_task(bind=True, max_retries=3, name="app.worker.process_meme_task")
 def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = None):
     print(f"🚀 Processing meme {meme_id_str}...")
     
-    # -------------------------------------------------------------------------
-    # ВАЖНОЕ ИСПРАВЛЕНИЕ:
-    # Инициализируем Redis ВНУТРИ задачи. Это критично для Celery.
-    # Глобальный redis_client при fork-процессах работает нестабильно.
-    # -------------------------------------------------------------------------
+    # 1. Инициализация Redis ВНУТРИ задачи (Обязательно для Celery)
     redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
     db = SessionLocal()
     
@@ -51,7 +46,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         final_path = os.path.join("uploads", final_filename)
         thumbnail_path = os.path.join("uploads", f"{meme_id}_thumb.jpg")
 
-        # --- 1. ОБРАБОТКА МЕДИА ---
+        # --- ОБРАБОТКА ---
         if audio_path:
             processor.process_video_with_audio(audio_path, final_path)
             if os.path.exists(audio_path): os.remove(audio_path)
@@ -60,12 +55,11 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
             processor.convert_to_mp4(final_path)
             processor = MediaProcessor(final_path)
 
-        # --- 2. ПРЕВЬЮ И МЕТАДАННЫЕ ---
         processor.generate_thumbnail(thumbnail_path)
         duration, width, height = processor.get_metadata()
         has_audio = processor.has_audio_stream()
 
-        # --- 3. ОБНОВЛЕНИЕ БД ---
+        # --- СОХРАНЕНИЕ В БД ---
         meme.duration = duration
         meme.width = width
         meme.height = height
@@ -76,7 +70,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         
         db.commit()
 
-        # --- 4. ИНДЕКСАЦИЯ ---
+        # --- ИНДЕКСАЦИЯ ---
         try:
             search = get_search_service()
             if search:
@@ -91,7 +85,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         except Exception as e:
             print(f"Search index error: {e}")
 
-        # --- 5. УВЕДОМЛЕНИЯ ПОДПИСЧИКАМ (Real-time) ---
+        # --- УВЕДОМЛЕНИЯ ---
         try:
             sender_info = db.execute(
                 text("SELECT username, avatar_url FROM users WHERE id = :uid"), 
@@ -104,7 +98,6 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
             ).fetchall()
             
             for row in followers:
-                # А. Создаем уведомление в БД
                 now = datetime.utcnow()
                 notif = Notification(
                     user_id=row.follower_id, 
@@ -118,11 +111,11 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
                 db.commit() 
                 db.refresh(notif)
 
-                # Б. Отправляем в Redis для WebSocket
                 try:
                     payload = {
                         "id": str(notif.id),
-                        "type": NotificationType.NEW_MEME.value,
+                        # ИСПРАВЛЕНИЕ: Убрали .value, так как это просто строка
+                        "type": NotificationType.NEW_MEME, 
                         "is_read": False,
                         "created_at": notif.created_at.isoformat(),
                         "text": None,
@@ -138,20 +131,15 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
                         "meme_id": str(meme.id)
                     }
                     
-                    # Приводим ID к строке, чтобы точно совпало с названием канала
                     channel = f"notify:{str(row.follower_id)}"
-                    
-                    # Публикуем и выводим кол-во получателей в лог
-                    count = redis_client.publish(channel, json.dumps(payload, cls=DateTimeEncoder))
-                    print(f"📡 Notification sent to {channel}. Subscribers receiving: {count}")
-                    
+                    redis_client.publish(channel, json.dumps(payload, cls=DateTimeEncoder))
+                    print(f"📡 Notification sent to {channel}")
                 except Exception as e:
                     print(f"Redis publish error for user {row.follower_id}: {e}")
                     
         except Exception as e:
              print(f"Notification error: {e}")
 
-        # Удаляем исходник
         if os.path.exists(file_path) and file_path != final_path:
             os.remove(file_path)
 
@@ -165,6 +153,4 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         except: pass
     finally:
         db.close()
-        # Обязательно закрываем соединение с Redis
-        if 'redis_client' in locals():
-            redis_client.close()
+        redis_client.close()
