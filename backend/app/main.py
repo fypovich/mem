@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
-from app.api import memes, auth, users, notifications, search
+from app.api import memes, auth, users, notifications, search, editor
 from app.services.search import get_search_service
 from app.core.database import AsyncSessionLocal 
 from app.models.models import Meme, User, Tag
@@ -47,6 +47,7 @@ app.include_router(memes.router, prefix="/api/v1/memes", tags=["memes"])
 # ВАЖНО: notifications должен быть подключен
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
+app.include_router(editor.router, prefix=f"{settings.API_V1_STR}/editor", tags=["editor"])
 
 setup_admin(app)
 

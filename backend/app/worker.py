@@ -12,6 +12,8 @@ from app.core.config import settings
 from app.models.models import Meme, Notification, NotificationType, SearchTerm
 from app.services.media import MediaProcessor
 from app.services.search import get_search_service
+from app.services.ai import AIService
+from app.services.editor import VideoEditorService
 
 # Настройка БД (синхронная для воркера)
 engine = create_engine(settings.DATABASE_URL.replace("+asyncpg", ""))
@@ -261,3 +263,51 @@ def sync_search_stats_task():
     finally:
         db.close()
         redis_client.close()
+
+@shared_task(bind=True, name="app.worker.remove_bg_task")
+def remove_bg_task(self, file_path: str, output_path: str, add_outline: bool = False):
+    """Задача удаления фона"""
+    print(f"🎨 Removing background for {file_path}")
+    try:
+        with open(file_path, "rb") as f:
+            input_data = f.read()
+        
+        # 1. Удаляем фон
+        result_data = AIService.remove_background(input_data)
+        
+        # 2. Добавляем обводку если нужно
+        if add_outline:
+            result_data = AIService.add_outline(result_data)
+            
+        with open(output_path, "wb") as f:
+            f.write(result_data)
+            
+        # Удаляем исходник
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            
+        print(f"✅ Background removed: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"❌ Remove BG Error: {e}")
+        raise e
+
+@shared_task(bind=True, name="app.worker.render_video_task")
+def render_video_task(self, project_data: dict, output_file_id: str):
+    """Задача рендеринга видео"""
+    print(f"🎬 Starting render for {output_file_id}")
+    output_path = os.path.join("uploads", f"{output_file_id}.mp4")
+    
+    try:
+        editor = VideoEditorService(output_path)
+        editor.process_project(project_data)
+        
+        # Здесь можно отправить уведомление пользователю, что рендер готов
+        # через Redis Pub/Sub, как мы делали для лайков
+        
+        print(f"✅ Render complete: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"❌ Render Error: {e}")
+        # Тут можно поставить статус "failed" в БД, если есть таблица задач
+        raise e
