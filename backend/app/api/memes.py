@@ -2,6 +2,8 @@ import uuid
 import os
 import shutil
 import aiofiles
+import aiofiles.os # Для асинхронного удаления
+import random # Для перемешивания
 import sqlalchemy as sa
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -11,7 +13,6 @@ from sqlalchemy import select, func, exists, desc, and_, or_, extract, case
 from sqlalchemy.orm import selectinload, aliased
 
 from app.core.database import get_db
-# Импортируем все модели, включая SubjectCategory и follows
 from app.models.models import (
     Meme, User, Like, Comment, Tag, Subject, 
     meme_tags, Notification, NotificationType, follows, SubjectCategory, Report, Block
@@ -21,11 +22,10 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from app.core import security
 from app.services.media import MediaProcessor
-from app.services.search import get_search_service
-from app.worker import process_meme_task
-from app.core.celery_app import celery_app  # <--- ВАЖНО: Добавьте этот импорт
+from app.core.celery_app import celery_app
 from app.api.deps import get_current_user, get_optional_current_user 
 from app.utils.notifier import send_notification
+from app.core.redis import redis_client # Импортируем наш async клиент
 
 router = APIRouter()
 
@@ -34,11 +34,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
-# --- ЭНДПОИНТЫ ---
-
+# ... (get_popular_content оставляем без изменений) ...
 @router.get("/popular-content")
 async def get_popular_content(db: AsyncSession = Depends(get_db)):
-    """Возвращает топ тегов и персонажей для сайдбара"""
+    # ... (код get_popular_content)
     # Топ 5 тегов
     tags_stmt = (
         select(Tag.name, func.count(meme_tags.c.meme_id).label("count"))
@@ -62,7 +61,6 @@ async def get_popular_content(db: AsyncSession = Depends(get_db)):
     subjects = [{"name": row[0], "slug": row[1], "count": row[2]} for row in subjects_res.all()]
 
     return {"tags": tags, "subjects": subjects}
-
 
 @router.post("/upload", response_model=MemeResponse)
 async def upload_meme(
@@ -119,7 +117,6 @@ async def upload_meme(
         thumbnail_url = f"/static/{thumbnail_filename}"
         if os.path.exists(raw_path): os.remove(raw_path)
 
-    # Теги и subject (как было, сокращено для краткости)
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -164,28 +161,24 @@ async def upload_meme(
     await db.refresh(new_meme)
 
     if is_final_video:
+        # Worker сам запустит индексацию после обработки
         celery_app.send_task("app.worker.process_meme_task", args=[file_id, raw_path, audio_path])
-
-    # --- УВЕДОМЛЕНИЯ И ИНДЕКСАЦИЯ (ТОЛЬКО ДЛЯ КАРТИНОК) ---
-    # Для видео это сделает worker после обработки
-    if status == "approved":
-        try:
-            search = get_search_service()
-            if search:
-                search.add_meme({
-                    "id": str(new_meme.id),
-                    "title": new_meme.title,
-                    "description": new_meme.description,
-                    "thumbnail_url": new_meme.thumbnail_url,
-                    "media_url": new_meme.media_url,
-                    "views_count": new_meme.views_count
-                })
-        except Exception: pass
+    elif status == "approved":
+        # Если это картинка, запускаем индексацию через Celery сразу
+        celery_app.send_task("app.worker.index_meme_task", args=[{
+            "id": str(new_meme.id),
+            "title": new_meme.title,
+            "description": new_meme.description,
+            "thumbnail_url": new_meme.thumbnail_url,
+            "media_url": new_meme.media_url,
+            "views_count": new_meme.views_count
+        }])
         
+        # Уведомления для картинок
         try:
             stmt = (
                 select(User)
-                .join(follows, follows.c.follower_id == User.id) # Используем follows и .c.
+                .join(follows, follows.c.follower_id == User.id)
                 .where(follows.c.followed_id == current_user.id)
             )
             followers_res = await db.execute(stmt)
@@ -204,7 +197,6 @@ async def upload_meme(
                     )
         except Exception as e:
             print(f"Notification error: {e}")
-    # -----------------------------------------------------
 
     res = await db.execute(
         select(Meme)
@@ -254,7 +246,6 @@ async def read_memes(
         .where(Meme.status == "approved")
     )
     
-    # Блокировки
     if current_user:
         blocked_users_query = select(Block.blocked_id).where(Block.blocker_id == current_user.id)
         query = query.where(Meme.user_id.not_in(blocked_users_query))
@@ -312,10 +303,12 @@ async def read_meme(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    await db.execute(
-        sa.update(Meme).where(Meme.id == meme_id).values(views_count=Meme.views_count + 1)
-    )
-    await db.commit()
+    # 1. ОПТИМИЗАЦИЯ: Инкрементируем просмотры в Redis (очень быстро)
+    # Celery Beat потом заберет их в БД
+    try:
+        await redis_client.incr(f"meme:views:{meme_id}")
+    except Exception as e:
+        print(f"Redis views error: {e}")
 
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
@@ -365,11 +358,9 @@ async def like_meme(
     existing_like = (await db.execute(query)).scalars().first()
 
     if existing_like:
-        # --- УДАЛЕНИЕ ЛАЙКА ---
         await db.delete(existing_like)
-        
-        # Удаляем уведомление, если оно было (чистим мусор и предотвращаем спам)
         if meme.user_id != current_user.id:
+            # Удаляем уведомление при анлайке
             await db.execute(
                 sa.delete(Notification).where(
                     (Notification.sender_id == current_user.id) &
@@ -379,7 +370,6 @@ async def like_meme(
             )
         action = "unliked"
     else:
-        # --- ДОБАВЛЕНИЕ ЛАЙКА ---
         new_like = Like(user_id=current_user.id, meme_id=meme_id)
         db.add(new_like)
         action = "liked"
@@ -387,7 +377,7 @@ async def like_meme(
         if meme.user_id != current_user.id:
             meme_owner = await db.get(User, meme.user_id)
             if getattr(meme.user, 'notify_on_like', True):
-                # ПРОВЕРКА: Есть ли уже уведомление об этом лайке?
+                # Проверяем на дубликат уведомления
                 existing_notif = await db.scalar(
                     select(Notification).where(
                         (Notification.sender_id == current_user.id) &
@@ -396,8 +386,6 @@ async def like_meme(
                         (Notification.type == NotificationType.LIKE)
                     )
                 )
-                
-                # Отправляем только если уведомления еще нет
                 if not existing_notif:
                     await send_notification(
                         db=db,
@@ -441,7 +429,6 @@ async def create_comment(
     db.add(new_comm)
     
     if meme.user_id != current_user.id:
-        # Проверяем настройки уведомлений владельца
         meme_owner = await db.get(User, meme.user_id)
         if getattr(meme.user, 'notify_on_comment', True):
              await send_notification(
@@ -450,7 +437,7 @@ async def create_comment(
                 sender_id=current_user.id,
                 type=NotificationType.COMMENT,
                 meme_id=meme.id,
-                text=comment.text[:50], # Обрезаем текст
+                text=comment.text[:50], 
                 sender=current_user,
                 meme=meme
             )
@@ -554,7 +541,9 @@ async def get_similar_memes(
     else:
         query = query.order_by(desc("likes_count"))
 
-    query = query.order_by(func.random()).limit(limit)
+    # 2. ОПТИМИЗАЦИЯ: Убираем ORDER BY random() из БД
+    # Выбираем в 5 раз больше, чем нужно, и мешаем в Python
+    query = query.limit(limit * 5)
 
     result = await db.execute(query)
     rows = result.all()
@@ -567,7 +556,12 @@ async def get_similar_memes(
         meme.is_liked = row[3]
         memes_with_stats.append(meme)
 
-    return memes_with_stats
+    # Перемешиваем в памяти
+    if len(memes_with_stats) > limit:
+        return random.sample(memes_with_stats, limit)
+    else:
+        random.shuffle(memes_with_stats)
+        return memes_with_stats
 
 @router.delete("/{meme_id}", status_code=204)
 async def delete_meme(
@@ -582,27 +576,27 @@ async def delete_meme(
     if meme.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not authorized to delete this meme")
 
+    # 3. ОПТИМИЗАЦИЯ: Асинхронное удаление файлов
     try:
         if meme.media_url:
             filename = meme.media_url.split("/")[-1]
             file_path = os.path.join(UPLOAD_DIR, filename)
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if await aiofiles.os.path.exists(file_path):
+                await aiofiles.os.remove(file_path)
         
         if meme.thumbnail_url:
             filename = meme.thumbnail_url.split("/")[-1]
             file_path = os.path.join(UPLOAD_DIR, filename)
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if await aiofiles.os.path.exists(file_path):
+                await aiofiles.os.remove(file_path)
     except Exception as e:
         print(f"Error deleting files: {e}")
 
+    # 4. ОПТИМИЗАЦИЯ: Удаление из индекса через Celery
     try:
-        search = get_search_service()
-        if search:
-            search.index_memes.delete_document(str(meme.id))
+        celery_app.send_task("app.worker.delete_index_task", args=[str(meme.id)])
     except Exception as e:
-        print(f"Meilisearch delete error: {e}")
+        print(f"Meilisearch delete schedule error: {e}")
 
     await db.execute(sa.delete(Notification).where(Notification.meme_id == meme_id))
     await db.execute(sa.delete(Like).where(Like.meme_id == meme_id))
@@ -659,19 +653,18 @@ async def update_meme(
 
     await db.commit()
     
+    # ОПТИМИЗАЦИЯ: Обновление индекса через Celery
     try:
-        search = get_search_service()
-        if search:
-            search.add_meme({
-                "id": str(meme.id),
-                "title": meme.title,
-                "description": meme.description,
-                "thumbnail_url": meme.thumbnail_url,
-                "media_url": meme.media_url,
-                "views_count": meme.views_count
-            })
+        celery_app.send_task("app.worker.index_meme_task", args=[{
+            "id": str(meme.id),
+            "title": meme.title,
+            "description": meme.description,
+            "thumbnail_url": meme.thumbnail_url,
+            "media_url": meme.media_url,
+            "views_count": meme.views_count
+        }])
     except Exception as e:
-        print(f"Meili update error: {e}")
+        print(f"Meili update schedule error: {e}")
 
     final_query = (
         select(Meme)
