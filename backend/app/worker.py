@@ -68,9 +68,8 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         
         db.commit()
 
-        # --- ИНДЕКСАЦИЯ (Отправляем в новую задачу) ---
+        # --- ИНДЕКСАЦИЯ ---
         try:
-            # Вызываем задачу индексации, чтобы не блокировать воркер обработки
             index_meme_task.delay({
                 "id": str(meme.id),
                 "title": meme.title,
@@ -150,11 +149,10 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         db.close()
         redis_client.close()
 
-# --- НОВЫЕ ЗАДАЧИ ---
+# --- ВСПОМОГАТЕЛЬНЫЕ ЗАДАЧИ ---
 
 @shared_task(name="app.worker.index_meme_task")
 def index_meme_task(meme_data: dict):
-    """Асинхронное добавление в Meilisearch"""
     try:
         search = get_search_service()
         if search:
@@ -165,7 +163,6 @@ def index_meme_task(meme_data: dict):
 
 @shared_task(name="app.worker.delete_index_task")
 def delete_index_task(meme_id: str):
-    """Асинхронное удаление из Meilisearch"""
     try:
         search = get_search_service()
         if search:
@@ -177,30 +174,41 @@ def delete_index_task(meme_id: str):
 @shared_task(name="app.worker.sync_views_task")
 def sync_views_task():
     """Синхронизация просмотров из Redis в Postgres"""
+    print("⏳ Starting views sync...")
     redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
     db = SessionLocal()
+    updated_count = 0
+    
     try:
-        # Ищем ключи meme:views:*
-        cursor = '0'
-        while cursor != 0:
-            cursor, keys = redis_client.scan(cursor=cursor, match="meme:views:*", count=100)
-            for key in keys:
-                # Atomically get and reset the value to 0 to avoid losing new views
-                # getset возвращает старое значение и устанавливает новое (0)
+        # ИСПОЛЬЗУЕМ scan_iter ВМЕСТО scan - ЭТО НАДЕЖНЕЕ
+        # Это предотвращает бесконечные циклы и ошибки типов курсора
+        for key in redis_client.scan_iter(match="meme:views:*"):
+            try:
+                # Атомарно получаем значение и сбрасываем его в 0
                 views_str = redis_client.getset(key, 0)
-                if views_str:
+                
+                if views_str and int(views_str) > 0:
                     views = int(views_str)
-                    if views > 0:
-                        meme_id = key.split(":")[-1]
-                        # Обновляем БД прямым SQL запросом для скорости
-                        db.execute(
-                            text("UPDATE memes SET views_count = views_count + :val WHERE id = :mid"),
-                            {"val": views, "mid": meme_id}
-                        )
-                        print(f"Synced {views} views for {meme_id}")
-        db.commit()
+                    meme_id = key.split(":")[-1]
+                    
+                    # Прямой SQL запрос для скорости
+                    db.execute(
+                        text("UPDATE memes SET views_count = views_count + :val WHERE id = :mid"),
+                        {"val": views, "mid": meme_id}
+                    )
+                    updated_count += 1
+            except Exception as e:
+                print(f"Error processing key {key}: {e}")
+
+        if updated_count > 0:
+            db.commit()
+            print(f"✅ Synced views for {updated_count} memes.")
+        else:
+            print("💤 No new views to sync.")
+            
     except Exception as e:
-        print(f"Sync views error: {e}")
+        print(f"❌ Sync views error: {e}")
+        db.rollback()
     finally:
         db.close()
         redis_client.close()
