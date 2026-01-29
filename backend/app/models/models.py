@@ -193,3 +193,11 @@ class Report(Base):
     reporter = relationship("User", foreign_keys=[reporter_id])
     meme = relationship("Meme", foreign_keys=[meme_id])
     comment = relationship("Comment", foreign_keys=[comment_id])
+
+class SearchTerm(Base):
+    __tablename__ = "search_terms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    term = Column(String, unique=True, index=True)
+    count = Column(Integer, default=0)
+    last_searched_at = Column(DateTime, default=datetime.utcnow)

@@ -15,6 +15,12 @@ celery_app.conf.update(
             "task": "app.worker.sync_views_task",
             "schedule": 30.0, # Запуск каждые 30 секунд
         },
+
+    # Новая задача (можно реже, например раз в 5 минут)
+        "sync-search-stats-every-5-minutes": {
+            "task": "app.worker.sync_search_stats_task",
+            "schedule": 300.0, 
+        },
     },
     timezone="UTC"
 )

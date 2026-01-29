@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from celery import shared_task
 
 from app.core.config import settings
-from app.models.models import Meme, Notification, NotificationType
+from app.models.models import Meme, Notification, NotificationType, SearchTerm
 from app.services.media import MediaProcessor
 from app.services.search import get_search_service
 
@@ -208,6 +208,55 @@ def sync_views_task():
             
     except Exception as e:
         print(f"❌ Sync views error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+        redis_client.close()
+
+
+@shared_task(name="app.worker.sync_search_stats_task")
+def sync_search_stats_task():
+    """Синхронизация поисковых запросов из Redis в Postgres"""
+    print("⏳ Starting search stats sync...")
+    redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
+    db = SessionLocal()
+    
+    try:
+        # Забираем топ-100 популярных запросов из Redis
+        # ZRANGE возвращает список [(term, score), ...]
+        terms_with_scores = redis_client.zrange("stats:search_terms", 0, -1, withscores=True)
+        
+        if not terms_with_scores:
+            print("💤 No search stats to sync.")
+            return
+
+        for term, score in terms_with_scores:
+            count = int(score)
+            if count > 0:
+                # Upsert (Вставка или Обновление)
+                # Пытаемся найти существующий термин
+                search_term = db.query(SearchTerm).filter(SearchTerm.term == term).first()
+                
+                if search_term:
+                    search_term.count += count
+                    search_term.last_searched_at = datetime.utcnow()
+                else:
+                    new_term = SearchTerm(term=term, count=count, last_searched_at=datetime.utcnow())
+                    db.add(new_term)
+                
+                # Удаляем обработанный счетчик из Redis (или уменьшаем его на count)
+                # Для простоты можно просто удалять ключ после обработки, 
+                # но лучше zincrby на отрицательное число, чтобы не потерять новые клики
+                redis_client.zincrby("stats:search_terms", -count, term)
+
+        db.commit()
+        # Чистим Redis от записей с 0 или меньше (мусор)
+        redis_client.zremrangebyscore("stats:search_terms", "-inf", 0)
+        
+        print(f"✅ Synced {len(terms_with_scores)} search terms.")
+            
+    except Exception as e:
+        print(f"❌ Sync search stats error: {e}")
         db.rollback()
     finally:
         db.close()
