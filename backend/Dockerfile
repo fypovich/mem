@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Устанавливаем системные зависимости
-# libgl1-mesa-glx заменен на libgl1 и libglib2.0-0 для новых версий Debian
+# libgl1 вместо libgl1-mesa-glx (для новых версий Debian)
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
@@ -17,16 +17,18 @@ RUN apt-get update && apt-get install -y \
     fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
-RUN sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
+# Исправление политики ImageMagick для разрешения обработки текста
+# Используем find, чтобы найти policy.xml где бы он ни лежал
+RUN find /etc -name "policy.xml" -exec sed -i 's/none/read,write/g' {} +
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем код
+# Копируем остальной код
 COPY . .
 
 # Создаем папку для загрузок
 RUN mkdir -p uploads
 
-# Указываем переменную для ImageMagick
+# Указываем переменную окружения для MoviePy
 ENV MOVIEPY_ENV="docker"
