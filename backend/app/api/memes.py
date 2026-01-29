@@ -24,7 +24,7 @@ from app.services.media import MediaProcessor
 from app.services.search import get_search_service
 from app.worker import process_meme_task
 from app.core.celery_app import celery_app  # <--- ВАЖНО: Добавьте этот импорт
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_optional_current_user 
 from app.utils.notifier import send_notification
 
 router = APIRouter()
@@ -33,37 +33,6 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ АВТОРИЗАЦИИ ---
-
-async def get_current_user(
-    token: str = Depends(oauth2_scheme), 
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    if not token: raise HTTPException(401, detail="Not authenticated")
-    try:
-        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
-        user_id = payload.get("sub")
-    except: raise HTTPException(401, detail="Invalid token")
-    
-    res = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
-    user = res.scalars().first()
-    if not user: raise HTTPException(401, detail="User not found")
-    return user
-
-async def get_optional_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db)
-) -> Optional[User]:
-    try:
-        if not token: return None
-        payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
-        user_id = payload.get("sub")
-        if not user_id: return None
-        res = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
-        return res.scalars().first()
-    except: return None
-
 
 # --- ЭНДПОИНТЫ ---
 
@@ -110,7 +79,6 @@ async def upload_meme(
     ext = file.filename.split('.')[-1].lower()
     
     is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
-    
     is_final_video = True
     if is_image_input and not audio_file:
         is_final_video = False
@@ -149,9 +117,9 @@ async def upload_meme(
         
         status = "approved"
         thumbnail_url = f"/static/{thumbnail_filename}"
-        
         if os.path.exists(raw_path): os.remove(raw_path)
 
+    # Теги и subject (как было, сокращено для краткости)
     db_tags = []
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
@@ -193,13 +161,13 @@ async def upload_meme(
     
     db.add(new_meme)
     await db.commit()
-    # --- ВАЖНО: Обновляем объект, чтобы подгрузить поля ---
-    await db.refresh(new_meme) 
+    await db.refresh(new_meme)
 
     if is_final_video:
         celery_app.send_task("app.worker.process_meme_task", args=[file_id, raw_path, audio_path])
 
-    # Индексация (только если approved)
+    # --- УВЕДОМЛЕНИЯ И ИНДЕКСАЦИЯ (ТОЛЬКО ДЛЯ КАРТИНОК) ---
+    # Для видео это сделает worker после обработки
     if status == "approved":
         try:
             search = get_search_service()
@@ -213,31 +181,29 @@ async def upload_meme(
                     "views_count": new_meme.views_count
                 })
         except Exception: pass
-
-    # --- УВЕДОМЛЕНИЯ ПОДПИСЧИКАМ (ВЫНЕСЕНО ИЗ УСЛОВИЙ) ---
-    try:
-        # Используем явную модель Follow
-        stmt = (
-            select(User)
-            .join(Follow, Follow.follower_id == User.id)
-            .where(Follow.followed_id == current_user.id)
-        )
-        followers_res = await db.execute(stmt)
-        followers = followers_res.scalars().all()
         
-        for follower in followers:
-            if getattr(follower, 'notify_on_new_meme', True):
-                await send_notification(
-                    db=db,
-                    user_id=follower.id,
-                    sender_id=current_user.id,
-                    type=NotificationType.NEW_MEME, 
-                    meme_id=new_meme.id,
-                    sender=current_user,
-                    meme=new_meme
-                )
-    except Exception as e:
-        print(f"Notification error: {e}")
+        try:
+            stmt = (
+                select(User)
+                .join(follows, follows.c.follower_id == User.id) # Используем follows и .c.
+                .where(follows.c.followed_id == current_user.id)
+            )
+            followers_res = await db.execute(stmt)
+            followers = followers_res.scalars().all()
+            
+            for follower in followers:
+                if getattr(follower, 'notify_on_new_meme', True):
+                    await send_notification(
+                        db=db,
+                        user_id=follower.id,
+                        sender_id=current_user.id,
+                        type=NotificationType.NEW_MEME, 
+                        meme_id=new_meme.id,
+                        sender=current_user,
+                        meme=new_meme
+                    )
+        except Exception as e:
+            print(f"Notification error: {e}")
     # -----------------------------------------------------
 
     res = await db.execute(
