@@ -13,7 +13,7 @@ import { MaskEditor } from "@/components/editor/mask-editor";
 
 export default function StickerMakerPage() {
   const [step, setStep] = useState(1);
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [imageSrc, setImageSrc] = useState<string | null>(null); // Это maskedSrc (результат удаления фона)
   const [originalSrc, setOriginalSrc] = useState<string | null>(null);
   const [serverPath, setServerPath] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -58,7 +58,9 @@ export default function StickerMakerPage() {
                 if (status.status === "SUCCESS") {
                     clearInterval(interval);
                     const fullUrl = getFullUrl(status.result.url);
-                    setMaskedSrcHelper(fullUrl, status.result.server_path);
+                    setImageSrc(fullUrl);
+                    setServerPath(status.result.server_path);
+                    setIsProcessing(false);
                     setStep(4);
                     toast.dismiss(toastId);
                     toast.success("Фон удален успешно!");
@@ -71,13 +73,6 @@ export default function StickerMakerPage() {
             } catch (e) {}
         }, 1000);
     } catch (e) { setIsProcessing(false); }
-  };
-
-  // Helpers
-  const setMaskedSrcHelper = (url: string, path: string) => {
-      setImageSrc(url);
-      setServerPath(path);
-      setIsProcessing(false);
   };
 
   const startManualMode = () => {
@@ -107,7 +102,7 @@ export default function StickerMakerPage() {
   // 3. ТЕКСТ DRAG & DROP
   const handleTextDrag = (e: React.MouseEvent | React.TouchEvent) => {
       if (!isDraggingText || !previewRef.current) return;
-      e.preventDefault(); // Prevent scrolling on touch
+      // e.preventDefault(); // Может мешать скроллу на мобильных, пока уберем
 
       const rect = previewRef.current.getBoundingClientRect();
       let clientX, clientY;
@@ -141,12 +136,12 @@ export default function StickerMakerPage() {
         // @ts-ignore
         const { task_id } = await createSticker(serverPath, anim, {
             text: text,
-            text_color: textColor,
-            text_size: textSize,
-            text_x: textPos.x / 100, // Переводим в 0.0-1.0
-            text_y: textPos.y / 100,
-            outline_color: outlineColor,
-            outline_width: outlineWidth
+            textColor: textColor,
+            textSize: textSize,
+            textX: textPos.x / 100, // Переводим в 0.0-1.0
+            textY: textPos.y / 100,
+            outlineColor: outlineColor,
+            outlineWidth: outlineWidth
         });
         
         const interval = setInterval(async () => {
@@ -322,7 +317,7 @@ export default function StickerMakerPage() {
                         
                         <div className="relative py-2">
                             <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-zinc-800" /></div>
-                            <div className="relative flex justify-center text-xs uppercase"><span className="bg-zinc-900 px-2 text-zinc-500">Ручной режим</span></div>
+                            <div className="relative flex justify-center text-xs uppercase"><span className="bg-zinc-950 px-2 text-zinc-500">Или вручную</span></div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -459,7 +454,7 @@ export default function StickerMakerPage() {
                         <Button className="w-full bg-indigo-600 hover:bg-indigo-700 h-12 mb-3" onClick={() => window.open(finalResult || "", "_blank")}>
                             <Download className="mr-2" size={18}/> Скачать GIF
                         </Button>
-                        <Button variant="outline" className="w-full border-zinc-800 hover:bg-zinc-900" onClick={() => { setStep(1); setOriginalSrc(null); setMaskedSrc(null); setFinalResult(null); }}>
+                        <Button variant="outline" className="w-full border-zinc-800 hover:bg-zinc-900" onClick={() => { setStep(1); setOriginalSrc(null); setImageSrc(null); setFinalResult(null); }}>
                             Создать новый
                         </Button>
                     </div>
