@@ -8,52 +8,32 @@ import { toast } from "sonner";
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
 import { MaskEditor } from "@/components/editor/mask-editor";
 
-// Для отправки отредактированного Blob на сервер
-const uploadBlob = async (blob: Blob) => {
-    const file = new File([blob], "edited_mask.png", { type: "image/png" });
-    // Используем тот же эндпоинт, что и для загрузки, просто сохраняем файл
-    const formData = new FormData();
-    formData.append("file", file);
-    // Нам нужен простой эндпоинт загрузки без обработки, или используем process-image с пустым operation?
-    // Используем существующий uploadTempFile, который мы делали для видео (он просто сохраняет)
-    // Если его нет в api/editor.ts, добавьте. Или используйте processImage с фиктивной операцией.
-    // Лучше добавить простую функцию сохранения в api/editor.ts
-    
-    // ВРЕМЕННОЕ РЕШЕНИЕ: Используем processImage, но просим "ничего не делать" или игнорируем результат обработки
-    // Но лучше всего реализовать простой upload.
-    // Пока предположим, что у нас есть uploadTempFile из начала диалога.
-    
-    // Реализуем загрузку через существующий API
-    return processImage(file, "remove_bg"); // Хак: снова прогоняем через remove_bg, хотя фон уже удален. 
-    // В идеале: нужен эндпоинт /upload-temp. Давайте добавим его в api/editor.ts
-};
-
 export default function StickerMakerPage() {
   const [step, setStep] = useState(1); 
   // 1: Загрузка
-  // 2: Предпросмотр AI + Выбор (Править/Далее)
-  // 3: Ручное редактирование (MaskEditor)
-  // 4: Эффекты (Анимация/Обводка)
+  // 2: Просмотр (выбор: ок/править)
+  // 3: Редактор маски
+  // 4: Эффекты
   // 5: Результат
 
+  const [imageSrc, setImageSrc] = useState<string | null>(null); // Текущее превью (AI или Маска)
   const [originalSrc, setOriginalSrc] = useState<string | null>(null); // Оригинал (для восстановления)
-  const [maskedSrc, setMaskedSrc] = useState<string | null>(null);     // Результат AI
-  const [serverPath, setServerPath] = useState<string | null>(null);   // Текущий путь на сервере
+  const [serverPath, setServerPath] = useState<string | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedAnim, setSelectedAnim] = useState("none");
   const [finalResult, setFinalResult] = useState<string | null>(null);
 
-  // 1. Загрузка + AI
+  // 1. Загрузка
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     const file = e.target.files[0];
     
-    // Сохраняем локальный URL оригинала сразу для MaskEditor
+    // Сохраняем оригинал локально для редактора маски
     setOriginalSrc(URL.createObjectURL(file));
     
     setIsProcessing(true);
-    const toastId = toast.loading("AI анализирует изображение...");
+    const toastId = toast.loading("AI удаляет фон...");
 
     try {
         const { task_id } = await processImage(file, "remove_bg");
@@ -63,62 +43,57 @@ export default function StickerMakerPage() {
                 const status = await checkStatus(task_id);
                 if (status.status === "SUCCESS") {
                     clearInterval(interval);
+                    
                     const fullUrl = getFullUrl(status.result.url);
-                    setMaskedSrc(fullUrl);
+                    setImageSrc(fullUrl); // Показываем результат AI
                     setServerPath(status.result.server_path);
-                    setStep(2); // Переход к выбору действий
+                    
+                    setStep(2); // Переход к проверке
                     setIsProcessing(false);
                     toast.dismiss(toastId);
+                    toast.success("Фон удален!");
                 } else if (status.status === "FAILURE") {
                     clearInterval(interval);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
-                    toast.error("Ошибка AI");
+                    toast.error("Ошибка обработки");
                 }
-            } catch (e) {}
+            } catch (e) { }
         }, 1000);
     } catch (err) {
         setIsProcessing(false);
         toast.dismiss(toastId);
-        toast.error("Ошибка сети");
+        toast.error("Ошибка загрузки");
     }
   };
 
-  // Сохранение после ручной правки
+  // Сохранение маски (из компонента MaskEditor)
   const handleMaskSave = async (blob: Blob) => {
-      setIsProcessing(true);
-      setStep(4); // Переходим к эффектам, пока грузится
+      const file = new File([blob], "edited_mask.png", { type: "image/png" });
       
-      // Создаем URL для локального отображения сразу
-      setMaskedSrc(URL.createObjectURL(blob));
-
-      // Грузим на сервер
+      // Локально обновляем превью сразу
+      setImageSrc(URL.createObjectURL(blob));
+      setStep(4); // Идем к эффектам
+      
+      // Фоновая загрузка новой маски на сервер
+      setIsProcessing(true); 
       try {
-          // Нам нужно просто загрузить файл на сервер и получить путь.
-          // Так как processImage запускает удаление фона, это лишнее.
-          // В реальном проекте создайте router.post("/upload") -> возвращает path.
-          // Сейчас используем хак: отправляем как есть, сервер вернет путь к "обработанному" файлу.
-          // Если отправить прозрачный PNG в remove_bg, он вернет прозрачный PNG.
-          
-          const { task_id } = await processImage(new File([blob], "edited.png"), "remove_bg");
-          // Ждем завершения (это быстро, т.к. фон уже прозрачный)
-           const interval = setInterval(async () => {
-            const status = await checkStatus(task_id);
-            if (status.status === "SUCCESS") {
-                clearInterval(interval);
-                setServerPath(status.result.server_path);
-                setIsProcessing(false);
-                toast.success("Маска обновлена");
-            }
-           }, 1000);
-
+          const { task_id } = await uploadTempFile(file);
+          const interval = setInterval(async () => {
+              const status = await checkStatus(task_id);
+              if (status.status === "SUCCESS") {
+                  clearInterval(interval);
+                  setServerPath(status.result.server_path);
+                  setIsProcessing(false);
+              }
+          }, 1000);
       } catch (e) {
           toast.error("Ошибка сохранения маски");
           setIsProcessing(false);
       }
   };
 
-  // Генерация Финала
+  // Генерация (GIF)
   const handleAnimate = async () => {
     if (!serverPath) return;
     setIsProcessing(true);
@@ -136,29 +111,29 @@ export default function StickerMakerPage() {
                     setStep(5);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
+                    toast.success("Готово!");
                 }
             } catch (e) {}
         }, 1000);
     } catch (err) {
         setIsProcessing(false);
         toast.dismiss(toastId);
+        toast.error("Ошибка генерации");
     }
   };
 
-  // --- RENDER ---
-
-  // Если мы в режиме редактирования маски, показываем редактор на весь экран
-  if (step === 3 && originalSrc && maskedSrc) {
+  // Рендер MaskEditor на весь экран
+  if (step === 3 && originalSrc && imageSrc) {
       return (
           <div className="h-[calc(100vh-64px)] bg-black p-4">
               <MaskEditor 
                   originalUrl={originalSrc} 
-                  maskedUrl={maskedSrc} 
+                  maskedUrl={imageSrc} 
                   onSave={handleMaskSave}
                   onCancel={() => setStep(2)}
               />
           </div>
-      )
+      );
   }
 
   return (
@@ -169,21 +144,23 @@ export default function StickerMakerPage() {
 
       <div className="flex flex-col lg:flex-row gap-8 w-full max-w-5xl">
         
-        {/* ПРЕВЬЮ */}
+        {/* ЛЕВАЯ ЧАСТЬ: ПРЕВЬЮ */}
         <div className="flex-1 bg-zinc-900 rounded-xl border border-zinc-800 min-h-[400px] flex items-center justify-center relative overflow-hidden">
             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
             
             {step === 1 && (
                 <div className="text-center p-8">
-                    <Upload className="text-zinc-500 w-16 h-16 mx-auto mb-4" />
-                    <p className="text-zinc-400">Загрузите фото</p>
+                    <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Upload className="text-zinc-500" size={32} />
+                    </div>
+                    <p className="text-zinc-400">Загрузите фото (JPG, PNG)</p>
                 </div>
             )}
 
-            {(step === 2 || step === 4) && maskedSrc && (
+            {(step === 2 || step === 4) && imageSrc && (
                 <img 
-                    src={maskedSrc} 
-                    className="relative z-10 max-h-[350px] object-contain"
+                    src={imageSrc} 
+                    className="relative z-10 max-h-[350px] object-contain transition-transform duration-500"
                     style={{
                         transform: selectedAnim === 'zoom_in' ? 'scale(1.2)' : 'scale(1)',
                         animation: selectedAnim === 'pulse' ? 'pulse 2s infinite' : selectedAnim === 'shake' ? 'spin 1s infinite' : 'none'
@@ -202,25 +179,29 @@ export default function StickerMakerPage() {
             )}
         </div>
 
-        {/* ПАНЕЛЬ УПРАВЛЕНИЯ */}
+        {/* ПРАВАЯ ЧАСТЬ: КОНТРОЛЛЕРЫ */}
         <Card className="w-full lg:w-80 bg-zinc-950 border-zinc-800 p-6 flex flex-col gap-6 h-fit">
             
-            {/* ШАГ 1: ЗАГРУЗКА */}
+            {/* ШАГ 1 */}
             <div className={step !== 1 ? "hidden" : ""}>
                 <h3 className="font-bold mb-3 flex items-center gap-2"><ImageIcon size={18}/> 1. Фото</h3>
                 <div className="relative">
-                    <Button variant="outline" className="w-full cursor-pointer">Выбрать файл</Button>
-                    <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleUpload} />
+                    <Button variant="outline" className="w-full">Выбрать файл</Button>
+                    <input 
+                        type="file" accept="image/*" 
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        onChange={handleUpload}
+                    />
                 </div>
             </div>
 
-            {/* ШАГ 2: ПРОВЕРКА МАСКИ */}
+            {/* ШАГ 2: ВЫБОР ДЕЙСТВИЯ */}
             <div className={step !== 2 ? "hidden" : ""}>
-                <h3 className="font-bold mb-3 flex items-center gap-2">Проверка фона</h3>
-                <p className="text-xs text-zinc-400 mb-4">AI удалил фон. Все чисто?</p>
+                <h3 className="font-bold mb-3">Проверка</h3>
+                <p className="text-xs text-zinc-400 mb-4">Фон удален. Нужно поправить края?</p>
                 <div className="flex flex-col gap-2">
-                    <Button onClick={() => setStep(4)} className="w-full bg-green-600 hover:bg-green-700">
-                        Идеально, далее
+                    <Button onClick={() => setStep(4)} className="bg-green-600 hover:bg-green-700 w-full">
+                        Все отлично, далее
                     </Button>
                     <Button onClick={() => setStep(3)} variant="secondary" className="w-full">
                         <Edit3 size={16} className="mr-2"/> Исправить (Ластик)
@@ -244,24 +225,22 @@ export default function StickerMakerPage() {
                         </Button>
                     ))}
                 </div>
-                <div className="flex flex-col gap-2">
-                    <Button className="w-full bg-purple-600" onClick={handleAnimate}>
-                        Создать Стикер
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setStep(3)}>
-                        Назад к ластику
-                    </Button>
-                </div>
+                <Button className="w-full bg-purple-600" onClick={handleAnimate}>
+                    Создать Стикер
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setStep(3)} className="mt-2 w-full">
+                    Назад к ластику
+                </Button>
             </div>
 
             {/* ШАГ 5: РЕЗУЛЬТАТ */}
             <div className={step !== 5 ? "hidden" : ""}>
                 <h3 className="font-bold mb-3 flex items-center gap-2"><Download size={18}/> 3. Результат</h3>
                 <Button className="w-full bg-green-600" onClick={() => window.open(finalResult || "", "_blank")}>
-                    Скачать
+                    Скачать GIF
                 </Button>
                 <Button variant="ghost" className="w-full mt-2" onClick={() => { setStep(1); setImageSrc(null); setFinalResult(null); }}>
-                    Новый стикер
+                    Создать новый
                 </Button>
             </div>
 
