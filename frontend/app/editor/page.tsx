@@ -3,35 +3,48 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Upload, Wand2, Download, Image as ImageIcon, Edit3 } from "lucide-react";
+import { Loader2, Upload, Wand2, Download, Image as ImageIcon, Edit3, Scissors, MousePointer2 } from "lucide-react";
 import { toast } from "sonner";
-// Импорт uploadTempFile теперь сработает
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
-// Убедитесь, что файл mask-editor.tsx находится в папке components/editor/
 import { MaskEditor } from "@/components/editor/mask-editor";
 
 export default function StickerMakerPage() {
-  const [step, setStep] = useState(1); 
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [originalSrc, setOriginalSrc] = useState<string | null>(null);
-  const [serverPath, setServerPath] = useState<string | null>(null);
+  const [step, setStep] = useState(1);
+  // Steps:
+  // 1: Upload
+  // 2: Choose Method (Auto / Manual)
+  // 3: Mask Editor (Manual or Tuning)
+  // 4: Effects & Animation
+  // 5: Result
+
+  const [originalSrc, setOriginalSrc] = useState<string | null>(null); // Локальный URL оригинала
+  const [maskedSrc, setMaskedSrc] = useState<string | null>(null);     // URL обработанного (сервер или blob)
+  const [serverPath, setServerPath] = useState<string | null>(null);   // Путь на сервере для ffmpeg
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedAnim, setSelectedAnim] = useState("none");
   const [finalResult, setFinalResult] = useState<string | null>(null);
 
-  // 1. Загрузка + Удаление фона
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 1. Обработка загрузки файла
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     const file = e.target.files[0];
-    
-    // Сразу сохраняем оригинал для возможности восстановления ластиком
-    setOriginalSrc(URL.createObjectURL(file));
+    const url = URL.createObjectURL(file);
+    setOriginalSrc(url);
+    setStep(2); // Сразу идем к выбору метода
+  };
 
+  // МЕТОД 1: АВТОМАТИЧЕСКОЕ УДАЛЕНИЕ (AI)
+  const runAutoRemove = async () => {
+    if (!originalSrc) return;
     setIsProcessing(true);
-    const toastId = toast.loading("Удаляем фон с помощью AI...");
+    const toastId = toast.loading("AI удаляет фон...");
 
     try {
+        // Получаем файл из blob url (немного хак, но работает)
+        const blob = await fetch(originalSrc).then(r => r.blob());
+        const file = new File([blob], "image.png", { type: blob.type });
+
         const { task_id } = await processImage(file, "remove_bg");
         
         const interval = setInterval(async () => {
@@ -39,103 +52,91 @@ export default function StickerMakerPage() {
                 const status = await checkStatus(task_id);
                 if (status.status === "SUCCESS") {
                     clearInterval(interval);
-                    
-                    // Формируем правильный URL для отображения
                     const fullUrl = getFullUrl(status.result.url);
-                    
-                    setImageSrc(fullUrl);
+                    setMaskedSrc(fullUrl);
                     setServerPath(status.result.server_path);
-                    setStep(2);
                     setIsProcessing(false);
+                    setStep(4); // Успех -> сразу к эффектам
                     toast.dismiss(toastId);
-                    toast.success("Фон удален!");
+                    toast.success("Готово! Можете добавить эффекты или поправить края.");
                 } else if (status.status === "FAILURE") {
                     clearInterval(interval);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
-                    toast.error("Ошибка обработки на сервере");
+                    toast.error("AI не справился, попробуйте вручную");
                 }
-            } catch (e) { }
+            } catch (e) {}
         }, 1000);
-    } catch (err) {
-        console.error(err);
+    } catch (e) {
         setIsProcessing(false);
-        toast.dismiss(toastId);
-        toast.error("Ошибка загрузки");
+        toast.error("Ошибка сети");
     }
   };
 
-  // 2. Сохранение маски после ручной правки
+  // МЕТОД 2: РУЧНОЕ (Лассо/Ластик)
+  const startManualMode = () => {
+      setMaskedSrc(null); // Сбрасываем маску, начинаем с чистого листа (или оригинала)
+      setStep(3);
+  };
+
+  // Сохранение из MaskEditor
   const handleMaskSave = async (blob: Blob) => {
-      const file = new File([blob], "edited_mask.png", { type: "image/png" });
+      // 1. Показываем результат локально
+      setMaskedSrc(URL.createObjectURL(blob));
+      setStep(4);
       
-      // Обновляем превью локально
-      setImageSrc(URL.createObjectURL(blob));
-      setStep(4); // Переходим к эффектам
-      
-      // Загружаем отредактированную маску на сервер
-      setIsProcessing(true); 
+      // 2. Грузим на сервер для ffmpeg
+      setIsProcessing(true);
       try {
+          const file = new File([blob], "mask.png", { type: "image/png" });
           const { task_id } = await uploadTempFile(file);
+          
           const interval = setInterval(async () => {
-              const status = await checkStatus(task_id);
-              if (status.status === "SUCCESS") {
-                  clearInterval(interval);
-                  setServerPath(status.result.server_path);
-                  setIsProcessing(false);
-                  toast.success("Маска обновлена");
-              }
+             const status = await checkStatus(task_id);
+             if (status.status === "SUCCESS") {
+                 clearInterval(interval);
+                 setServerPath(status.result.server_path);
+                 setIsProcessing(false);
+             }
           }, 1000);
       } catch (e) {
-          toast.error("Ошибка сохранения маски");
+          toast.error("Ошибка сохранения на сервер");
           setIsProcessing(false);
       }
   };
 
-  // 3. Анимация
+  // Рендеринг GIF
   const handleAnimate = async () => {
     if (!serverPath) return;
     setIsProcessing(true);
-    const toastId = toast.loading("Создаем GIF...");
+    const toastId = toast.loading("Создание стикера...");
 
     try {
         const { task_id } = await createSticker(serverPath, selectedAnim);
-        
         const interval = setInterval(async () => {
-            try {
-                const status = await checkStatus(task_id);
-                if (status.status === "SUCCESS") {
-                    clearInterval(interval);
-                    
-                    const fullUrl = getFullUrl(status.result.url);
-
-                    setFinalResult(fullUrl);
-                    setStep(5);
-                    setIsProcessing(false);
-                    toast.dismiss(toastId);
-                    toast.success("Готово!");
-                } else if (status.status === "FAILURE") {
-                    clearInterval(interval);
-                    setIsProcessing(false);
-                    toast.dismiss(toastId);
-                    toast.error("Ошибка генерации");
-                }
-            } catch (e) {}
+            const status = await checkStatus(task_id);
+            if (status.status === "SUCCESS") {
+                clearInterval(interval);
+                setFinalResult(getFullUrl(status.result.url));
+                setStep(5);
+                setIsProcessing(false);
+                toast.dismiss(toastId);
+            }
         }, 1000);
-    } catch (err) {
+    } catch (e) {
         setIsProcessing(false);
         toast.dismiss(toastId);
-        toast.error("Ошибка генерации");
     }
   };
 
-  // Режим редактора маски (на весь экран)
-  if (step === 3 && originalSrc && imageSrc) {
+  // --- RENDER ---
+
+  if (step === 3 && originalSrc) {
       return (
           <div className="h-[calc(100vh-64px)] bg-black p-4">
               <MaskEditor 
                   originalUrl={originalSrc} 
-                  maskedUrl={imageSrc} 
+                  initialMaskedUrl={maskedSrc || undefined}
                   onSave={handleMaskSave}
                   onCancel={() => setStep(2)}
               />
@@ -151,115 +152,121 @@ export default function StickerMakerPage() {
 
       <div className="flex flex-col lg:flex-row gap-8 w-full max-w-5xl">
         
-        {/* ПРЕВЬЮ */}
-        <div className="flex-1 bg-zinc-900 rounded-xl border border-zinc-800 min-h-[400px] flex items-center justify-center relative overflow-hidden">
+        {/* VIEWPORT */}
+        <div className="flex-1 bg-zinc-900 rounded-xl border border-zinc-800 min-h-[400px] flex items-center justify-center relative overflow-hidden group">
             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
             
             {step === 1 && (
                 <div className="text-center p-8">
-                    <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Upload className="text-zinc-500" size={32} />
+                    <div className="w-24 h-24 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+                        <Upload className="text-zinc-500" size={40} />
                     </div>
-                    <p className="text-zinc-400">Загрузите фото (JPG, PNG)</p>
+                    <Button variant="outline" className="relative cursor-pointer">
+                        Загрузить фото
+                        <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileSelect} />
+                    </Button>
                 </div>
             )}
 
-            {(step === 2 || step === 4) && imageSrc && (
+            {(step === 2 && originalSrc) && (
+                <img src={originalSrc} className="max-h-[400px] object-contain shadow-2xl" />
+            )}
+
+            {step === 4 && maskedSrc && (
                 <img 
-                    src={imageSrc} 
-                    className="relative z-10 max-h-[350px] object-contain transition-transform duration-500"
+                    src={maskedSrc} 
+                    className="max-h-[350px] object-contain transition-transform duration-500"
                     style={{
                         transform: selectedAnim === 'zoom_in' ? 'scale(1.2)' : 'scale(1)',
                         animation: selectedAnim === 'pulse' ? 'pulse 2s infinite' : selectedAnim === 'shake' ? 'spin 1s infinite' : 'none'
                     }}
-                    onError={() => console.error("Ошибка загрузки:", imageSrc)}
                 />
             )}
 
             {step === 5 && finalResult && (
-                <img src={finalResult} className="relative z-10 max-h-[350px]" />
+                <img src={finalResult} className="max-h-[400px] object-contain" />
             )}
 
             {isProcessing && (
-                <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center backdrop-blur-sm">
-                    <Loader2 className="animate-spin text-purple-500 w-12 h-12" />
+                <div className="absolute inset-0 bg-black/70 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
+                    <Loader2 className="animate-spin text-purple-500 w-12 h-12 mb-4" />
+                    <p className="text-zinc-400 animate-pulse">Обработка...</p>
                 </div>
             )}
         </div>
 
-        {/* НАСТРОЙКИ */}
-        <Card className="w-full lg:w-80 bg-zinc-950 border-zinc-800 p-6 flex flex-col gap-6 h-fit">
+        {/* CONTROLS */}
+        <Card className="w-full lg:w-96 bg-zinc-950 border-zinc-800 p-6 flex flex-col gap-6 h-fit relative z-10">
             
-            {/* ШАГ 1 */}
-            <div className={step !== 1 ? "hidden" : ""}>
-                <h3 className="font-bold mb-3 flex items-center gap-2"><ImageIcon size={18}/> 1. Фото</h3>
-                <div className="relative">
-                    <Button variant="outline" className="w-full cursor-pointer">Выбрать файл</Button>
-                    <input 
-                        type="file" accept="image/*" 
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                        onChange={handleUpload}
-                        disabled={step !== 1}
-                    />
-                </div>
-            </div>
-
-            {/* ШАГ 2 */}
-            <div className={step !== 2 ? "hidden" : ""}>
-                <h3 className="font-bold mb-3 flex items-center gap-2">Проверка</h3>
-                <p className="text-xs text-zinc-400 mb-4">Фон удален. Нужно исправить?</p>
-                <div className="flex flex-col gap-2">
-                    <Button onClick={() => setStep(4)} className="bg-green-600 hover:bg-green-700 w-full">
-                        Все отлично, далее
-                    </Button>
-                    <Button onClick={() => setStep(3)} variant="secondary" className="w-full">
-                        <Edit3 size={16} className="mr-2"/> Ластик / Кисть
-                    </Button>
-                </div>
-            </div>
-
-            {/* ШАГ 4 */}
-            <div className={step !== 4 ? "hidden" : ""}>
-                <h3 className="font-bold mb-3 flex items-center gap-2"><Wand2 size={18}/> 2. Эффекты</h3>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                    {['none', 'zoom_in', 'pulse', 'shake'].map(anim => (
-                        <Button
-                            key={anim}
-                            size="sm"
-                            variant={selectedAnim === anim ? "default" : "secondary"}
-                            onClick={() => setSelectedAnim(anim)}
-                            className="capitalize"
+            {step === 2 && (
+                <div className="animate-in fade-in slide-in-from-right-4">
+                    <h3 className="font-bold mb-4 text-lg">Как удалить фон?</h3>
+                    <div className="space-y-3">
+                        <Button 
+                            onClick={runAutoRemove} 
+                            className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 h-12 text-md"
                         >
-                            {anim.replace('_', ' ')}
+                            <Wand2 className="mr-2" size={18}/> Автоматически (AI)
                         </Button>
-                    ))}
+                        <div className="relative py-2">
+                            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-zinc-800" /></div>
+                            <div className="relative flex justify-center text-xs uppercase"><span className="bg-zinc-950 px-2 text-zinc-500">Или вручную</span></div>
+                        </div>
+                        <Button onClick={startManualMode} variant="outline" className="w-full h-12 justify-start px-4">
+                            <Scissors className="mr-2 text-zinc-400" size={18}/> Вырезать (Лассо)
+                        </Button>
+                        <Button onClick={startManualMode} variant="outline" className="w-full h-12 justify-start px-4">
+                            <Edit3 className="mr-2 text-zinc-400" size={18}/> Ластик
+                        </Button>
+                    </div>
                 </div>
-                <Button className="w-full bg-purple-600" onClick={handleAnimate}>
-                    Создать Стикер
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setStep(3)} className="mt-2 w-full">
-                    Назад к ластику
-                </Button>
-            </div>
+            )}
 
-            {/* ШАГ 5 */}
-            <div className={step !== 5 ? "hidden" : ""}>
-                <h3 className="font-bold mb-3 flex items-center gap-2"><Download size={18}/> 3. Результат</h3>
-                <Button className="w-full bg-green-600" onClick={() => window.open(finalResult || "", "_blank")}>
-                    Скачать GIF
-                </Button>
-                <Button variant="ghost" className="w-full mt-2" onClick={() => { setStep(1); setImageSrc(null); setFinalResult(null); }}>
-                    Создать новый
-                </Button>
-            </div>
+            {step === 4 && (
+                <div className="animate-in fade-in">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg">Эффекты</h3>
+                        <Button variant="ghost" size="sm" onClick={() => setStep(3)} className="text-zinc-400 text-xs h-6">
+                            <Edit3 size={12} className="mr-1"/> Поправить края
+                        </Button>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                        {['none', 'zoom_in', 'pulse', 'shake'].map(anim => (
+                            <div 
+                                key={anim}
+                                onClick={() => setSelectedAnim(anim)}
+                                className={`
+                                    cursor-pointer rounded-lg border p-3 text-center text-sm font-medium transition-all
+                                    ${selectedAnim === anim ? "border-purple-500 bg-purple-500/10 text-white" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700"}
+                                `}
+                            >
+                                {anim === 'none' ? 'Нет' : anim.replace('_', ' ')}
+                            </div>
+                        ))}
+                    </div>
 
+                    <Button className="w-full bg-white text-black hover:bg-zinc-200 h-12 font-bold" onClick={handleAnimate}>
+                        Экспорт GIF
+                    </Button>
+                </div>
+            )}
+
+            {step === 5 && (
+                <div className="animate-in zoom-in-95">
+                    <h3 className="font-bold mb-4 text-green-500 flex items-center gap-2">
+                        <Check className="w-5 h-5"/> Готово!
+                    </h3>
+                    <Button className="w-full bg-zinc-800 hover:bg-zinc-700 mb-3" onClick={() => window.open(finalResult || "", "_blank")}>
+                        <Download className="mr-2" size={16}/> Скачать файл
+                    </Button>
+                    <Button variant="link" className="w-full text-zinc-500" onClick={() => { setStep(1); setOriginalSrc(null); setMaskedSrc(null); }}>
+                        Создать еще один
+                    </Button>
+                </div>
+            )}
         </Card>
       </div>
-      
-      <style jsx global>{`
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-        @keyframes spin { 0% { transform: rotate(0deg); } 25% { transform: rotate(5deg); } 75% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
-      `}</style>
     </div>
   );
 }
