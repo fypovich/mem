@@ -49,9 +49,13 @@ export const createSticker = async (imagePath: string, animation: string, option
   const body = { 
       image_path: imagePath, 
       animation,
-      outline_color: options?.outline_color,
+      outline_color: options?.outlineColor,
+      outline_width: options?.outlineWidth, // Новое
       text: options?.text,
-      text_color: options?.text_color
+      text_color: options?.textColor,
+      text_size: options?.textSize,        // Новое
+      text_x: options?.textX,              // Новое
+      text_y: options?.textY               // Новое
   };
 
   const res = await fetch(`${API_URL}/editor/create-sticker`, {

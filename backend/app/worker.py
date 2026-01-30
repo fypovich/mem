@@ -209,9 +209,13 @@ def process_sticker_image(self, file_path: str, operation: str, **kwargs):
 @shared_task(bind=True, name="app.worker.animate_sticker_task")
 def animate_sticker_task(self, image_path: str, animation: str, 
                          outline_color: str = None, 
+                         outline_width: int = 0,
                          text: str = None, 
-                         text_color: str = "white"):
-    """Создает анимированный GIF с эффектами"""
+                         text_color: str = "white",
+                         text_size: int = 15,
+                         text_x: float = 0.5,
+                         text_y: float = 0.8):
+    """Создает анимированный GIF"""
     try:
         output_filename = f"sticker_{uuid.uuid4()}.gif"
         output_path = os.path.join("uploads", output_filename)
@@ -221,13 +225,17 @@ def animate_sticker_task(self, image_path: str, animation: str,
             image_path, 
             animation=animation,
             outline_color=outline_color,
+            outline_width=outline_width,
             text=text,
-            text_color=text_color
+            text_color=text_color,
+            text_size=text_size,
+            text_x=text_x,
+            text_y=text_y
         )
         
         return {"url": f"/static/{output_filename}"}
     except Exception as e:
-        print(f"Animation error: {e}")
+        print(f"Worker Error: {e}")
         raise e
 
 # ==========================================
