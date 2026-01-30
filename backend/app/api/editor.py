@@ -105,3 +105,35 @@ async def get_task_status(task_id: str):
         "status": task_result.status,
         "result": result
     }
+
+# Добавьте новые эндпоинты или обновите старые
+@router.post("/process-image")
+async def process_image(
+    file: UploadFile = File(...),
+    operation: str = Form(...), # 'remove_bg' or 'outline'
+    current_user: User = Depends(get_current_user)
+):
+    # Сохраняем входящий файл
+    file_id = str(uuid.uuid4())
+    ext = file.filename.split('.')[-1]
+    input_path = os.path.join(UPLOAD_DIR, f"temp_{file_id}.{ext}")
+    async with aiofiles.open(input_path, 'wb') as f:
+        await f.write(await file.read())
+
+    # Запускаем задачу
+    task = celery_app.send_task(
+        "app.worker.process_sticker_image",
+        args=[input_path, operation]
+    )
+    return {"task_id": task.id}
+
+@router.post("/create-sticker")
+async def create_sticker(
+    request: dict, # { "image_path": "...", "animation": "zoom_in", "format": "gif" }
+    current_user: User = Depends(get_current_user)
+):
+    task = celery_app.send_task(
+        "app.worker.animate_sticker_task",
+        args=[request.get("image_path"), request.get("animation"), request.get("format")]
+    )
+    return {"task_id": task.id}

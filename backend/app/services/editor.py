@@ -1,16 +1,8 @@
 import os
-import random
 from moviepy.editor import (
-    VideoFileClip, TextClip, ImageClip, CompositeVideoClip, 
-    ColorClip, vfx, afx
+    VideoFileClip, TextClip, ImageClip, CompositeVideoClip, vfx
 )
-from moviepy.video.fx.all import crop, resize
 from typing import List, Dict, Any
-import numpy as np
-
-# Путь для сохранения временных файлов
-TEMP_DIR = "uploads/temp_render"
-os.makedirs(TEMP_DIR, exist_ok=True)
 
 class VideoEditorService:
     def __init__(self, output_path: str):
@@ -18,157 +10,128 @@ class VideoEditorService:
         self.clips = []
         self.final_clip = None
 
-    def _apply_ken_burns(self, clip, duration, zoom_factor=1.3):
+    def _calculate_pos(self, pos_data, video_w, video_h, item_w, item_h):
         """
-        Эффект плавного приближения (Zoom In) для статичных изображений.
+        Конвертирует проценты в координаты для MoviePy.
+        MoviePy ожидает top-left координаты (x, y) в пикселях.
+        Фронтенд присылает проценты (0-100).
         """
-        # Лямбда функция: в момент t=0 масштаб 1, в конце масштаб zoom_factor
-        return clip.resize(lambda t: 1 + (zoom_factor - 1) * t / duration)
-
-    def _apply_filters(self, clip, filters: Dict[str, Any]):
-        """
-        Применение цветокоррекции и эффектов.
-        """
-        if not filters:
-            return clip
-
-        # Яркость (Brightness): 1.0 = оригинал
-        if "brightness" in filters and filters["brightness"] != 1.0:
-            clip = clip.fx(vfx.colorx, filters["brightness"])
+        if not isinstance(pos_data, dict):
+            return "center"
         
-        # Контраст (Contrast): 1.0 = оригинал (в MoviePy vfx.lum_contrast немного сложнее, используем упрощенный вариант через colorx/gamma если нужно, 
-        # но лучше lum_contrast если работает стабильно. Для простоты пока оставим только яркость, т.к. lum_contrast требует настройки порогов)
+        # Получаем координаты X, Y в пикселях
+        x_px = (pos_data.get('x', 0) / 100.0) * video_w
+        y_px = (pos_data.get('y', 0) / 100.0) * video_h
         
-        # Черно-белый
-        if filters.get("grayscale"):
-            clip = clip.fx(vfx.blackwhite)
-
-        # Фейд (появление/затухание)
-        if filters.get("fadein"):
-            clip = clip.fx(vfx.fadein, filters["fadein"])
-        if filters.get("fadeout"):
-            clip = clip.fx(vfx.fadeout, filters["fadeout"])
-
-        return clip
+        return (x_px, y_px)
 
     def process_project(self, project_data: Dict[str, Any]):
         try:
-            # 1. Загружаем основное видео (Фон)
             base_path = project_data.get("base_video")
-            if not os.path.exists(base_path):
-                raise FileNotFoundError(f"Base video not found: {base_path}")
+            if not os.path.exists(base_path): raise FileNotFoundError("Base video missing")
             
-            # --- БАЗОВЫЙ СЛОЙ ---
+            # 1. Base Video
             video = VideoFileClip(base_path)
-
-            # Обрезка (Trim)
-            trim = project_data.get("trim")
-            if trim:
-                video = video.subclip(trim.get("start", 0), trim.get("end", video.duration))
-
-            # Кроп и Ресайз (например, под TikTok 9:16)
-            output_format = project_data.get("format", "original") # original, 9:16, 1:1
+            
+            # Формат (TikTok Crop)
             target_w, target_h = video.w, video.h
-
-            if output_format == "9:16":
-                # Логика: кропаем центр, потом ресайзим
-                target_ratio = 9 / 16
+            if project_data.get("format") == "9:16":
+                # Логика кропа 9:16
                 current_ratio = video.w / video.h
-                
-                if current_ratio > target_ratio: # Видео слишком широкое
+                target_ratio = 9 / 16
+                if current_ratio > target_ratio:
                     new_w = int(video.h * target_ratio)
                     video = video.crop(x1=video.w/2 - new_w/2, width=new_w, height=video.h)
-                else: # Видео слишком высокое
-                    new_h = int(video.w / target_ratio)
-                    video = video.crop(y1=video.h/2 - new_h/2, width=video.w, height=new_h)
-                
-                # Финальный размер (например 1080p для TikTok)
-                # video = video.resize(height=1920) 
-            
-            # Применяем фильтры к базе
-            video = self._apply_filters(video, project_data.get("filters", {}))
-            
-            self.clips.append(video) 
+                target_w, target_h = video.w, video.h
 
-            # --- СЛОИ (Текст, Стикеры) ---
+            # Обрезка времени
+            trim = project_data.get("trim", {})
+            start_t = trim.get("start", 0)
+            end_t = trim.get("end", video.duration)
+            video = video.subclip(start_t, end_t)
+            
+            self.clips.append(video)
+
+            # 2. Layers
             layers = project_data.get("layers", [])
             for layer in layers:
                 clip = None
                 
-                # ТЕКСТ
+                # --- TEXT ---
                 if layer["type"] == "text":
-                    # Используем дефолтный шрифт, если Arial не найден
-                    font = "Arial" if "Arial" in TextClip.list('font') else "DejaVu-Sans-Bold"
+                    # Эвристика размера шрифта:
+                    # Фронтенд передает width слоя в процентах.
+                    # Мы примерно мапим это на fontsize.
+                    # Это сложное место, так как размер текста зависит от длины строки.
+                    # Попробуем использовать fontsize из данных, но масштабировать его.
+                    
+                    base_fontsize = layer.get("fontsize", 50)
+                    # Скейлим шрифт относительно разрешения видео (база 1080p)
+                    scaled_fontsize = int(base_fontsize * (target_h / 1000.0))
+
                     clip = TextClip(
                         layer["content"], 
-                        fontsize=layer.get("fontsize", 50), 
+                        fontsize=scaled_fontsize, 
                         color=layer.get("color", "white"),
-                        font=font,
-                        stroke_color="black", 
-                        stroke_width=2
+                        font="Arial",
+                        method='caption', # Позволяет авто-перенос строки
+                        size=(int(target_w * (layer.get('width', 80) / 100)), None) # Ограничиваем ширину
                     )
                 
-                # ИЗОБРАЖЕНИЕ / СТИКЕР
+                # --- IMAGE ---
                 elif layer["type"] == "image":
-                    img_path = layer["path"]
-                    if os.path.exists(img_path):
-                        clip = ImageClip(img_path)
-                        
-                        # Ken Burns (Анимация движения)
-                        if layer.get("animation") == "zoom_in":
-                            clip = self._apply_ken_burns(clip, duration=layer["duration"])
+                    path = layer.get("path")
+                    if path and os.path.exists(path):
+                        clip = ImageClip(path)
+                        # Ресайз
+                        width_percent = layer.get("width", 30)
+                        target_layer_w = target_w * (width_percent / 100.0)
+                        clip = clip.resize(width=target_layer_w)
 
                 if clip:
-                    # Длительность и старт
-                    layer_dur = layer.get("duration", 3)
-                    clip = clip.set_start(layer["start"]).set_duration(layer_dur)
+                    # Тайминг
+                    clip = clip.set_start(layer["start"]).set_duration(layer["duration"])
                     
-                    # Ресайз слоя
-                    if "scale" in layer:
-                        clip = clip.resize(layer["scale"])
-                    elif "width" in layer:
-                        clip = clip.resize(width=layer["width"])
-
-                    # Позиционирование
-                    pos = layer.get("pos", "center")
-                    if isinstance(pos, dict):
-                        # Конвертируем относительные (x,y) в абсолютные или используем как есть
-                        clip = clip.set_position((pos.get("x", "center"), pos.get("y", "center")))
-                    else:
-                        clip = clip.set_position(pos)
+                    # Позиция
+                    # Для MoviePy позиция - это левый верхний угол.
+                    # Rnd тоже дает левый верхний угол.
+                    pos = {
+                        'x': layer.get('x', 0), 
+                        'y': layer.get('y', 0)
+                    }
+                    final_pos = self._calculate_pos(pos, target_w, target_h, clip.w, clip.h)
+                    clip = clip.set_position(final_pos)
                     
-                    # Фильтры слоя
-                    clip = self._apply_filters(clip, layer.get("filters", {}))
-
+                    # Эффекты
+                    filters = layer.get("filters", {})
+                    if filters.get("opacity"):
+                        clip = clip.set_opacity(filters["opacity"])
+                    
                     self.clips.append(clip)
 
-            # 5. Сборка (Compositing)
-            # Используем размер первого клипа (базы) как размер холста
-            self.final_clip = CompositeVideoClip(self.clips, size=video.size)
+            # 3. Composite
+            self.final_clip = CompositeVideoClip(self.clips, size=(target_w, target_h))
             self.final_clip.duration = video.duration
 
-            # 6. Рендеринг
-            # audio_codec='aac' обязателен для совместимости с iOS/Web
+            # 4. Write
             self.final_clip.write_videofile(
                 self.output_path, 
                 codec="libx264", 
                 audio_codec="aac", 
                 fps=24,
-                preset="medium", # ultrafast для тестов, medium для продакшена
-                threads=4
+                threads=4,
+                logger=None
             )
-            
             return True
 
         except Exception as e:
-            print(f"Rendering error: {e}")
+            print(f"Render Error: {e}")
             raise e
         finally:
             self.close()
 
     def close(self):
-        if self.final_clip:
-            self.final_clip.close()
-        for clip in self.clips:
-            try: clip.close()
+        if self.final_clip: self.final_clip.close()
+        for c in self.clips: 
+            try: c.close()
             except: pass

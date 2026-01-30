@@ -1,15 +1,9 @@
 export type LayerType = 'text' | 'image' | 'video';
 
-export interface Position {
-  x: number | string; // pixels or 'center'
-  y: number | string;
-}
-
 export interface LayerFilters {
-  brightness?: number; // 1.0 is default
+  brightness?: number;
   grayscale?: boolean;
-  fadein?: number; // seconds
-  fadeout?: number;
+  opacity?: number;
 }
 
 export interface Layer {
@@ -17,30 +11,35 @@ export interface Layer {
   type: LayerType;
   content?: string; // Текст или название
   path?: string;    // Путь на сервере
-  start: number;    // Время начала (сек)
-  duration: number; // Длительность (сек)
-  pos: Position;
   
-  // Text properties
-  fontsize?: number;
+  // Тайминг
+  start: number;    
+  duration: number; 
+  
+  // Позиция и размер (В ПРОЦЕНТАХ от 0 до 100)
+  // Это решает проблему разных экранов
+  x: number; 
+  y: number;
+  width: number; 
+  height: number;
+  rotation?: number; // Градусы
+
+  // Свойства текста
+  fontsize?: number; // Базовый размер, который скейлится
   color?: string;
+  fontFamily?: string;
   
-  // Image properties
-  scale?: number;
-  width?: number;
-  animation?: 'none' | 'zoom_in'; 
-  
-  // Common
+  // Свойства
   filters?: LayerFilters;
+  animation?: 'none' | 'zoom_in' | 'fade_in'; 
 }
 
 export interface ProjectData {
   base_video: string; 
   trim?: {
     start: number;
-    end?: number; // <--- ВАЖНО: Добавлен знак вопроса (Optional)
+    end?: number;
   };
-  format?: 'original' | '9:16'; // <--- Добавлено
+  format?: 'original' | '9:16'; 
   layers: Layer[];
-  filters?: LayerFilters; // <--- Добавлено
 }

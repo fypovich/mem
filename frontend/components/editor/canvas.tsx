@@ -1,7 +1,7 @@
 "use client";
+import React, { useRef, useState, useEffect } from "react";
 import { Layer } from "@/types/editor";
-import { motion } from "framer-motion";
-import { useRef } from "react";
+import { Rnd } from "react-rnd";
 
 interface CanvasProps {
   videoUrl: string | null;
@@ -9,91 +9,142 @@ interface CanvasProps {
   currentTime: number;
   selectedLayerId: string | null;
   onSelectLayer: (id: string | null) => void;
-  onUpdatePosition: (id: string, x: number, y: number) => void;
-  // ИСПРАВЛЕНИЕ: Разрешаем null в RefObject
-  videoRef: React.RefObject<HTMLVideoElement | null>; 
+  onUpdateLayer: (id: string, updates: Partial<Layer>) => void;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  videoAspectRatio?: number; // Новое свойство для пропорций
 }
 
-export function Canvas({ videoUrl, layers, currentTime, selectedLayerId, onSelectLayer, onUpdatePosition, videoRef }: CanvasProps) {
+export function Canvas({ 
+  videoUrl, layers, currentTime, selectedLayerId, 
+  onSelectLayer, onUpdateLayer, videoRef, videoAspectRatio
+}: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
 
-  // Фильтруем слои, которые должны быть видны в текущий момент времени
+  // Обновляем размеры контейнера при изменении окна или загрузке видео
+  useEffect(() => {
+    const updateSize = () => {
+        if (containerRef.current) {
+            setContainerSize({
+                w: containerRef.current.offsetWidth,
+                h: containerRef.current.offsetHeight
+            });
+        }
+    };
+    window.addEventListener('resize', updateSize);
+    updateSize();
+    setTimeout(updateSize, 500); 
+    return () => window.removeEventListener('resize', updateSize);
+  }, [videoUrl, videoAspectRatio]);
+
   const visibleLayers = layers.filter(
     l => currentTime >= l.start && currentTime <= (l.start + l.duration)
   );
 
   return (
     <div 
-        className="relative w-full h-full flex items-center justify-center bg-black/90 overflow-hidden" 
+        className="relative w-full h-full flex items-center justify-center bg-zinc-900/50 overflow-hidden p-8" 
         onClick={() => onSelectLayer(null)}
-        ref={containerRef}
     >
       {videoUrl ? (
-        <div className="relative aspect-[9/16] h-[90%] bg-black shadow-2xl">
-            {/* Base Video */}
+        <div 
+            ref={containerRef}
+            className="relative bg-black shadow-2xl overflow-hidden"
+            style={{
+                // Динамический расчет размеров, чтобы видео вписывалось без полос
+                aspectRatio: videoAspectRatio ? `${videoAspectRatio}` : 'auto',
+                height: '100%',
+                width: videoAspectRatio ? 'auto' : '100%',
+                maxWidth: '100%'
+            }}
+        >
             <video 
-                ref={videoRef} // Теперь типы совпадают
+                ref={videoRef}
                 src={videoUrl} 
                 className="w-full h-full object-contain pointer-events-none"
+                style={{ width: '100%', height: '100%' }} // Заставляем видео заполнять контейнер
             />
 
-            {/* Overlays */}
             {visibleLayers.map(layer => (
-                <motion.div
+                <Rnd
                     key={layer.id}
-                    initial={false}
-                    drag
-                    dragMomentum={false}
-                    dragConstraints={containerRef} 
-                    onDragEnd={(e, info) => {
-                        // onUpdatePosition(layer.id, info.point.x, info.point.y);
+                    size={{ 
+                        width: `${layer.width}%`, 
+                        height: layer.type === 'text' ? 'auto' : `${layer.height}%` 
                     }}
-                    onClick={(e) => { e.stopPropagation(); onSelectLayer(layer.id); }}
-                    style={{
-                        position: 'absolute',
-                        top: '50%', 
-                        left: '50%',
-                        x: '-50%',
-                        y: '-50%',
-                        cursor: 'grab',
-                        zIndex: 10
+                    position={{ 
+                        x: (layer.x / 100) * containerSize.w, 
+                        y: (layer.y / 100) * containerSize.h 
                     }}
+                    bounds="parent"
+                    onDragStop={(e, d) => {
+                        const xPercent = (d.x / containerSize.w) * 100;
+                        const yPercent = (d.y / containerSize.h) * 100;
+                        onUpdateLayer(layer.id, { x: xPercent, y: yPercent });
+                        onSelectLayer(layer.id);
+                    }}
+                    // ВАЖНО: Используем onResize для плавности
+                    onResize={(e, direction, ref, delta, position) => {
+                         // Тут можно обновлять локальный стейт для супер-плавности, 
+                         // но пока попробуем обновлять слой напрямую
+                         const wPercent = (ref.offsetWidth / containerSize.w) * 100;
+                         const hPercent = (ref.offsetHeight / containerSize.h) * 100;
+                         // Для текста обновляем fontsize визуально (можно доработать логику)
+                    }}
+                    onResizeStop={(e, direction, ref, delta, position) => {
+                        const wPercent = (ref.offsetWidth / containerSize.w) * 100;
+                        const hPercent = (ref.offsetHeight / containerSize.h) * 100;
+                        const xPercent = (position.x / containerSize.w) * 100;
+                        const yPercent = (position.y / containerSize.h) * 100;
+                        
+                        onUpdateLayer(layer.id, { 
+                            width: wPercent, 
+                            height: hPercent,
+                            x: xPercent,
+                            y: yPercent
+                        });
+                    }}
+                    onClick={(e: any) => { e.stopPropagation(); onSelectLayer(layer.id); }}
+                    enableResizing={selectedLayerId === layer.id}
+                    disableDragging={selectedLayerId !== layer.id}
                     className={`
-                        ${selectedLayerId === layer.id ? 'ring-2 ring-blue-500' : ''}
+                        ${selectedLayerId === layer.id ? 'border-2 border-blue-500 z-50' : 'hover:border border-white/30 z-10'}
+                        flex items-center justify-center
                     `}
+                    lockAspectRatio={layer.type === 'image'}
                 >
                     {layer.type === 'text' ? (
-                        <p style={{ 
-                            fontSize: `${layer.fontsize}px`, 
+                        <div style={{ 
+                            // Динамический шрифт относительно ширины контейнера
+                            fontSize: `${(layer.width / 100) * containerSize.w * 0.25}px`, 
                             color: layer.color,
                             fontWeight: 'bold',
                             textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-                            whiteSpace: 'nowrap',
-                            lineHeight: 1,
-                            // Применяем фильтр яркости прямо в CSS для превью
-                            filter: `brightness(${layer.filters?.brightness || 1})`
+                            width: '100%',
+                            textAlign: 'center',
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap'
                         }}>
                             {layer.content}
-                        </p>
+                        </div>
                     ) : (
+                        // Используем URL картинки (если есть) или заглушку
+                        // ВАЖНО: layer.content здесь может хранить URL, если мы так настроим в page.tsx
                         <img 
-                            src={layer.path ? layer.path.replace('uploads/', '/static/') : ''}
+                            src={layer.content.startsWith('http') || layer.content.startsWith('/') ? layer.content : ''}
                             alt="sticker"
+                            className="w-full h-full object-contain pointer-events-none"
                             style={{ 
-                                width: `${layer.width}px`,
                                 filter: `brightness(${layer.filters?.brightness || 1})`,
-                                // Эмуляция Ken Burns для превью (простая)
-                                transform: layer.animation === 'zoom_in' ? 'scale(1.2)' : 'scale(1)',
-                                transition: 'transform 3s ease-out'
+                                opacity: layer.filters?.opacity || 1
                             }}
-                            className="pointer-events-none"
                         />
                     )}
-                </motion.div>
+                </Rnd>
             ))}
         </div>
       ) : (
-        <div className="text-zinc-500">Нет видео</div>
+        <div className="text-zinc-500">Загрузите видео</div>
       )}
     </div>
   );

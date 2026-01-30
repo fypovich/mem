@@ -1,76 +1,112 @@
 "use client";
 import { Layer } from "@/types/editor";
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 
 interface TimelineProps {
   layers: Layer[];
-  duration: number; // Общая длительность видео
+  duration: number;
   currentTime: number;
   onSeek: (time: number) => void;
-  onLayerUpdate: (id: string, start: number, duration: number) => void;
+  onLayerUpdate: (id: string, updates: Partial<Layer>) => void; // Обновили тип
   selectedLayerId: string | null;
   onSelectLayer: (id: string) => void;
 }
 
-export function Timeline({ layers, duration, currentTime, onSeek, onLayerUpdate, selectedLayerId, onSelectLayer }: TimelineProps) {
+export function Timeline({ 
+    layers, duration, currentTime, onSeek, 
+    onLayerUpdate, selectedLayerId, onSelectLayer 
+}: TimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // Конвертация секунд в пиксели (1 сек = 50px)
-  const PIXELS_PER_SEC = 50;
-  const totalWidth = Math.max(duration * PIXELS_PER_SEC, 800); // Минимум 800px
+  const [isDragging, setIsDragging] = useState<{id: string, startX: number, initDur: number} | null>(null);
 
   const handleTimelineClick = (e: React.MouseEvent) => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || isDragging) return; // Не кликаем, если тянем
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const time = Math.max(0, Math.min(x / PIXELS_PER_SEC, duration));
-    onSeek(time);
+    const percent = x / rect.width;
+    onSeek(percent * duration);
   };
 
+  // Логика перетаскивания (Resizing)
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+        if (!isDragging || !containerRef.current) return;
+        
+        const rect = containerRef.current.getBoundingClientRect();
+        const deltaX = e.clientX - isDragging.startX;
+        const deltaPercent = deltaX / rect.width;
+        const deltaTime = deltaPercent * duration;
+        
+        const newDuration = Math.max(0.5, isDragging.initDur + deltaTime);
+        
+        // Ограничиваем, чтобы не вылезло за пределы видео
+        // const layer = layers.find(l => l.id === isDragging.id);
+        // if (layer && (layer.start + newDuration) > duration) return;
+
+        onLayerUpdate(isDragging.id, { duration: newDuration });
+    };
+
+    const handleMouseUp = () => {
+        setIsDragging(null);
+    };
+
+    if (isDragging) {
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, duration, onLayerUpdate]);
+
   return (
-    <div className="w-full bg-zinc-900 border-t border-zinc-800 h-64 flex flex-col select-none">
-        {/* Time Ruler */}
-        <div className="h-8 border-b border-zinc-800 relative bg-zinc-950" ref={containerRef} onClick={handleTimelineClick}>
-            {Array.from({ length: Math.ceil(duration) + 1 }).map((_, i) => (
-                <div key={i} className="absolute top-0 bottom-0 border-l border-zinc-700 text-[10px] text-zinc-500 pl-1" style={{ left: i * PIXELS_PER_SEC }}>
-                    {i}s
-                </div>
-            ))}
-            {/* Playhead (Курсор) */}
-            <div 
-                className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-50 pointer-events-none"
-                style={{ left: currentTime * PIXELS_PER_SEC }}
-            >
-                <div className="w-3 h-3 bg-red-500 -ml-[5px] rotate-45 transform" />
-            </div>
+    <div className="w-full bg-zinc-950 h-48 flex flex-col select-none overflow-hidden border-t border-zinc-800">
+        <div className="h-8 border-b border-zinc-800 flex items-center px-2 text-xs text-zinc-400 bg-zinc-900">
+            <span>00:00</span>
+            <div className="flex-1"/>
+            <span>{duration.toFixed(1)}s</span>
         </div>
 
-        {/* Tracks */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-2 relative">
-            {layers.map(layer => (
-                <div 
-                    key={layer.id} 
-                    className={`
-                        h-10 rounded-md relative cursor-pointer group transition-colors
-                        ${layer.type === 'text' ? 'bg-blue-900/50 border-blue-700' : 'bg-purple-900/50 border-purple-700'}
-                        ${selectedLayerId === layer.id ? 'border-2 border-white' : 'border'}
-                    `}
-                    style={{
-                        left: layer.start * PIXELS_PER_SEC,
-                        width: layer.duration * PIXELS_PER_SEC,
-                        position: 'absolute', // Простая реализация, в идеале relative внутри grid
-                        top: layers.indexOf(layer) * 48 // Отступ сверху
-                    }}
-                    onClick={(e) => { e.stopPropagation(); onSelectLayer(layer.id); }}
-                >
-                    <div className="px-2 py-1 text-xs truncate text-white/90 font-medium flex items-center h-full">
-                        {layer.type === 'text' ? 'T' : 'IMG'} {layer.content?.substring(0, 10)}
+        <div className="flex-1 relative overflow-y-auto p-2" ref={containerRef} onClick={handleTimelineClick}>
+            <div 
+                className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-50 pointer-events-none transition-all duration-75"
+                style={{ left: `${(currentTime / duration) * 100}%` }}
+            >
+                <div className="w-3 h-3 bg-red-500 -ml-[5px] rotate-45 transform -mt-1 shadow" />
+            </div>
+
+            <div className="space-y-2 relative min-h-full pb-10">
+                {layers.map((layer) => (
+                    <div 
+                        key={layer.id} 
+                        className={`
+                            h-8 rounded relative cursor-pointer overflow-hidden border group
+                            ${layer.type === 'text' ? 'bg-purple-600/40 border-purple-500' : 'bg-blue-600/40 border-blue-500'}
+                            ${selectedLayerId === layer.id ? 'ring-2 ring-white' : ''}
+                        `}
+                        style={{
+                            left: `${(layer.start / duration) * 100}%`,
+                            width: `${(layer.duration / duration) * 100}%`,
+                            minWidth: '10px'
+                        }}
+                        onClick={(e) => { e.stopPropagation(); onSelectLayer(layer.id); }}
+                    >
+                        <div className="px-2 text-[10px] text-white truncate leading-8 font-medium shadow-sm pointer-events-none">
+                            {layer.type === 'text' ? 'T: ' + layer.content : 'IMG'}
+                        </div>
+                        
+                        {/* Ручка изменения размера справа */}
+                        <div 
+                            className="absolute right-0 top-0 bottom-0 w-3 bg-white/20 hover:bg-white/50 cursor-e-resize z-20"
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                setIsDragging({ id: layer.id, startX: e.clientX, initDur: layer.duration });
+                            }}
+                        />
                     </div>
-                    
-                    {/* Handles for resize (simplified) */}
-                    <div className="absolute right-0 top-0 bottom-0 w-2 cursor-e-resize hover:bg-white/50" />
-                </div>
-            ))}
+                ))}
+            </div>
         </div>
     </div>
   );

@@ -14,6 +14,7 @@ from app.services.media import MediaProcessor
 from app.services.search import get_search_service
 from app.services.ai import AIService
 from app.services.editor import VideoEditorService
+from app.services.sticker import StickerService
 
 # Настройка БД (синхронная для воркера)
 engine = create_engine(settings.DATABASE_URL.replace("+asyncpg", ""))
@@ -310,4 +311,53 @@ def render_video_task(self, project_data: dict, output_file_id: str):
     except Exception as e:
         print(f"❌ Render Error: {e}")
         # Тут можно поставить статус "failed" в БД, если есть таблица задач
+        raise e
+    
+@shared_task(bind=True, name="app.worker.process_sticker_image")
+def process_sticker_image(self, file_path: str, operation: str, **kwargs):
+    """
+    Обрабатывает изображение (удаление фона или обводка).
+    operation: 'remove_bg' | 'outline'
+    """
+    try:
+        output_path = file_path # Перезаписываем или создаем новый? Лучше новый
+        if operation == "remove_bg":
+            output_path = file_path.replace("temp_", "bg_removed_")
+            with open(file_path, "rb") as f:
+                data = f.read()
+            processed = AIService.remove_background(data)
+            with open(output_path, "wb") as f:
+                f.write(processed)
+        
+        elif operation == "outline":
+            output_path = file_path.replace(".png", "_outlined.png")
+            color = kwargs.get("color", (255, 255, 255))
+            width = kwargs.get("width", 10)
+            with open(file_path, "rb") as f:
+                data = f.read()
+            processed = AIService.add_outline(data, color=tuple(color), thickness=width)
+            with open(output_path, "wb") as f:
+                f.write(processed)
+
+        # Возвращаем путь относительно статики для фронта
+        filename = os.path.basename(output_path)
+        return {"url": f"/static/{filename}", "server_path": output_path}
+    except Exception as e:
+        print(f"Error processing sticker: {e}")
+        raise e
+
+@shared_task(bind=True, name="app.worker.animate_sticker_task")
+def animate_sticker_task(self, image_path: str, animation: str, format: str = "gif"):
+    """
+    Создает GIF/WebP
+    """
+    try:
+        output_filename = f"sticker_{uuid.uuid4()}.{format}"
+        output_path = os.path.join("uploads", output_filename)
+        
+        service = StickerService(output_path)
+        service.create_animated_sticker(image_path, animation_type=animation)
+        
+        return {"url": f"/static/{output_filename}"}
+    except Exception as e:
         raise e
