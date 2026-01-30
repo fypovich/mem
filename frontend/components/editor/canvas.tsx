@@ -1,7 +1,7 @@
 "use client";
 import { Layer } from "@/types/editor";
 import { motion } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
 interface CanvasProps {
   videoUrl: string | null;
@@ -10,7 +10,8 @@ interface CanvasProps {
   selectedLayerId: string | null;
   onSelectLayer: (id: string | null) => void;
   onUpdatePosition: (id: string, x: number, y: number) => void;
-  videoRef: React.RefObject<HTMLVideoElement>;
+  // ИСПРАВЛЕНИЕ: Разрешаем null в RefObject
+  videoRef: React.RefObject<HTMLVideoElement | null>; 
 }
 
 export function Canvas({ videoUrl, layers, currentTime, selectedLayerId, onSelectLayer, onUpdatePosition, videoRef }: CanvasProps) {
@@ -31,7 +32,7 @@ export function Canvas({ videoUrl, layers, currentTime, selectedLayerId, onSelec
         <div className="relative aspect-[9/16] h-[90%] bg-black shadow-2xl">
             {/* Base Video */}
             <video 
-                ref={videoRef}
+                ref={videoRef} // Теперь типы совпадают
                 src={videoUrl} 
                 className="w-full h-full object-contain pointer-events-none"
             />
@@ -43,17 +44,13 @@ export function Canvas({ videoUrl, layers, currentTime, selectedLayerId, onSelec
                     initial={false}
                     drag
                     dragMomentum={false}
-                    // Ограничиваем перетаскивание размерами видео (примерно)
                     dragConstraints={containerRef} 
                     onDragEnd={(e, info) => {
-                        // В реальном приложении нужно конвертировать пиксели экрана в координаты видео
-                        // Пока сохраняем просто смещение, чтобы показать принцип
                         // onUpdatePosition(layer.id, info.point.x, info.point.y);
                     }}
                     onClick={(e) => { e.stopPropagation(); onSelectLayer(layer.id); }}
                     style={{
                         position: 'absolute',
-                        // Центрируем начальную позицию (упрощенно)
                         top: '50%', 
                         left: '50%',
                         x: '-50%',
@@ -72,15 +69,23 @@ export function Canvas({ videoUrl, layers, currentTime, selectedLayerId, onSelec
                             fontWeight: 'bold',
                             textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
                             whiteSpace: 'nowrap',
-                            lineHeight: 1
+                            lineHeight: 1,
+                            // Применяем фильтр яркости прямо в CSS для превью
+                            filter: `brightness(${layer.filters?.brightness || 1})`
                         }}>
                             {layer.content}
                         </p>
                     ) : (
                         <img 
-                            src={layer.path ? layer.path.replace('uploads/', '/static/') : ''} // Хак для локального пути
+                            src={layer.path ? layer.path.replace('uploads/', '/static/') : ''}
                             alt="sticker"
-                            style={{ width: `${layer.width}px` }}
+                            style={{ 
+                                width: `${layer.width}px`,
+                                filter: `brightness(${layer.filters?.brightness || 1})`,
+                                // Эмуляция Ken Burns для превью (простая)
+                                transform: layer.animation === 'zoom_in' ? 'scale(1.2)' : 'scale(1)',
+                                transition: 'transform 3s ease-out'
+                            }}
                             className="pointer-events-none"
                         />
                     )}
