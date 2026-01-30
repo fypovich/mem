@@ -7,47 +7,56 @@ class AIService:
     @staticmethod
     def remove_background(input_bytes: bytes) -> bytes:
         """
-        Удаление фона с использованием BiRefNet (SOTA качество) + очистка краев.
+        Удаление фона с использованием BiRefNet (SOTA качество).
+        Включает оптимизацию памяти (ресайз) и очистку краев.
         """
         try:
-            # ЛЕНИВЫЙ ИМПОРТ для предотвращения краша воркера (OpenMP issue)
+            # ЛЕНИВЫЙ ИМПОРТ (чтобы не грузить память при старте воркера)
             from rembg import remove, new_session
             
-            # ИСПОЛЬЗУЕМ BiRefNet (birefnet-general)
-            # Это самая мощная модель на данный момент в библиотеке rembg.
-            # Если будет падать по памяти - можно попробовать 'u2net' (классика) или 'isnet-general-use'
+            # Используем BiRefNet (лучшее качество)
             model_name = "birefnet-general" 
-            
             session = new_session(model_name)
             
+            # --- ОПТИМИЗАЦИЯ ПАМЯТИ ---
+            img_pil = Image.open(io.BytesIO(input_bytes))
+            
+            # Если картинка огромная, уменьшаем её. 
+            # 1500px достаточно для любого стикера.
+            # Это снизит потребление RAM в 4-5 раз.
+            max_dim = 1500
+            if max(img_pil.size) > max_dim:
+                img_pil.thumbnail((max_dim, max_dim), Image.LANCZOS)
+                # Сохраняем уменьшенную версию в буфер для rembg
+                buf = io.BytesIO()
+                img_pil.save(buf, format="PNG")
+                input_bytes = buf.getvalue()
+            # --------------------------
+
             # 1. Генерация маски
-            # alpha_matting=True может крашить воркер на слабых машинах, 
-            # поэтому используем False, но улучшаем качество через OpenCV ниже.
+            # alpha_matting=False ОБЯЗАТЕЛЬНО на 16GB RAM с BiRefNet
             result_bytes = remove(
                 input_bytes, 
                 session=session,
                 alpha_matting=False, 
-                post_process_mask=True # Включаем встроенный пост-процессинг rembg
+                post_process_mask=True
             )
 
-            # 2. Продвинутая очистка краев (Anti-Halo)
-            # Часто остается тонкая каймой старого фона. Убираем её.
+            # 2. Продвинутая очистка краев (Anti-Halo) через OpenCV
             img = Image.open(io.BytesIO(result_bytes)).convert("RGBA")
             img_np = np.array(img)
             
-            # Выделяем альфа-канал
             alpha = img_np[:, :, 3]
             
             if np.max(alpha) > 0:
-                # А. Эрозия (сужение маски) на 1 пиксель, чтобы срезать "грязные" края
-                # Используем маленькое ядро
+                # Мягкая очистка "мусора" по краям
+                # Erode (1px) убирает кайму
                 kernel = np.ones((3, 3), np.uint8)
                 alpha = cv2.erode(alpha, kernel, iterations=1)
                 
-                # Б. Сглаживание (Gaussian Blur), чтобы края были мягкими, а не пиксельными
+                # Blur делает край мягким, скрывая пикселизацию
                 alpha = cv2.GaussianBlur(alpha, (3, 3), 0)
                 
-                # Применяем улучшенную альфу обратно
                 img_np[:, :, 3] = alpha
             
             # 3. Возврат результата
@@ -58,9 +67,10 @@ class AIService:
 
         except Exception as e:
             print(f"AI Error: {e}")
-            # В случае ошибки пробуем самую легкую модель как фоллбек
+            # Фоллбек на легкую модель, если BiRefNet все же упадет
             try:
                 from rembg import remove, new_session
+                print("Falling back to u2netp due to error...")
                 return remove(input_bytes, session=new_session("u2netp"))
             except:
                 raise RuntimeError(f"Background removal failed: {e}")
@@ -76,7 +86,6 @@ class AIService:
             if np.max(alpha) == 0: return input_bytes
 
             # Морфологическое расширение маски для создания контура
-            # cv2.MORPH_ELLIPSE дает более округлый и естественный контур
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (thickness, thickness))
             dilated_alpha = cv2.dilate(alpha, kernel, iterations=1)
             
