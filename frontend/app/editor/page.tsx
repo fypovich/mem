@@ -3,46 +3,43 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-// ИСПРАВЛЕНО: Добавлен Check в импорт
 import { Loader2, Upload, Wand2, Download, Image as ImageIcon, Edit3, Scissors, MousePointer2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
 import { MaskEditor } from "@/components/editor/mask-editor";
 
 export default function StickerMakerPage() {
-  const [step, setStep] = useState(1);
-  // Steps:
+  const [step, setStep] = useState(1); 
   // 1: Upload
   // 2: Choose Method (Auto / Manual)
-  // 3: Mask Editor (Manual or Tuning)
-  // 4: Effects & Animation
+  // 3: Mask Editor
+  // 4: Effects
   // 5: Result
 
-  const [originalSrc, setOriginalSrc] = useState<string | null>(null); // Локальный URL оригинала
-  const [maskedSrc, setMaskedSrc] = useState<string | null>(null);     // URL обработанного (сервер или blob)
-  const [serverPath, setServerPath] = useState<string | null>(null);   // Путь на сервере для ffmpeg
+  const [originalSrc, setOriginalSrc] = useState<string | null>(null);
+  const [maskedSrc, setMaskedSrc] = useState<string | null>(null);
+  const [serverPath, setServerPath] = useState<string | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedAnim, setSelectedAnim] = useState("none");
   const [finalResult, setFinalResult] = useState<string | null>(null);
 
-  // 1. Обработка загрузки файла
+  // 1. Загрузка файла
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     const file = e.target.files[0];
     const url = URL.createObjectURL(file);
     setOriginalSrc(url);
-    setStep(2); // Сразу идем к выбору метода
+    setStep(2); 
   };
 
-  // МЕТОД 1: АВТОМАТИЧЕСКОЕ УДАЛЕНИЕ (AI)
+  // МЕТОД 1: АВТО (AI)
   const runAutoRemove = async () => {
     if (!originalSrc) return;
     setIsProcessing(true);
-    const toastId = toast.loading("AI удаляет фон...");
+    const toastId = toast.loading("AI обрабатывает фото...");
 
     try {
-        // Получаем файл из blob url
         const blob = await fetch(originalSrc).then(r => r.blob());
         const file = new File([blob], "image.png", { type: blob.type });
 
@@ -54,39 +51,40 @@ export default function StickerMakerPage() {
                 if (status.status === "SUCCESS") {
                     clearInterval(interval);
                     const fullUrl = getFullUrl(status.result.url);
+                    
                     setMaskedSrc(fullUrl);
                     setServerPath(status.result.server_path);
+                    
                     setIsProcessing(false);
-                    setStep(4); // Успех -> сразу к эффектам
+                    setStep(4); // Успех -> Эффекты
                     toast.dismiss(toastId);
-                    toast.success("Готово! Можете добавить эффекты или поправить края.");
+                    toast.success("Фон удален!");
                 } else if (status.status === "FAILURE") {
                     clearInterval(interval);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
-                    toast.error("AI не справился, попробуйте вручную");
+                    toast.error("AI не смог удалить фон. Попробуйте вручную.");
                 }
             } catch (e) {}
         }, 1000);
     } catch (e) {
         setIsProcessing(false);
-        toast.error("Ошибка сети");
+        toast.dismiss(toastId);
+        toast.error("Ошибка соединения");
     }
   };
 
-  // МЕТОД 2: РУЧНОЕ (Лассо/Ластик)
+  // МЕТОД 2: РУЧНОЙ (Ластик/Лассо)
   const startManualMode = () => {
-      setMaskedSrc(null); // Сбрасываем маску, начинаем с чистого листа
+      setMaskedSrc(null);
       setStep(3);
   };
 
-  // Сохранение из MaskEditor
+  // Сохранение маски
   const handleMaskSave = async (blob: Blob) => {
-      // 1. Показываем результат локально
       setMaskedSrc(URL.createObjectURL(blob));
       setStep(4);
       
-      // 2. Грузим на сервер для ffmpeg
       setIsProcessing(true);
       try {
           const file = new File([blob], "mask.png", { type: "image/png" });
@@ -101,12 +99,12 @@ export default function StickerMakerPage() {
              }
           }, 1000);
       } catch (e) {
-          toast.error("Ошибка сохранения на сервер");
+          toast.error("Не удалось сохранить маску");
           setIsProcessing(false);
       }
   };
 
-  // Рендеринг GIF
+  // Генерация GIF
   const handleAnimate = async () => {
     if (!serverPath) return;
     setIsProcessing(true);
@@ -115,18 +113,27 @@ export default function StickerMakerPage() {
     try {
         const { task_id } = await createSticker(serverPath, selectedAnim);
         const interval = setInterval(async () => {
-            const status = await checkStatus(task_id);
-            if (status.status === "SUCCESS") {
-                clearInterval(interval);
-                setFinalResult(getFullUrl(status.result.url));
-                setStep(5);
-                setIsProcessing(false);
-                toast.dismiss(toastId);
-            }
+            try {
+                const status = await checkStatus(task_id);
+                if (status.status === "SUCCESS") {
+                    clearInterval(interval);
+                    setFinalResult(getFullUrl(status.result.url));
+                    setStep(5);
+                    setIsProcessing(false);
+                    toast.dismiss(toastId);
+                    toast.success("Готово!");
+                } else if (status.status === "FAILURE") {
+                    clearInterval(interval);
+                    setIsProcessing(false);
+                    toast.dismiss(toastId);
+                    toast.error("Ошибка при создании анимации");
+                }
+            } catch (e) {}
         }, 1000);
     } catch (e) {
         setIsProcessing(false);
         toast.dismiss(toastId);
+        toast.error("Ошибка запроса");
     }
   };
 
@@ -261,7 +268,7 @@ export default function StickerMakerPage() {
                     <Button className="w-full bg-zinc-800 hover:bg-zinc-700 mb-3" onClick={() => window.open(finalResult || "", "_blank")}>
                         <Download className="mr-2" size={16}/> Скачать файл
                     </Button>
-                    <Button variant="link" className="w-full text-zinc-500" onClick={() => { setStep(1); setOriginalSrc(null); setMaskedSrc(null); }}>
+                    <Button variant="link" className="w-full text-zinc-500" onClick={() => { setStep(1); setOriginalSrc(null); setMaskedSrc(null); setFinalResult(null); }}>
                         Создать еще один
                     </Button>
                 </div>
