@@ -10,8 +10,10 @@ from celery import shared_task
 
 from app.core.config import settings
 from app.models.models import Meme, Notification, NotificationType, SearchTerm
-from app.services.media import MediaProcessor
+# Импортируем MediaProcessor для мемов
+from app.services.media import MediaProcessor 
 from app.services.search import get_search_service
+# Импортируем новые сервисы для стикеров
 from app.services.ai import AIService
 from app.services.sticker import StickerService
 
@@ -26,6 +28,10 @@ class DateTimeEncoder(json.JSONEncoder):
         if isinstance(obj, uuid.UUID):
             return str(obj)
         return super().default(obj)
+
+# ==========================================
+# 1. ЗАДАЧИ ДЛЯ ОСНОВНОГО САЙТА (MEMES)
+# ==========================================
 
 @shared_task(bind=True, max_retries=3, name="app.worker.process_meme_task")
 def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = None):
@@ -144,14 +150,78 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
     except Exception as e:
         print(f"❌ Worker Error: {e}")
         try:
-            meme.status = "failed"
-            db.commit()
+            if meme:
+                meme.status = "failed"
+                db.commit()
         except: pass
     finally:
         db.close()
         redis_client.close()
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ЗАДАЧИ ---
+# ==========================================
+# 2. ЗАДАЧИ ДЛЯ STICKER MAKER (НОВЫЕ)
+# ==========================================
+
+@shared_task(bind=True, name="app.worker.process_sticker_image")
+def process_sticker_image(self, file_path: str, operation: str, **kwargs):
+    """
+    Обрабатывает изображение (удаление фона или обводка).
+    ВАЖНО: Принудительно сохраняет как PNG для прозрачности.
+    """
+    try:
+        # Меняем расширение на .png, так как результат будет с альфа-каналом
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        dir_name = os.path.dirname(file_path)
+        
+        if operation == "remove_bg":
+            output_filename = f"bg_removed_{base_name}.png"
+            output_path = os.path.join(dir_name, output_filename)
+            
+            with open(file_path, "rb") as f:
+                data = f.read()
+            processed = AIService.remove_background(data)
+            
+            with open(output_path, "wb") as f:
+                f.write(processed)
+        
+        elif operation == "outline":
+            output_filename = f"outlined_{base_name}.png"
+            output_path = os.path.join(dir_name, output_filename)
+            color = kwargs.get("color", (255, 255, 255))
+            width = kwargs.get("width", 10)
+            
+            with open(file_path, "rb") as f:
+                data = f.read()
+            processed = AIService.add_outline(data, color=tuple(color), thickness=width)
+            
+            with open(output_path, "wb") as f:
+                f.write(processed)
+        else:
+            return {"error": "Unknown operation"}
+
+        return {"url": f"/static/{output_filename}", "server_path": output_path}
+    except Exception as e:
+        print(f"Error processing sticker: {e}")
+        raise e
+
+@shared_task(bind=True, name="app.worker.animate_sticker_task")
+def animate_sticker_task(self, image_path: str, animation: str, format: str = "gif"):
+    """Создает анимированный GIF"""
+    try:
+        output_filename = f"sticker_{uuid.uuid4()}.{format}"
+        output_path = os.path.join("uploads", output_filename)
+        
+        service = StickerService(output_path)
+        service.create_animated_sticker(image_path, animation_type=animation)
+        
+        return {"url": f"/static/{output_filename}"}
+    except Exception as e:
+        print(f"Animation Error: {e}")
+        raise e
+
+# ==========================================
+# 3. ФОНОВЫЕ ЗАДАЧИ (Index, Views, Search)
+# ==========================================
 
 @shared_task(name="app.worker.index_meme_task")
 def index_meme_task(meme_data: dict):
@@ -175,141 +245,48 @@ def delete_index_task(meme_id: str):
 
 @shared_task(name="app.worker.sync_views_task")
 def sync_views_task():
-    """Синхронизация просмотров из Redis в Postgres"""
-    print("⏳ Starting views sync...")
     redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
     db = SessionLocal()
     updated_count = 0
-    
     try:
-        # ИСПОЛЬЗУЕМ scan_iter ВМЕСТО scan - ЭТО НАДЕЖНЕЕ
-        # Это предотвращает бесконечные циклы и ошибки типов курсора
         for key in redis_client.scan_iter(match="meme:views:*"):
             try:
-                # Атомарно получаем значение и сбрасываем его в 0
                 views_str = redis_client.getset(key, 0)
-                
                 if views_str and int(views_str) > 0:
                     views = int(views_str)
                     meme_id = key.split(":")[-1]
-                    
-                    # Прямой SQL запрос для скорости
                     db.execute(
                         text("UPDATE memes SET views_count = views_count + :val WHERE id = :mid"),
                         {"val": views, "mid": meme_id}
                     )
                     updated_count += 1
-            except Exception as e:
-                print(f"Error processing key {key}: {e}")
-
-        if updated_count > 0:
-            db.commit()
-            print(f"✅ Synced views for {updated_count} memes.")
-        else:
-            print("💤 No new views to sync.")
-            
-    except Exception as e:
-        print(f"❌ Sync views error: {e}")
-        db.rollback()
+            except Exception: pass
+        if updated_count > 0: db.commit()
+    except Exception: db.rollback()
     finally:
         db.close()
         redis_client.close()
-
 
 @shared_task(name="app.worker.sync_search_stats_task")
 def sync_search_stats_task():
-    """Синхронизация поисковых запросов из Redis в Postgres"""
-    print("⏳ Starting search stats sync...")
     redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
     db = SessionLocal()
-    
     try:
-        # Забираем топ-100 популярных запросов из Redis
-        # ZRANGE возвращает список [(term, score), ...]
-        terms_with_scores = redis_client.zrange("stats:search_terms", 0, -1, withscores=True)
-        
-        if not terms_with_scores:
-            print("💤 No search stats to sync.")
-            return
-
-        for term, score in terms_with_scores:
+        terms = redis_client.zrange("stats:search_terms", 0, -1, withscores=True)
+        if not terms: return
+        for term, score in terms:
             count = int(score)
             if count > 0:
-                # Upsert (Вставка или Обновление)
-                # Пытаемся найти существующий термин
-                search_term = db.query(SearchTerm).filter(SearchTerm.term == term).first()
-                
-                if search_term:
-                    search_term.count += count
-                    search_term.last_searched_at = datetime.utcnow()
-                else:
-                    new_term = SearchTerm(term=term, count=count, last_searched_at=datetime.utcnow())
-                    db.add(new_term)
-                
-                # Удаляем обработанный счетчик из Redis (или уменьшаем его на count)
-                # Для простоты можно просто удалять ключ после обработки, 
-                # но лучше zincrby на отрицательное число, чтобы не потерять новые клики
+                s_term = db.query(SearchTerm).filter(SearchTerm.term == term).first()
+                if s_term: 
+                    s_term.count += count
+                    s_term.last_searched_at = datetime.utcnow()
+                else: 
+                    db.add(SearchTerm(term=term, count=count))
                 redis_client.zincrby("stats:search_terms", -count, term)
-
         db.commit()
-        # Чистим Redis от записей с 0 или меньше (мусор)
         redis_client.zremrangebyscore("stats:search_terms", "-inf", 0)
-        
-        print(f"✅ Synced {len(terms_with_scores)} search terms.")
-            
-    except Exception as e:
-        print(f"❌ Sync search stats error: {e}")
-        db.rollback()
+    except Exception: db.rollback()
     finally:
         db.close()
         redis_client.close()
-
-
-@shared_task(bind=True, name="app.worker.process_sticker_image")
-def process_sticker_image(self, file_path: str, operation: str, **kwargs):
-    """
-    Обрабатывает изображение (удаление фона или обводка).
-    operation: 'remove_bg' | 'outline'
-    """
-    try:
-        output_path = file_path # Перезаписываем или создаем новый? Лучше новый
-        if operation == "remove_bg":
-            output_path = file_path.replace("temp_", "bg_removed_")
-            with open(file_path, "rb") as f:
-                data = f.read()
-            processed = AIService.remove_background(data)
-            with open(output_path, "wb") as f:
-                f.write(processed)
-        
-        elif operation == "outline":
-            output_path = file_path.replace(".png", "_outlined.png")
-            color = kwargs.get("color", (255, 255, 255))
-            width = kwargs.get("width", 10)
-            with open(file_path, "rb") as f:
-                data = f.read()
-            processed = AIService.add_outline(data, color=tuple(color), thickness=width)
-            with open(output_path, "wb") as f:
-                f.write(processed)
-
-        # Возвращаем путь относительно статики для фронта
-        filename = os.path.basename(output_path)
-        return {"url": f"/static/{filename}", "server_path": output_path}
-    except Exception as e:
-        print(f"Error processing sticker: {e}")
-        raise e
-
-@shared_task(bind=True, name="app.worker.animate_sticker_task")
-def animate_sticker_task(self, image_path: str, animation: str, format: str = "gif"):
-    """
-    Создает GIF/WebP
-    """
-    try:
-        output_filename = f"sticker_{uuid.uuid4()}.{format}"
-        output_path = os.path.join("uploads", output_filename)
-        
-        service = StickerService(output_path)
-        service.create_animated_sticker(image_path, animation_type=animation)
-        
-        return {"url": f"/static/{output_filename}"}
-    except Exception as e:
-        raise e
