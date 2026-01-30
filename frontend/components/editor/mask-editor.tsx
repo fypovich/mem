@@ -29,7 +29,7 @@ export function MaskEditor({ originalUrl, maskedUrl, onSave, onCancel }: MaskEdi
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const context = canvas.getContext('2d');
     if (!context) return;
     setCtx(context);
 

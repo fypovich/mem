@@ -4,18 +4,20 @@ import cv2
 from rembg import remove, new_session
 from PIL import Image
 
-# isnet-general-use лучше справляется с деталями, чем u2net
-# При первом запуске библиотека сама скачает веса (~180MB)
-rembg_session = new_session("isnet-general-use")
+# УБИРАЕМ ГЛОБАЛЬНУЮ ИНИЦИАЛИЗАЦИЮ СЕССИИ
+# rembg_session = new_session("isnet-general-use") <--- ЭТО УБИВАЛО ВОРКЕР
 
 class AIService:
     @staticmethod
     def remove_background(input_bytes: bytes) -> bytes:
         try:
-            # Alpha Matting делает края полупрозрачными, убирая "лесенку"
+            # Создаем сессию локально внутри процесса
+            # Это безопасно для Celery fork
+            session = new_session("isnet-general-use")
+            
             return remove(
                 input_bytes, 
-                session=rembg_session,
+                session=session,
                 alpha_matting=True,
                 alpha_matting_foreground_threshold=240,
                 alpha_matting_background_threshold=10,
@@ -23,9 +25,10 @@ class AIService:
             )
         except Exception as e:
             print(f"AI Error: {e}")
-            # Фоллбек: если с маттингом упало, пробуем без него
+            # Фоллбек без альфа-маттинга
             try:
-                return remove(input_bytes, session=rembg_session)
+                session = new_session("isnet-general-use")
+                return remove(input_bytes, session=session)
             except:
                 raise RuntimeError(f"Background removal failed: {e}")
 

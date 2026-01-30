@@ -86,6 +86,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/memegiphy
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OMP_NUM_THREADS=1
     depends_on:
       - backend
       - redis

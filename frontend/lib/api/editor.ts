@@ -1,21 +1,19 @@
-// ДОБАВЛЕН префикс /api/v1 в дефолтное значение
+// ИСПРАВЛЕНИЕ: Добавлен префикс /api/v1
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
 
-// Вычисляем корень бэкенда для статики (удаляем /api/v1) -> http://127.0.0.1:8000
+// Корень бэкенда (удаляем /api/v1) -> http://127.0.0.1:8000
 export const BACKEND_ROOT = API_URL.replace("/api/v1", "");
 
 const getHeaders = (): Record<string, string> => {
-  // Проверка на window для SSR
   if (typeof window === 'undefined') return {};
   const token = localStorage.getItem("token");
   return token ? { "Authorization": `Bearer ${token}` } : {};
 };
 
-// Хелпер для получения полного URL картинки (исправляет битые ссылки)
+// Хелпер для получения полного URL картинки
 export const getFullUrl = (path: string | null | undefined) => {
     if (!path) return "";
     if (path.startsWith("http")) return path;
-    // Если путь начинается с /static, добавляем хост бэкенда
     if (path.startsWith("/")) return `${BACKEND_ROOT}${path}`;
     return `${BACKEND_ROOT}/${path}`;
 };
@@ -32,9 +30,8 @@ export const processImage = async (file: File, operation: 'remove_bg') => {
   });
   
   if (!res.ok) {
-    const text = await res.text();
-    console.error("API Error:", text);
-    throw new Error("Failed to process image");
+      console.error(await res.text());
+      throw new Error("Failed");
   }
   return res.json();
 };
@@ -50,7 +47,7 @@ export const createSticker = async (imagePath: string, animation: string) => {
     headers: headers,
     body: JSON.stringify({ image_path: imagePath, animation }),
   });
-  if (!res.ok) throw new Error("Failed to create sticker");
+  if (!res.ok) throw new Error("Failed");
   return res.json();
 };
 
@@ -61,9 +58,6 @@ export const checkStatus = async (taskId: string) => {
   return res.json();
 };
 
-// ДОБАВЛЕНО: Функция для простой загрузки (нужна для MaskEditor)
 export const uploadTempFile = async (file: File) => {
-    // Используем тот же эндпоинт, что и для удаления фона, 
-    // но с прозрачным PNG это сработает как обычная загрузка + чистка
     return processImage(file, 'remove_bg');
 };
