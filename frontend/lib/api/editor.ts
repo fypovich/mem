@@ -1,68 +1,37 @@
-import { ProjectData } from "@/types/editor";
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-// ИСПРАВЛЕНИЕ: Явная типизация возвращаемого значения
-const getAuthHeaders = (): Record<string, string> => {
-  // Проверка на window нужна, чтобы сборка не падала на сервере (где нет localStorage)
-  if (typeof window === "undefined") {
-    return {};
-  }
-  
-  const token = localStorage.getItem("token");
-  if (token) {
-    return { "Authorization": `Bearer ${token}` };
-  }
-  
-  return {};
+const getHeaders = () => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+  return token ? { "Authorization": `Bearer ${token}` } : {};
 };
 
-export const uploadTempFile = async (file: File) => {
+export const processImage = async (file: File, operation: 'remove_bg') => {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("operation", operation);
 
-  const res = await fetch(`${API_URL}/editor/upload-temp`, {
+  const res = await fetch(`${API_URL}/editor/process-image`, {
     method: "POST",
-    headers: getAuthHeaders(), // Убрали spread operator, теперь передаем объект напрямую
+    headers: getHeaders() as any, // Cast to avoid TS strictness issues with FormData
     body: formData,
   });
-
-  if (!res.ok) throw new Error("Failed to upload temp file");
-  return res.json(); 
+  if (!res.ok) throw new Error("Failed");
+  return res.json();
 };
 
-export const uploadForBgRemoval = async (file: File, outline: boolean) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("outline", String(outline));
-
-  const res = await fetch(`${API_URL}/editor/remove-bg`, {
+export const createSticker = async (imagePath: string, animation: string) => {
+  const res = await fetch(`${API_URL}/editor/create-sticker`, {
     method: "POST",
-    headers: getAuthHeaders(),
-    body: formData,
+    headers: { ...getHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ image_path: imagePath, animation }),
   });
-  
-  if (!res.ok) throw new Error("Failed to remove background");
-  return res.json(); 
+  if (!res.ok) throw new Error("Failed");
+  return res.json();
 };
 
-export const startRender = async (projectData: ProjectData) => {
-  const res = await fetch(`${API_URL}/editor/render`, {
-    method: "POST",
-    headers: { 
-      "Content-Type": "application/json",
-      ...getAuthHeaders() 
-    },
-    body: JSON.stringify({ project_data: projectData }),
-  });
-
-  if (!res.ok) throw new Error("Failed to start render");
-  return res.json(); 
-};
-
-export const checkTaskStatus = async (taskId: string) => {
+export const checkStatus = async (taskId: string) => {
   const res = await fetch(`${API_URL}/editor/status/${taskId}`, {
-    headers: getAuthHeaders(),
+    headers: getHeaders(),
   });
-  return res.json(); 
+  return res.json();
 };

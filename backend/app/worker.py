@@ -293,26 +293,7 @@ def remove_bg_task(self, file_path: str, output_path: str, add_outline: bool = F
         print(f"❌ Remove BG Error: {e}")
         raise e
 
-@shared_task(bind=True, name="app.worker.render_video_task")
-def render_video_task(self, project_data: dict, output_file_id: str):
-    """Задача рендеринга видео"""
-    print(f"🎬 Starting render for {output_file_id}")
-    output_path = os.path.join("uploads", f"{output_file_id}.mp4")
-    
-    try:
-        editor = VideoEditorService(output_path)
-        editor.process_project(project_data)
-        
-        # Здесь можно отправить уведомление пользователю, что рендер готов
-        # через Redis Pub/Sub, как мы делали для лайков
-        
-        print(f"✅ Render complete: {output_path}")
-        return output_path
-    except Exception as e:
-        print(f"❌ Render Error: {e}")
-        # Тут можно поставить статус "failed" в БД, если есть таблица задач
-        raise e
-    
+
 @shared_task(bind=True, name="app.worker.process_sticker_image")
 def process_sticker_image(self, file_path: str, operation: str, **kwargs):
     """
