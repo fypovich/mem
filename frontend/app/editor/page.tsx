@@ -5,35 +5,31 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, Upload, Wand2, Download, Image as ImageIcon, Edit3 } from "lucide-react";
 import { toast } from "sonner";
+// Импорт uploadTempFile теперь сработает
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
+// Убедитесь, что файл mask-editor.tsx находится в папке components/editor/
 import { MaskEditor } from "@/components/editor/mask-editor";
 
 export default function StickerMakerPage() {
   const [step, setStep] = useState(1); 
-  // 1: Загрузка
-  // 2: Просмотр (выбор: ок/править)
-  // 3: Редактор маски
-  // 4: Эффекты
-  // 5: Результат
-
-  const [imageSrc, setImageSrc] = useState<string | null>(null); // Текущее превью (AI или Маска)
-  const [originalSrc, setOriginalSrc] = useState<string | null>(null); // Оригинал (для восстановления)
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [originalSrc, setOriginalSrc] = useState<string | null>(null);
   const [serverPath, setServerPath] = useState<string | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedAnim, setSelectedAnim] = useState("none");
   const [finalResult, setFinalResult] = useState<string | null>(null);
 
-  // 1. Загрузка
+  // 1. Загрузка + Удаление фона
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     const file = e.target.files[0];
     
-    // Сохраняем оригинал локально для редактора маски
+    // Сразу сохраняем оригинал для возможности восстановления ластиком
     setOriginalSrc(URL.createObjectURL(file));
-    
+
     setIsProcessing(true);
-    const toastId = toast.loading("AI удаляет фон...");
+    const toastId = toast.loading("Удаляем фон с помощью AI...");
 
     try {
         const { task_id } = await processImage(file, "remove_bg");
@@ -44,11 +40,12 @@ export default function StickerMakerPage() {
                 if (status.status === "SUCCESS") {
                     clearInterval(interval);
                     
+                    // Формируем правильный URL для отображения
                     const fullUrl = getFullUrl(status.result.url);
-                    setImageSrc(fullUrl); // Показываем результат AI
-                    setServerPath(status.result.server_path);
                     
-                    setStep(2); // Переход к проверке
+                    setImageSrc(fullUrl);
+                    setServerPath(status.result.server_path);
+                    setStep(2);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
                     toast.success("Фон удален!");
@@ -56,26 +53,27 @@ export default function StickerMakerPage() {
                     clearInterval(interval);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
-                    toast.error("Ошибка обработки");
+                    toast.error("Ошибка обработки на сервере");
                 }
             } catch (e) { }
         }, 1000);
     } catch (err) {
+        console.error(err);
         setIsProcessing(false);
         toast.dismiss(toastId);
         toast.error("Ошибка загрузки");
     }
   };
 
-  // Сохранение маски (из компонента MaskEditor)
+  // 2. Сохранение маски после ручной правки
   const handleMaskSave = async (blob: Blob) => {
       const file = new File([blob], "edited_mask.png", { type: "image/png" });
       
-      // Локально обновляем превью сразу
+      // Обновляем превью локально
       setImageSrc(URL.createObjectURL(blob));
-      setStep(4); // Идем к эффектам
+      setStep(4); // Переходим к эффектам
       
-      // Фоновая загрузка новой маски на сервер
+      // Загружаем отредактированную маску на сервер
       setIsProcessing(true); 
       try {
           const { task_id } = await uploadTempFile(file);
@@ -85,6 +83,7 @@ export default function StickerMakerPage() {
                   clearInterval(interval);
                   setServerPath(status.result.server_path);
                   setIsProcessing(false);
+                  toast.success("Маска обновлена");
               }
           }, 1000);
       } catch (e) {
@@ -93,11 +92,11 @@ export default function StickerMakerPage() {
       }
   };
 
-  // Генерация (GIF)
+  // 3. Анимация
   const handleAnimate = async () => {
     if (!serverPath) return;
     setIsProcessing(true);
-    const toastId = toast.loading("Рендеринг...");
+    const toastId = toast.loading("Создаем GIF...");
 
     try {
         const { task_id } = await createSticker(serverPath, selectedAnim);
@@ -107,11 +106,19 @@ export default function StickerMakerPage() {
                 const status = await checkStatus(task_id);
                 if (status.status === "SUCCESS") {
                     clearInterval(interval);
-                    setFinalResult(getFullUrl(status.result.url));
+                    
+                    const fullUrl = getFullUrl(status.result.url);
+
+                    setFinalResult(fullUrl);
                     setStep(5);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
                     toast.success("Готово!");
+                } else if (status.status === "FAILURE") {
+                    clearInterval(interval);
+                    setIsProcessing(false);
+                    toast.dismiss(toastId);
+                    toast.error("Ошибка генерации");
                 }
             } catch (e) {}
         }, 1000);
@@ -122,7 +129,7 @@ export default function StickerMakerPage() {
     }
   };
 
-  // Рендер MaskEditor на весь экран
+  // Режим редактора маски (на весь экран)
   if (step === 3 && originalSrc && imageSrc) {
       return (
           <div className="h-[calc(100vh-64px)] bg-black p-4">
@@ -133,7 +140,7 @@ export default function StickerMakerPage() {
                   onCancel={() => setStep(2)}
               />
           </div>
-      );
+      )
   }
 
   return (
@@ -144,7 +151,7 @@ export default function StickerMakerPage() {
 
       <div className="flex flex-col lg:flex-row gap-8 w-full max-w-5xl">
         
-        {/* ЛЕВАЯ ЧАСТЬ: ПРЕВЬЮ */}
+        {/* ПРЕВЬЮ */}
         <div className="flex-1 bg-zinc-900 rounded-xl border border-zinc-800 min-h-[400px] flex items-center justify-center relative overflow-hidden">
             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
             
@@ -165,6 +172,7 @@ export default function StickerMakerPage() {
                         transform: selectedAnim === 'zoom_in' ? 'scale(1.2)' : 'scale(1)',
                         animation: selectedAnim === 'pulse' ? 'pulse 2s infinite' : selectedAnim === 'shake' ? 'spin 1s infinite' : 'none'
                     }}
+                    onError={() => console.error("Ошибка загрузки:", imageSrc)}
                 />
             )}
 
@@ -179,37 +187,38 @@ export default function StickerMakerPage() {
             )}
         </div>
 
-        {/* ПРАВАЯ ЧАСТЬ: КОНТРОЛЛЕРЫ */}
+        {/* НАСТРОЙКИ */}
         <Card className="w-full lg:w-80 bg-zinc-950 border-zinc-800 p-6 flex flex-col gap-6 h-fit">
             
             {/* ШАГ 1 */}
             <div className={step !== 1 ? "hidden" : ""}>
                 <h3 className="font-bold mb-3 flex items-center gap-2"><ImageIcon size={18}/> 1. Фото</h3>
                 <div className="relative">
-                    <Button variant="outline" className="w-full">Выбрать файл</Button>
+                    <Button variant="outline" className="w-full cursor-pointer">Выбрать файл</Button>
                     <input 
                         type="file" accept="image/*" 
                         className="absolute inset-0 opacity-0 cursor-pointer"
                         onChange={handleUpload}
+                        disabled={step !== 1}
                     />
                 </div>
             </div>
 
-            {/* ШАГ 2: ВЫБОР ДЕЙСТВИЯ */}
+            {/* ШАГ 2 */}
             <div className={step !== 2 ? "hidden" : ""}>
-                <h3 className="font-bold mb-3">Проверка</h3>
-                <p className="text-xs text-zinc-400 mb-4">Фон удален. Нужно поправить края?</p>
+                <h3 className="font-bold mb-3 flex items-center gap-2">Проверка</h3>
+                <p className="text-xs text-zinc-400 mb-4">Фон удален. Нужно исправить?</p>
                 <div className="flex flex-col gap-2">
                     <Button onClick={() => setStep(4)} className="bg-green-600 hover:bg-green-700 w-full">
                         Все отлично, далее
                     </Button>
                     <Button onClick={() => setStep(3)} variant="secondary" className="w-full">
-                        <Edit3 size={16} className="mr-2"/> Исправить (Ластик)
+                        <Edit3 size={16} className="mr-2"/> Ластик / Кисть
                     </Button>
                 </div>
             </div>
 
-            {/* ШАГ 4: ЭФФЕКТЫ */}
+            {/* ШАГ 4 */}
             <div className={step !== 4 ? "hidden" : ""}>
                 <h3 className="font-bold mb-3 flex items-center gap-2"><Wand2 size={18}/> 2. Эффекты</h3>
                 <div className="grid grid-cols-2 gap-2 mb-4">
@@ -233,7 +242,7 @@ export default function StickerMakerPage() {
                 </Button>
             </div>
 
-            {/* ШАГ 5: РЕЗУЛЬТАТ */}
+            {/* ШАГ 5 */}
             <div className={step !== 5 ? "hidden" : ""}>
                 <h3 className="font-bold mb-3 flex items-center gap-2"><Download size={18}/> 3. Результат</h3>
                 <Button className="w-full bg-green-600" onClick={() => window.open(finalResult || "", "_blank")}>
@@ -246,6 +255,7 @@ export default function StickerMakerPage() {
 
         </Card>
       </div>
+      
       <style jsx global>{`
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
         @keyframes spin { 0% { transform: rotate(0deg); } 25% { transform: rotate(5deg); } 75% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
