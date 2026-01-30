@@ -3,7 +3,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Устанавливаем системные зависимости
-# libgl1 вместо libgl1-mesa-glx (для новых версий Debian)
+# fonts-liberation - нужен для StickerService (наложение текста)
+# curl - нужен для healthcheck в docker-compose
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
@@ -15,20 +16,26 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     ghostscript \
     fonts-dejavu \
+    fonts-liberation \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Исправление политики ImageMagick для разрешения обработки текста
-# Используем find, чтобы найти policy.xml где бы он ни лежал
+# Исправление политики ImageMagick для MoviePy (разрешаем TextClip)
 RUN find /etc -name "policy.xml" -exec sed -i 's/none/read,write/g' {} +
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Переменные окружения
+# OMP_NUM_THREADS=1 критически важен для rembg на CPU внутри Docker/Celery
+ENV OMP_NUM_THREADS=1
+ENV MOVIEPY_ENV="docker"
+ENV PYTHONUNBUFFERED=1
 
-# Копируем остальной код
+# Установка зависимостей Python
+COPY requirements.txt .
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Копируем код приложения
 COPY . .
 
 # Создаем папку для загрузок
 RUN mkdir -p uploads
-
-# Указываем переменную окружения для MoviePy
-ENV MOVIEPY_ENV="docker"

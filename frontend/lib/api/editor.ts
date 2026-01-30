@@ -40,22 +40,27 @@ export const processImage = async (file: File, operation: 'remove_bg') => {
   return res.json();
 };
 
-export const createSticker = async (imagePath: string, animation: string) => {
+export const createSticker = async (imagePath: string, animation: string, options?: any) => {
   const headers: Record<string, string> = {
     ...getHeaders(),
     "Content-Type": "application/json"
   };
 
+  const body = { 
+      image_path: imagePath, 
+      animation,
+      outline_color: options?.outline_color,
+      text: options?.text,
+      text_color: options?.text_color
+  };
+
   const res = await fetch(`${API_URL}/editor/create-sticker`, {
     method: "POST",
     headers: headers,
-    body: JSON.stringify({ image_path: imagePath, animation }),
+    body: JSON.stringify(body),
   });
   
-  if (!res.ok) {
-      console.error("API Error createSticker:", res.status);
-      throw new Error("Failed to create sticker");
-  }
+  if (!res.ok) throw new Error("Failed to create sticker");
   return res.json();
 };
 

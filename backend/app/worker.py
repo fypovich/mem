@@ -207,16 +207,23 @@ def process_sticker_image(self, file_path: str, operation: str, **kwargs):
         raise e
 
 @shared_task(bind=True, name="app.worker.animate_sticker_task")
-def animate_sticker_task(self, image_path: str, animation: str, format: str = "gif"):
-    """
-    Создание анимации (GIF)
-    """
+def animate_sticker_task(self, image_path: str, animation: str, 
+                         outline_color: str = None, 
+                         text: str = None, 
+                         text_color: str = "white"):
+    """Создает анимированный GIF с эффектами"""
     try:
-        output_filename = f"sticker_{uuid.uuid4()}.{format}"
+        output_filename = f"sticker_{uuid.uuid4()}.gif"
         output_path = os.path.join("uploads", output_filename)
         
         service = StickerService(output_path)
-        service.create_animated_sticker(image_path, animation_type=animation)
+        service.create_animated_sticker(
+            image_path, 
+            animation=animation,
+            outline_color=outline_color,
+            text=text,
+            text_color=text_color
+        )
         
         return {"url": f"/static/{output_filename}"}
     except Exception as e:
