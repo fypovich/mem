@@ -4,41 +4,54 @@ import cv2
 from rembg import remove, new_session
 from PIL import Image
 
-# Создаем сессию один раз (u2net - универсальная модель)
-rembg_session = new_session("u2net")
+# isnet-general-use лучше справляется с деталями, чем u2net
+# При первом запуске библиотека сама скачает веса (~180MB)
+rembg_session = new_session("isnet-general-use")
 
 class AIService:
     @staticmethod
     def remove_background(input_bytes: bytes) -> bytes:
         try:
-            return remove(input_bytes, session=rembg_session)
+            # Alpha Matting делает края полупрозрачными, убирая "лесенку"
+            return remove(
+                input_bytes, 
+                session=rembg_session,
+                alpha_matting=True,
+                alpha_matting_foreground_threshold=240,
+                alpha_matting_background_threshold=10,
+                alpha_matting_erode_size=10
+            )
         except Exception as e:
             print(f"AI Error: {e}")
-            raise RuntimeError(f"Background removal failed: {e}")
+            # Фоллбек: если с маттингом упало, пробуем без него
+            try:
+                return remove(input_bytes, session=rembg_session)
+            except:
+                raise RuntimeError(f"Background removal failed: {e}")
 
     @staticmethod
     def add_outline(input_bytes: bytes, color: tuple = (255, 255, 255), thickness: int = 15) -> bytes:
-        """Добавляет обводку вокруг объекта с прозрачным фоном"""
+        """Добавляет обводку (Stroke)"""
         try:
             image = Image.open(io.BytesIO(input_bytes)).convert("RGBA")
             img_np = np.array(image)
 
-            # Получаем маску (альфа-канал)
             alpha = img_np[:, :, 3]
-            if np.max(alpha) == 0: return input_bytes # Если пусто, возвращаем как есть
+            if np.max(alpha) == 0: return input_bytes
 
-            # Расширяем маску (Dilate)
+            # Морфологическое расширение
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (thickness, thickness))
             dilated_alpha = cv2.dilate(alpha, kernel, iterations=1)
             
-            # Создаем слой обводки
+            # Создание слоя обводки
             outline_layer = np.zeros_like(img_np)
             outline_layer[:] = color + (255,)
             outline_layer[:, :, 3] = dilated_alpha
 
-            # Накладываем оригинал поверх обводки
+            # Склеиваем: Обводка снизу, Оригинал сверху
             outline_pil = Image.fromarray(outline_layer)
             original_pil = Image.fromarray(img_np)
+            
             final_img = Image.alpha_composite(outline_pil, original_pil)
 
             output = io.BytesIO()
