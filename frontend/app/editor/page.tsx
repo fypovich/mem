@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, Upload, Wand2, Download, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
-import { processImage, checkStatus, createSticker } from "@/lib/api/editor";
+// Импортируем getFullUrl
+import { processImage, checkStatus, createSticker, getFullUrl } from "@/lib/api/editor";
 
 export default function StickerMakerPage() {
   const [step, setStep] = useState(1); // 1: Upload, 2: Animate, 3: Done
@@ -27,23 +28,32 @@ export default function StickerMakerPage() {
         const { task_id } = await processImage(file, "remove_bg");
         
         const interval = setInterval(async () => {
-            const status = await checkStatus(task_id);
-            if (status.status === "SUCCESS") {
-                clearInterval(interval);
-                setImageSrc(status.result.url);
-                setServerPath(status.result.server_path);
-                setStep(2);
-                setIsProcessing(false);
-                toast.dismiss(toastId);
-                toast.success("Фон удален!");
-            } else if (status.status === "FAILURE") {
-                clearInterval(interval);
-                setIsProcessing(false);
-                toast.dismiss(toastId);
-                toast.error("Ошибка обработки");
+            try {
+                const status = await checkStatus(task_id);
+                if (status.status === "SUCCESS") {
+                    clearInterval(interval);
+                    
+                    // Используем хелпер для правильного URL
+                    const fullUrl = getFullUrl(status.result.url);
+                    
+                    setImageSrc(fullUrl);
+                    setServerPath(status.result.server_path);
+                    setStep(2);
+                    setIsProcessing(false);
+                    toast.dismiss(toastId);
+                    toast.success("Фон удален!");
+                } else if (status.status === "FAILURE") {
+                    clearInterval(interval);
+                    setIsProcessing(false);
+                    toast.dismiss(toastId);
+                    toast.error("Ошибка обработки на сервере");
+                }
+            } catch (e) {
+                // Игнорируем ошибки сети при поллинге
             }
         }, 1000);
     } catch (err) {
+        console.error(err);
         setIsProcessing(false);
         toast.dismiss(toastId);
         toast.error("Ошибка загрузки");
@@ -60,15 +70,26 @@ export default function StickerMakerPage() {
         const { task_id } = await createSticker(serverPath, selectedAnim);
         
         const interval = setInterval(async () => {
-            const status = await checkStatus(task_id);
-            if (status.status === "SUCCESS") {
-                clearInterval(interval);
-                setFinalResult(status.result.url);
-                setStep(3);
-                setIsProcessing(false);
-                toast.dismiss(toastId);
-                toast.success("Готово!");
-            }
+            try {
+                const status = await checkStatus(task_id);
+                if (status.status === "SUCCESS") {
+                    clearInterval(interval);
+                    
+                    // Используем хелпер для правильного URL
+                    const fullUrl = getFullUrl(status.result.url);
+
+                    setFinalResult(fullUrl);
+                    setStep(3);
+                    setIsProcessing(false);
+                    toast.dismiss(toastId);
+                    toast.success("Готово!");
+                } else if (status.status === "FAILURE") {
+                    clearInterval(interval);
+                    setIsProcessing(false);
+                    toast.dismiss(toastId);
+                    toast.error("Ошибка генерации");
+                }
+            } catch (e) {}
         }, 1000);
     } catch (err) {
         setIsProcessing(false);
@@ -87,6 +108,7 @@ export default function StickerMakerPage() {
         
         {/* ПРЕВЬЮ */}
         <div className="flex-1 bg-zinc-900 rounded-xl border border-zinc-800 min-h-[400px] flex items-center justify-center relative overflow-hidden">
+            {/* Шахматный фон для прозрачности */}
             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
             
             {step === 1 && (
@@ -94,40 +116,45 @@ export default function StickerMakerPage() {
                     <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Upload className="text-zinc-500" size={32} />
                     </div>
-                    <p className="text-zinc-400">Загрузите изображение</p>
+                    <p className="text-zinc-400">Загрузите фото (JPG, PNG)</p>
+                    <p className="text-xs text-zinc-600 mt-2">AI удалит фон автоматически</p>
                 </div>
             )}
 
             {step === 2 && imageSrc && (
                 <img 
                     src={imageSrc} 
-                    className="relative z-10 max-h-[300px] object-contain transition-transform duration-500"
+                    className="relative z-10 max-h-[350px] max-w-full object-contain transition-transform duration-500"
                     style={{
                         transform: selectedAnim === 'zoom_in' ? 'scale(1.2)' : 'scale(1)',
                         animation: selectedAnim === 'pulse' ? 'pulse 2s infinite' : selectedAnim === 'shake' ? 'spin 1s infinite' : 'none'
+                    }}
+                    onError={(e) => {
+                        console.error("Ошибка загрузки картинки:", imageSrc);
+                        // Опционально: можно показать placeholder
                     }}
                 />
             )}
 
             {step === 3 && finalResult && (
-                <img src={finalResult} className="relative z-10 max-h-[300px]" />
+                <img src={finalResult} className="relative z-10 max-h-[350px] max-w-full object-contain" />
             )}
 
             {isProcessing && (
-                <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center backdrop-blur-sm">
                     <Loader2 className="animate-spin text-purple-500 w-12 h-12" />
                 </div>
             )}
         </div>
 
         {/* НАСТРОЙКИ */}
-        <Card className="w-full lg:w-80 bg-zinc-950 border-zinc-800 p-6 flex flex-col gap-6">
+        <Card className="w-full lg:w-80 bg-zinc-950 border-zinc-800 p-6 flex flex-col gap-6 h-fit">
             
             {/* ШАГ 1 */}
             <div className={step !== 1 ? "opacity-50 pointer-events-none" : ""}>
                 <h3 className="font-bold mb-3 flex items-center gap-2"><ImageIcon size={18}/> 1. Фото</h3>
                 <div className="relative">
-                    <Button variant="outline" className="w-full">Выбрать файл</Button>
+                    <Button variant="outline" className="w-full cursor-pointer">Выбрать файл</Button>
                     <input 
                         type="file" accept="image/*" 
                         className="absolute inset-0 opacity-0 cursor-pointer"
@@ -158,7 +185,7 @@ export default function StickerMakerPage() {
                     onClick={handleAnimate}
                     disabled={step !== 2}
                 >
-                    Создать
+                    Создать GIF
                 </Button>
             </div>
 
@@ -169,15 +196,29 @@ export default function StickerMakerPage() {
                     className="w-full bg-green-600 hover:bg-green-700"
                     onClick={() => window.open(finalResult || "", "_blank")}
                 >
-                    Скачать GIF
+                    Скачать
                 </Button>
-                <Button variant="ghost" className="w-full mt-2" onClick={() => { setStep(1); setImageSrc(null); }}>
+                <Button variant="ghost" className="w-full mt-2" onClick={() => { setStep(1); setImageSrc(null); setFinalResult(null); }}>
                     Начать заново
                 </Button>
             </div>
 
         </Card>
       </div>
+      
+      <style jsx global>{`
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+          100% { transform: scale(1); }
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          25% { transform: rotate(5deg); }
+          75% { transform: rotate(-5deg); }
+          100% { transform: rotate(0deg); }
+        }
+      `}</style>
     </div>
   );
 }

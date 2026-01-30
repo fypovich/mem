@@ -165,11 +165,10 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
 @shared_task(bind=True, name="app.worker.process_sticker_image")
 def process_sticker_image(self, file_path: str, operation: str, **kwargs):
     """
-    Обрабатывает изображение (удаление фона или обводка).
-    ВАЖНО: Принудительно сохраняет как PNG для прозрачности.
+    Обработка стикера: удаление фона или обводка.
     """
     try:
-        # Меняем расширение на .png, так как результат будет с альфа-каналом
+        # Меняем расширение на .png
         base_name = os.path.splitext(os.path.basename(file_path))[0]
         dir_name = os.path.dirname(file_path)
         
@@ -187,6 +186,7 @@ def process_sticker_image(self, file_path: str, operation: str, **kwargs):
         elif operation == "outline":
             output_filename = f"outlined_{base_name}.png"
             output_path = os.path.join(dir_name, output_filename)
+            
             color = kwargs.get("color", (255, 255, 255))
             width = kwargs.get("width", 10)
             
@@ -199,14 +199,18 @@ def process_sticker_image(self, file_path: str, operation: str, **kwargs):
         else:
             return {"error": "Unknown operation"}
 
+        # Возвращаем URL и Путь
         return {"url": f"/static/{output_filename}", "server_path": output_path}
+
     except Exception as e:
         print(f"Error processing sticker: {e}")
         raise e
 
 @shared_task(bind=True, name="app.worker.animate_sticker_task")
 def animate_sticker_task(self, image_path: str, animation: str, format: str = "gif"):
-    """Создает анимированный GIF"""
+    """
+    Создание анимации (GIF)
+    """
     try:
         output_filename = f"sticker_{uuid.uuid4()}.{format}"
         output_path = os.path.join("uploads", output_filename)
@@ -216,7 +220,7 @@ def animate_sticker_task(self, image_path: str, animation: str, format: str = "g
         
         return {"url": f"/static/{output_filename}"}
     except Exception as e:
-        print(f"Animation Error: {e}")
+        print(f"Animation error: {e}")
         raise e
 
 # ==========================================
