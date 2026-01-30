@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Upload, Wand2, Download, Image as ImageIcon, Edit3, Scissors, MousePointer2 } from "lucide-react";
+// ИСПРАВЛЕНО: Добавлен Check в импорт
+import { Loader2, Upload, Wand2, Download, Image as ImageIcon, Edit3, Scissors, MousePointer2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
 import { MaskEditor } from "@/components/editor/mask-editor";
@@ -41,7 +42,7 @@ export default function StickerMakerPage() {
     const toastId = toast.loading("AI удаляет фон...");
 
     try {
-        // Получаем файл из blob url (немного хак, но работает)
+        // Получаем файл из blob url
         const blob = await fetch(originalSrc).then(r => r.blob());
         const file = new File([blob], "image.png", { type: blob.type });
 
@@ -75,7 +76,7 @@ export default function StickerMakerPage() {
 
   // МЕТОД 2: РУЧНОЕ (Лассо/Ластик)
   const startManualMode = () => {
-      setMaskedSrc(null); // Сбрасываем маску, начинаем с чистого листа (или оригинала)
+      setMaskedSrc(null); // Сбрасываем маску, начинаем с чистого листа
       setStep(3);
   };
 
