@@ -3,38 +3,41 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Eraser, RotateCcw, Check, Scissors, AlertCircle } from "lucide-react";
+import { Eraser, RotateCcw, Check, Scissors, Wand2, MousePointer2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 interface MaskEditorProps {
-  originalUrl: string; 
-  initialMaskedUrl?: string; 
+  originalUrl: string;
+  initialMaskedUrl?: string;
+  isProcessing?: boolean;
+  onAutoRemove?: () => void;
   onSave: (blob: Blob) => void;
   onCancel: () => void;
 }
 
-export function MaskEditor({ originalUrl, initialMaskedUrl, onSave, onCancel }: MaskEditorProps) {
+export function MaskEditor({ originalUrl, initialMaskedUrl, isProcessing, onAutoRemove, onSave, onCancel }: MaskEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayRef = useRef<HTMLCanvasElement>(null); // Слой для интерфейса (линий лассо)
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   
   const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
   const [overlayCtx, setOverlayCtx] = useState<CanvasRenderingContext2D | null>(null);
-  
   const [originalImg, setOriginalImg] = useState<HTMLImageElement | null>(null);
   
   const [tool, setTool] = useState<'eraser' | 'restore' | 'lasso'>('lasso');
   const [brushSize, setBrushSize] = useState(30);
   const [isDrawing, setIsDrawing] = useState(false);
-  
   const [lassoPoints, setLassoPoints] = useState<{x: number, y: number}[]>([]);
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null);
 
-  // 1. Инициализация
+  // Инициализация
   useEffect(() => {
     if (!canvasRef.current || !overlayRef.current) return;
-
+    
     const context = canvasRef.current.getContext('2d', { willReadFrequently: true });
     const ovCtx = overlayRef.current.getContext('2d');
     
+    if (!context || !ovCtx) return;
+
     setCtx(context);
     setOverlayCtx(ovCtx);
 
@@ -43,131 +46,105 @@ export function MaskEditor({ originalUrl, initialMaskedUrl, onSave, onCancel }: 
     img.src = originalUrl;
     img.onload = () => {
       setOriginalImg(img);
-      
-      const maxW = 800;
+      const maxW = 1000;
       const scale = img.width > maxW ? maxW / img.width : 1;
-      const w = img.width * scale;
-      const h = img.height * scale;
+      const w = Math.floor(img.width * scale);
+      const h = Math.floor(img.height * scale);
 
       [canvasRef.current, overlayRef.current].forEach(c => {
           if (c) { c.width = w; c.height = h; }
       });
 
-      if (initialMaskedUrl && context) {
-          const imgMasked = new Image();
-          imgMasked.crossOrigin = "anonymous";
-          imgMasked.src = initialMaskedUrl;
-          imgMasked.onload = () => {
-              context.clearRect(0, 0, w, h);
-              context.drawImage(imgMasked, 0, 0, w, h);
-          }
-      } else if (context) {
+      // Рисуем начальное состояние
+      context.clearRect(0, 0, w, h);
+      if (initialMaskedUrl) {
+          const mask = new Image();
+          mask.crossOrigin = "anonymous";
+          mask.src = initialMaskedUrl;
+          mask.onload = () => context.drawImage(mask, 0, 0, w, h);
+      } else {
           context.drawImage(img, 0, 0, w, h);
       }
     };
   }, [originalUrl, initialMaskedUrl]);
 
-  // 2. Отрисовка Лассо (UI слой)
+  // Отрисовка UI (лассо, курсор)
   useEffect(() => {
       if (!overlayCtx || !overlayRef.current) return;
       const w = overlayRef.current.width;
       const h = overlayRef.current.height;
-      
-      // Очищаем оверлей
       overlayCtx.clearRect(0, 0, w, h);
 
+      // Лассо
       if (tool === 'lasso' && lassoPoints.length > 0) {
           overlayCtx.beginPath();
           overlayCtx.lineWidth = 2;
-          overlayCtx.strokeStyle = '#3b82f6'; // Blue
-          overlayCtx.fillStyle = 'rgba(59, 130, 246, 0.2)'; // Blue transparent
-
-          // Рисуем линии между точками
+          overlayCtx.strokeStyle = '#3b82f6';
+          overlayCtx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+          
           overlayCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
-          for (let i = 1; i < lassoPoints.length; i++) {
-              overlayCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
-          }
-
-          // Рисуем линию к курсору (предпросмотр)
-          if (mousePos) {
-              overlayCtx.lineTo(mousePos.x, mousePos.y);
-          }
+          lassoPoints.forEach(p => overlayCtx.lineTo(p.x, p.y));
+          if (mousePos) overlayCtx.lineTo(mousePos.x, mousePos.y);
           
           overlayCtx.stroke();
-          
-          // Рисуем точки
           lassoPoints.forEach(p => {
               overlayCtx.beginPath();
               overlayCtx.arc(p.x, p.y, 3, 0, Math.PI * 2);
               overlayCtx.fillStyle = 'white';
               overlayCtx.fill();
-              overlayCtx.stroke();
           });
       }
-      
-      // Рисуем курсор кисти
+
+      // Курсор кисти
       if (tool !== 'lasso' && mousePos) {
           overlayCtx.beginPath();
           overlayCtx.arc(mousePos.x, mousePos.y, brushSize / 2, 0, Math.PI * 2);
-          overlayCtx.strokeStyle = tool === 'eraser' ? 'red' : 'green';
+          overlayCtx.strokeStyle = tool === 'eraser' ? 'red' : '#10b981';
           overlayCtx.lineWidth = 2;
           overlayCtx.stroke();
       }
-
   }, [lassoPoints, mousePos, tool, brushSize]);
 
-  // 3. Обработка мыши
+  // Логика рисования
   const handleInteract = (e: React.MouseEvent | React.TouchEvent) => {
     if (!ctx || !canvasRef.current || !originalImg) return;
     const rect = canvasRef.current.getBoundingClientRect();
     
-    let clientX, clientY;
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else {
-      clientX = (e as React.MouseEvent).clientX;
-      clientY = (e as React.MouseEvent).clientY;
-    }
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
     
-    const scaleX = canvasRef.current.width / rect.width;
-    const scaleY = canvasRef.current.height / rect.height;
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
-
+    const x = (clientX - rect.left) * (canvasRef.current.width / rect.width);
+    const y = (clientY - rect.top) * (canvasRef.current.height / rect.height);
+    
     setMousePos({x, y});
 
     if (tool === 'lasso') {
         if (e.type === 'mousedown' || e.type === 'touchstart') {
-            // Если кликнули близко к первой точке - замыкаем
             if (lassoPoints.length > 2) {
                 const start = lassoPoints[0];
-                const dist = Math.sqrt(Math.pow(x - start.x, 2) + Math.pow(y - start.y, 2));
-                if (dist < 15) {
+                if (Math.hypot(x - start.x, y - start.y) < 20) {
                     applyLasso();
                     return;
                 }
             }
-            setLassoPoints([...lassoPoints, {x, y}]);
+            setLassoPoints(prev => [...prev, {x, y}]);
         }
         return;
     }
 
-    // Кисть
     if (e.type === 'mousedown' || e.type === 'touchstart') setIsDrawing(true);
     if (e.type === 'mouseup' || e.type === 'touchend' || e.type === 'mouseleave') setIsDrawing(false);
 
-    if (isDrawing || (e.type === 'mousedown' || e.type === 'touchstart')) {
+    if (isDrawing || e.type === 'mousedown') {
         ctx.lineWidth = brushSize;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-
+        
         if (tool === 'eraser') {
             ctx.globalCompositeOperation = 'destination-out';
             ctx.beginPath();
-            ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
-            ctx.fill();
-        } else if (tool === 'restore') {
+            ctx.moveTo(x, y); ctx.lineTo(x, y); ctx.stroke();
+        } else {
             ctx.globalCompositeOperation = 'source-over';
             ctx.save();
             ctx.beginPath();
@@ -180,82 +157,93 @@ export function MaskEditor({ originalUrl, initialMaskedUrl, onSave, onCancel }: 
   };
 
   const applyLasso = () => {
-      if (!ctx || !canvasRef.current || !originalImg || lassoPoints.length < 3) return;
-      
-      const w = canvasRef.current.width;
-      const h = canvasRef.current.height;
-
-      // Создаем маску пути
-      ctx.globalCompositeOperation = 'destination-in'; // Оставляем только то, что внутри
-      
+      if (!ctx || !canvasRef.current || !originalImg) return;
+      ctx.globalCompositeOperation = 'destination-in';
       ctx.beginPath();
       ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
       lassoPoints.forEach(p => ctx.lineTo(p.x, p.y));
       ctx.closePath();
       ctx.fill();
-
-      // Восстанавливаем режим рисования
       ctx.globalCompositeOperation = 'source-over';
-      
       setLassoPoints([]);
-      setTool('eraser'); // Переключаем на ластик для мелких правок
+      setTool('eraser');
   };
 
   const handleSave = () => {
-    canvasRef.current?.toBlob((blob) => {
-      if (blob) onSave(blob);
-    }, 'image/png');
+      canvasRef.current?.toBlob(blob => blob && onSave(blob), 'image/png');
   };
 
   return (
-    <div className="flex flex-col h-full w-full gap-4 relative">
-      <div className="flex flex-wrap items-center justify-between bg-zinc-900 p-3 rounded-xl border border-zinc-800 gap-4">
-        
-        <div className="flex gap-1 bg-black/50 p-1 rounded-lg">
-            <Button size="sm" variant={tool === 'lasso' ? "default" : "ghost"} onClick={() => setTool('lasso')}>
-                <Scissors size={18} className="mr-2"/> Лассо
-            </Button>
-            <Button size="sm" variant={tool === 'eraser' ? "default" : "ghost"} onClick={() => setTool('eraser')}>
-                <Eraser size={18} />
-            </Button>
-            <Button size="sm" variant={tool === 'restore' ? "default" : "ghost"} onClick={() => setTool('restore')}>
-                <RotateCcw size={18} />
-            </Button>
-        </div>
-
-        {tool !== 'lasso' && (
-             <div className="flex items-center gap-2 w-32">
-                <Slider min={5} max={100} step={1} value={[brushSize]} onValueChange={(v) => setBrushSize(v[0])} />
-            </div>
-        )}
-
-        <div className="flex gap-2 ml-auto">
-            <Button size="sm" variant="ghost" onClick={onCancel}>Назад</Button>
-            <Button size="sm" onClick={handleSave} className="bg-green-600 hover:bg-green-700">
-                <Check size={18} className="mr-2"/> Готово
-            </Button>
-        </div>
-      </div>
+    <div className="flex flex-col h-full w-full gap-4 relative bg-zinc-950">
       
-      {tool === 'lasso' && (
-          <div className="bg-blue-900/30 border border-blue-500/30 text-blue-200 text-xs px-4 py-2 rounded-lg flex items-center">
-              <AlertCircle size={14} className="mr-2"/>
-              Кликайте по контуру объекта. Чтобы завершить, кликните в начальную точку.
+      {/* Тулбар (Плавающий снизу или сверху) */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-zinc-900/90 backdrop-blur border border-zinc-800 p-2 rounded-full shadow-2xl flex items-center gap-2">
+        {onAutoRemove && (
+            <Button 
+                size="icon" 
+                variant="ghost" 
+                className="rounded-full text-purple-400 hover:bg-purple-500/20 hover:text-purple-300 w-10 h-10"
+                onClick={onAutoRemove}
+                disabled={isProcessing}
+                title="Авто-удаление (AI)"
+            >
+                {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Wand2 size={20}/>}
+            </Button>
+        )}
+        
+        <div className="w-px h-6 bg-zinc-700 mx-1"/>
+
+        <Button 
+            size="icon" variant={tool === 'lasso' ? "default" : "ghost"} 
+            className={`rounded-full w-10 h-10 ${tool === 'lasso' ? 'bg-blue-600' : 'text-zinc-400'}`}
+            onClick={() => setTool('lasso')}
+            title="Лассо"
+        >
+            <Scissors size={20}/>
+        </Button>
+        
+        <Button 
+            size="icon" variant={tool === 'eraser' ? "default" : "ghost"} 
+            className={`rounded-full w-10 h-10 ${tool === 'eraser' ? 'bg-red-600' : 'text-zinc-400'}`}
+            onClick={() => setTool('eraser')}
+            title="Ластик"
+        >
+            <Eraser size={20}/>
+        </Button>
+
+        <Button 
+            size="icon" variant={tool === 'restore' ? "default" : "ghost"} 
+            className={`rounded-full w-10 h-10 ${tool === 'restore' ? 'bg-green-600' : 'text-zinc-400'}`}
+            onClick={() => setTool('restore')}
+            title="Кисть (Восстановить)"
+        >
+            <RotateCcw size={20}/>
+        </Button>
+      </div>
+
+      {/* Настройки кисти (Слева) */}
+      {tool !== 'lasso' && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-zinc-900/80 backdrop-blur border border-zinc-800 p-4 rounded-xl shadow-xl flex flex-col items-center gap-4 h-48">
+              <span className="text-[10px] text-zinc-500 font-bold uppercase rotate-180" style={{writingMode: 'vertical-rl'}}>Размер</span>
+              <Slider 
+                  orientation="vertical" 
+                  min={5} max={100} step={1} 
+                  value={[brushSize]} 
+                  onValueChange={(v) => setBrushSize(v[0])} 
+                  className="h-full"
+              />
           </div>
       )}
 
-      <div className="flex-1 bg-zinc-800/50 rounded-xl border border-zinc-800 overflow-hidden relative flex items-center justify-center cursor-crosshair touch-none select-none">
-        <div className="absolute inset-0 opacity-30 pointer-events-none" 
-             style={{ backgroundImage: 'radial-gradient(#444 1px, transparent 1px)', backgroundSize: '10px 10px' }} 
-        />
+      {/* Канвас */}
+      <div className="flex-1 bg-[url('/transparent-bg.png')] bg-repeat rounded-xl overflow-hidden relative flex items-center justify-center cursor-none touch-none select-none border border-zinc-800/50">
+        <div className="absolute inset-0 bg-zinc-900/50 pointer-events-none" /> {/* Затемнение фона */}
         
-        <div className="relative">
-            {/* Основной канвас с картинкой */}
-            <canvas ref={canvasRef} className="max-w-full max-h-full shadow-2xl" />
-            
-            {/* Слой интерфейса (линии, курсор) - он должен быть точно поверх */}
+        <div className="relative z-10 shadow-2xl">
+            <canvas ref={canvasRef} className="max-w-full max-h-full block" />
             <canvas 
                 ref={overlayRef}
+                className="absolute inset-0 w-full h-full cursor-none"
                 onMouseDown={handleInteract}
                 onMouseMove={handleInteract}
                 onMouseUp={handleInteract}
@@ -263,10 +251,25 @@ export function MaskEditor({ originalUrl, initialMaskedUrl, onSave, onCancel }: 
                 onTouchStart={handleInteract}
                 onTouchMove={handleInteract}
                 onTouchEnd={handleInteract}
-                className="absolute inset-0 w-full h-full"
             />
         </div>
       </div>
+
+      {/* Кнопки действий (Снизу справа) */}
+      <div className="absolute bottom-6 right-6 z-20 flex gap-3">
+          <Button variant="outline" className="border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-white" onClick={onCancel}>
+              Отмена
+          </Button>
+          <Button className="bg-white text-black hover:bg-zinc-200 font-bold px-6 shadow-lg shadow-white/10" onClick={handleSave}>
+              Далее <Check size={18} className="ml-2"/>
+          </Button>
+      </div>
+
+      {tool === 'lasso' && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-900/80 text-blue-100 px-4 py-2 rounded-full text-xs pointer-events-none backdrop-blur-sm border border-blue-500/30">
+              Обведите объект и кликните в начало для вырезания
+          </div>
+      )}
     </div>
   );
 }
