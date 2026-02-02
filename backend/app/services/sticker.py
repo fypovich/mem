@@ -1,7 +1,7 @@
-from moviepy.editor import ImageClip, CompositeVideoClip, vfx
+from moviepy.editor import ImageClip, CompositeVideoClip, VideoClip
 import numpy as np
 import cv2
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 import os
 
 class StickerService:
@@ -9,79 +9,76 @@ class StickerService:
         self.output_path = output_path
 
     def _apply_hard_stroke(self, pil_img, color=(255, 255, 255), thickness=5):
-        """
-        Создает жесткую (Pixel-perfect) обводку.
-        Использует бинаризацию альфа-канала для удаления полупрозрачности.
-        """
+        """Hard-edge Stroke (без размытия) через морфологию"""
         if thickness <= 0: return pil_img
         
-        # Конвертация в numpy
         img_np = np.array(pil_img)
-        alpha = img_np[:, :, 3]
+        # Проверка наличия альфа-канала
+        if img_np.shape[2] == 4:
+            alpha = img_np[:, :, 3]
+        else:
+            return pil_img
+
         if np.max(alpha) == 0: return pil_img
 
-        # 1. Бинаризация (Threshold): все что не 0 становится 255
-        # Это убирает размытые края (anti-aliasing), делая их жесткими
-        _, binary_alpha = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
+        # 1. Бинаризация альфы для жесткого края (убираем полупрозрачность)
+        _, binary_alpha = cv2.threshold(alpha, 127, 255, cv2.THRESH_BINARY)
 
-        # 2. Создаем ядро для расширения
-        # MORPH_ELLIPSE делает углы скругленными, но край остается жестким
-        kernel_size = int(thickness * 2) 
+        # 2. Создание ядра для расширения (Stroke)
+        kernel_size = int(thickness * 2) + 1
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
         
-        # 3. Дилатация (Расширение маски)
+        # 3. Дилатация (расширение) маски
         dilated = cv2.dilate(binary_alpha, kernel, iterations=1)
         
-        # 4. Создаем слой обводки (заливка цветом)
         h, w = alpha.shape
         outline_layer = np.zeros((h, w, 4), dtype=np.uint8)
         
-        # Преобразуем цвет в кортеж (R, G, B)
+        # Обработка цвета (hex или tuple)
         if isinstance(color, str) and color.startswith('#'):
             color = tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
             
-        outline_layer[:] = color + (255,) # Цвет + 100% альфа
-        outline_layer[:, :, 3] = dilated # Применяем расширенную маску
+        outline_layer[:] = color + (255,) # Заливаем цветом
+        outline_layer[:, :, 3] = dilated  # Применяем расширенную маску
 
-        # 5. Композитинг: Обводка снизу, Оригинал сверху
         outline_pil = Image.fromarray(outline_layer)
-        combined = Image.alpha_composite(outline_pil, pil_img)
         
-        return combined
+        # 4. Накладываем оригинальное изображение поверх обводки
+        return Image.alpha_composite(outline_pil, pil_img)
 
     def _add_text(self, pil_img, text, color="white", size_pct=15, x_pct=0.5, y_pct=0.85):
-        """
-        Рисует текст поверх изображения.
-        Текст 'впекается' в картинку, чтобы анимироваться вместе с ней.
-        """
+        """Добавление текста с жесткой обводкой"""
         if not text: return pil_img
         
         draw = ImageDraw.Draw(pil_img)
         W, H = pil_img.size
         
-        # Размер шрифта (минимум 20px)
         font_size = int(H * (size_pct / 100))
         font_size = max(20, font_size)
 
+        # Попытка загрузить жирный шрифт, иначе дефолтный
         try:
-            # Используем жирный шрифт для стикеров
+            # Путь может отличаться в зависимости от ОС (это для Linux/Docker)
             font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", font_size)
         except:
-            font = ImageFont.load_default()
+            try:
+                # Fallback для Windows
+                font = ImageFont.truetype("arialbd.ttf", font_size)
+            except:
+                font = ImageFont.load_default()
 
-        # Вычисляем размеры блока текста
+        # Расчет размеров текста
         bbox = draw.textbbox((0, 0), text, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
 
-        # Координаты центра текста
         x = int(W * x_pct) - (text_w // 2)
         y = int(H * y_pct) - (text_h // 2)
 
-        # Жесткая обводка текста (Stroke) черным цветом
-        stroke_width = max(3, font_size // 8)
-        
+        # Рисуем обводку текста (эмуляция stroke)
+        stroke_width = max(2, font_size // 10)
         draw.text((x, y), text, font=font, fill="black", stroke_width=stroke_width, stroke_fill="black")
+        # Рисуем основной текст
         draw.text((x, y), text, font=font, fill=color)
         
         return pil_img
@@ -91,137 +88,255 @@ class StickerService:
                                 text=None, text_color="white", 
                                 text_size=15, text_x=0.5, text_y=0.8):
         final_clip = None
-        base_clip = None
+        clip = None
         
         try:
-            # 1. Загрузка
+            # === 1. Подготовка изображения ===
             img = Image.open(image_path).convert("RGBA")
             
-            # 2. Добавляем паддинг (расширяем холст), чтобы анимации не обрезались
+            # Увеличиваем холст, чтобы эффекты (Bouncy, Zoomie) не обрезались
             w, h = img.size
-            padding = int(max(w, h) * 0.6) # 60% запаса
+            padding = int(max(w, h) * 0.6) 
             new_size = (w + padding*2, h + padding*2)
             
             canvas = Image.new("RGBA", new_size, (0,0,0,0))
-            # Вставляем по центру
+            # Центрируем исходник на новом холсте
             canvas.paste(img, (padding, padding))
             img = canvas
 
-            # 3. Применяем Обводку (Stroke)
+            # === 2. Применение статических эффектов (Обводка + Текст) ===
             if outline_color and outline_width > 0:
                 img = self._apply_hard_stroke(img, color=outline_color, thickness=int(outline_width))
 
-            # 4. Применяем Текст (Запекаем)
             if text:
                 img = self._add_text(img, text, color=text_color, size_pct=text_size, x_pct=text_x, y_pct=text_y)
 
-            # Сохраняем подготовленный статический кадр
             temp_frame = self.output_path + "_temp.png"
             img.save(temp_frame)
 
-            # 5. Создаем анимацию
+            # === 3. Настройка видео параметров ===
             duration = 2.0
-            fps = 15
-            clip = ImageClip(temp_frame, duration=duration)
-            W_c, H_c = clip.size
+            fps = 20
+            
+            # Загружаем подготовленный кадр как массив для обработки
+            base_img = np.array(Image.open(temp_frame)) 
+            
+            # === 4. Реализация анимаций ===
 
-            if animation == "flippy":
-                # Резкий флип (Scale X: 1 -> -1 -> 1)
-                # MoviePy не поддерживает scaleX(-1) напрямую, эмулируем через resize ширины
-                # cos(pi*t) дает плавный переход, abs делает его 'схлопыванием'
-                clip = clip.resize(lambda t: (max(0.01, np.abs(np.cos(np.pi * t))), 1)) \
-                           .set_position("center")
-
-            elif animation == "spinny":
-                # Вращение 360
-                clip = clip.rotate(lambda t: -360 * (t / duration), expand=False).set_position("center")
-
-            elif animation == "zoomie":
-                # Пульсация масштаба: 1.0 -> 1.3 -> 1.0
-                clip = clip.resize(lambda t: 1 + 0.3 * (0.5 - 0.5 * np.cos(2 * np.pi * t / duration))).set_position("center")
-
-            elif animation == "tilty":
-                # Маятник (Pivot bottom)
-                # Упрощаем: вращение вокруг центра, но сдвиг вниз компенсирует
-                clip = clip.rotate(lambda t: 15 * np.sin(2 * np.pi * t), expand=False).set_position("center")
-
-            elif animation == "peeker":
-                # Выглядывание снизу
-                def peek_pos(t):
-                    # cycle: 0 -> 1 -> 0
-                    cycle = 0.5 - 0.5 * np.cos(2 * np.pi * t / duration)
-                    # Y смещается от (скрыт) до (центр)
-                    y_off = (H_c * 0.6) * (1 - cycle)
-                    return ('center', int(y_off))
-                clip = clip.set_position(peek_pos)
-
-            elif animation == "jelly":
-                # Желе: сохранение объема (ширина растет -> высота падает)
-                def jelly_resize(t):
-                    # Частота 2 Гц
-                    w_factor = 1 + 0.15 * np.sin(2 * np.pi * t * 2)
-                    h_factor = 1 - 0.15 * np.sin(2 * np.pi * t * 2)
-                    return (w_factor, h_factor)
-                clip = clip.resize(jelly_resize).set_position("center")
+            if animation == "jelly":
+                # Эффект желе (построчный сдвиг синусоидой)
+                def make_jelly_frame(t):
+                    frame = base_img.copy()
+                    height, width = frame.shape[:2]
+                    
+                    # Параметры волны
+                    amp = width * 0.04 # Амплитуда
+                    freq_y = 4.0       # Частота по вертикали
+                    speed = 10.0       # Скорость анимации
+                    
+                    y_indices = np.arange(height)
+                    # Сдвиг зависит от времени (t) и номера строки (y)
+                    offsets = (np.sin((t * speed) + (y_indices / height * freq_y)) * amp).astype(int)
+                    
+                    for y in range(height):
+                        shift = offsets[y]
+                        if shift != 0:
+                            # Цикличный сдвиг строки
+                            frame[y] = np.roll(frame[y], shift, axis=0)
+                            
+                    return frame
+                
+                clip = VideoClip(make_jelly_frame, duration=duration)
 
             elif animation == "bouncy":
-                # Прыжок + Squash&Stretch
-                def bounce_resize(t):
-                    # Сплющивание в момент удара
-                    val = np.sin(np.pi * t * 2)
-                    if abs(val) < 0.2: # Вблизи земли
-                         # Чем ближе к 0, тем сильнее сжатие
-                         squeeze = 1.0 + (0.3 * (1 - abs(val)/0.2))
-                         return (squeeze, 1.0 / squeeze)
-                    return 1
+                # Прыжок со сплющиванием (Squash & Stretch)
+                clip_base = ImageClip(temp_frame, duration=duration)
+                
+                def bounce_transform(t):
+                    # Цикл прыжка: 2 прыжка за 2 секунды
+                    step = 2 * np.pi * 2 
+                    # Смещаем фазу (-pi/2), чтобы начинать с "земли"
+                    sine_val = np.sin(t * step - np.pi/2) 
+                    norm_sine = (sine_val + 1) / 2 # 0..1
+                    
+                    # Высота прыжка (h) с кубической плавностью
+                    h_factor = norm_sine ** 0.7 
+                    
+                    # Деформация (d): сплющивание только внизу (когда h близко к 0)
+                    d = 0
+                    if h_factor < 0.2:
+                        d = (0.2 - h_factor) * 0.4 # Сила сплющивания
+                    
+                    sx = 1 + d # Расширение по X
+                    sy = 1 - d # Сжатие по Y
+                    return sx, sy
                 
                 def bounce_pos(t):
-                    # Y позиция (абсолютный синус = прыжки)
-                    y = abs(np.sin(np.pi * t * 2)) * -60
-                    return ('center', 'center' + int(y))
+                    # Синхронное движение по Y
+                    step = 2 * np.pi * 2
+                    norm_sine = (np.sin(t * step - np.pi/2) + 1) / 2
+                    
+                    # Амплитуда прыжка вверх (отрицательное значение Y)
+                    y_jump = -80 * (norm_sine ** 0.7)
+                    
+                    # Компенсация позиции из-за сжатия (чтобы "ноги" оставались на земле)
+                    # (повторяем логику d для точности)
+                    h_factor = norm_sine ** 0.7
+                    d = 0
+                    if h_factor < 0.2: d = (0.2 - h_factor) * 0.4
+                    sy = 1 - d
+                    
+                    # Центр смещается при ресайзе, компенсируем
+                    _, H_c = clip_base.size
+                    scale_y_offset = (H_c * (1 - sy)) / 2
+                    
+                    # 'center' по X, вычисленный Y
+                    return ('center', int(new_size[1]/2 + y_jump + scale_y_offset))
 
-                clip = clip.resize(bounce_resize).set_position(bounce_pos)
+                clip = clip_base.resize(bounce_transform).set_position(bounce_pos)
 
             elif animation == "floaties":
-                # Шлейф (Ghosting)
-                def float_motion(t):
-                    return ('center', int(20 * np.sin(2 * np.pi * t)))
-
-                main = clip.set_position(float_motion)
-                # Создаем копии с задержкой фазы и прозрачностью
-                ghost1 = clip.set_position(lambda t: ('center', int(20 * np.sin(2 * np.pi * (t - 0.1))))).set_opacity(0.3)
-                ghost2 = clip.set_position(lambda t: ('center', int(20 * np.sin(2 * np.pi * (t - 0.2))))).set_opacity(0.1)
+                # Эффект левитации с "призрачным" шлейфом
+                clip_base = ImageClip(temp_frame, duration=duration)
                 
-                # Композитинг
-                clip = CompositeVideoClip([ghost2, ghost1, main], size=new_size)
+                def lissajous_pos(t, lag=0):
+                    # Фигура Лиссажу (восьмерка)
+                    time = t * 2 # Скорость движения
+                    amp_x = 20
+                    amp_y = 10
+                    
+                    x = np.sin(time + lag) * amp_x
+                    y = np.sin((time + lag) * 2) * amp_y
+                    
+                    # Возвращаем абсолютные координаты центра
+                    center_x = new_size[0] / 2
+                    center_y = new_size[1] / 2
+                    
+                    # Учитываем, что set_position ставит верхний левый угол
+                    # Но clip_base имеет размер (w,h).
+                    # Проще вернуть смещение относительно центра
+                    return (int(center_x + x - clip_base.w/2), int(center_y + y - clip_base.h/2))
+
+                layers = []
+                # 8 слоев шлейфа позади
+                for i in range(8, 0, -1):
+                    lag = -0.1 * i # Чуть уменьшил лаг, чтобы шлейф был плотнее
+                    
+                    # НОВАЯ ФОРМУЛА ПРОЗРАЧНОСТИ
+                    # i=8 -> 0.15 (15%)
+                    # i=1 -> 0.50 (50%)
+                    opacity = 0.55 - (i * 0.05) 
+                    
+                    ghost = clip_base.copy() \
+                        .set_opacity(opacity) \
+                        .rotate(lambda t, l=lag: 5 * np.sin((t*2 + l) * 2), expand=False) \
+                        .set_position(lambda t, l=lag: lissajous_pos(t, l))
+                    
+                    layers.append(ghost)
+                
+                # Основной слой сверху
+                main = clip_base.set_position(lambda t: lissajous_pos(t, 0))
+                layers.append(main)
+                
+                # Композиция слоев
+                clip = CompositeVideoClip(layers, size=new_size)
+
+            elif animation == "peeker":
+                # Появление снизу (как из кармана)
+                clip_base = ImageClip(temp_frame, duration=duration)
+                
+                def peek_pos(t):
+                    # Синусоида 0 -> 1 -> 0
+                    # t идет 0..2. sin(pi*t) дает один полный цикл 0..1..0..-1..0 ??
+                    # Нам нужно просто вверх-вниз один раз за цикл или два?
+                    # Giphy Peeker: вылез, постоял, ушел.
+                    
+                    # Используем (sin(t * pi - pi/2) + 1) / 2 -> 0..1..0 за 2 секунды
+                    norm = (np.sin(t * np.pi * 2 - np.pi/2) + 1) / 2
+                    
+                    # Смещение: когда 0 -> объект внизу (спрятан), когда 1 -> в центре
+                    # Высота прыжка = высота объекта
+                    y_offset = (new_size[1]) * (1 - norm) 
+                    
+                    # Используем 'center' для X, и смещение для Y
+                    # Но Y должен быть относительно низа видимой области? 
+                    # Проще сдвигать весь клип вниз.
+                    return ('center', int(y_offset))
+                
+                clip = clip_base.set_position(peek_pos)
+                
+                # Обрезаем клип снизу, помещая его в CompositeVideoClip меньшей высоты (или такой же)
+                # Но сдвигая его вниз за пределы
+                clip = CompositeVideoClip([clip], size=new_size)
+
+            elif animation == "flippy":
+                # Зеркальное отражение по таймеру
+                clip_base = ImageClip(temp_frame, duration=duration)
+                
+                # MoviePy не умеет делать scaleX=-1 штатно через resize. 
+                # Эмулируем переворот через сжатие в 0 и разжатие
+                def flip_resize(t):
+                    # cos(pi * t) меняется 1 -> 0 -> -1 -> 0 -> 1
+                    val = np.cos(np.pi * t * 2) # Ускорим
+                    return (max(0.01, abs(val)), 1) # Ширина, Высота
+                
+                clip = clip_base.resize(flip_resize).set_position("center")
+
+            elif animation == "zoomie":
+                # Пульсация
+                clip = ImageClip(temp_frame, duration=duration) \
+                    .resize(lambda t: 1 + 0.15 * np.sin(t * np.pi * 2)) \
+                    .set_position("center")
+
+            elif animation == "tilty":
+                # Покачивание маятником (pivot bottom эмулируется expand=False + смещением центра если нужно, 
+                # но для простоты центр)
+                clip = ImageClip(temp_frame, duration=duration) \
+                    .rotate(lambda t: 15 * np.sin(t * np.pi * 2), expand=False) \
+                    .set_position("center")
+                    
+            elif animation == "spinny":
+                # Вращение 360
+                clip = ImageClip(temp_frame, duration=duration) \
+                    .rotate(lambda t: -360 * (t / duration), expand=False) \
+                    .set_position("center")
 
             else:
-                clip = clip.set_position("center")
+                # Статика
+                clip = ImageClip(temp_frame, duration=duration).set_position("center")
 
-            # 6. Финальная сборка
-            if animation != "floaties": 
+            # Сборка финального клипа
+            if animation not in ["floaties", "peeker"]: 
+                # Для floaties и peeker мы уже создали CompositeVideoClip
                 final_clip = CompositeVideoClip([clip], size=new_size)
             else:
-                final_clip = clip # Floaties уже composite
+                final_clip = clip
 
             final_clip.duration = duration
-
-            # 7. Экспорт GIF
+            
+            # === Экспорт в GIF ===
             final_clip.write_gif(
                 self.output_path, 
                 fps=fps, 
                 program='ffmpeg', 
-                opt='Wu', 
-                fuzz=3, 
+                opt='Wu', # Оптимизация палитры
+                fuzz=3,   # Сжатие
                 logger=None
             )
             
+            # Удаляем временный файл
             if os.path.exists(temp_frame): os.remove(temp_frame)
+            
             return self.output_path
 
         except Exception as e:
-            print(f"Sticker Error: {e}")
+            print(f"Sticker Generation Error: {e}")
             raise e
         finally:
-            if final_clip: try: final_clip.close() 
-            except: pass
+            # Безопасное закрытие ресурсов
+            if final_clip:
+                try: final_clip.close()
+                except: pass
+            if clip:
+                try: clip.close()
+                except: pass
