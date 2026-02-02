@@ -1,8 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 @custom-variant dark (&:is(.dark *));
 
@@ -127,6 +124,9 @@
   }
 }
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer base {
   :root {
@@ -185,65 +185,51 @@
 
 /* === Sticker Animations === */
 
-/* 1. Spinny: Линейное вращение */
 @keyframes spinny {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
-/* 2. Zoomie: Пульсация */
 @keyframes zoomie {
   0% { transform: scale(1); }
-  50% { transform: scale(1.15); }
+  50% { transform: scale(1.3); }
   100% { transform: scale(1); }
 }
 
-/* 3. Flippy: Резкий переворот (используем steps для жесткости) */
 @keyframes flippy {
   0% { transform: scaleX(1); }
-  45% { transform: scaleX(1); }
+  49% { transform: scaleX(1); }
   50% { transform: scaleX(-1); }
-  95% { transform: scaleX(-1); }
+  99% { transform: scaleX(-1); }
   100% { transform: scaleX(1); }
 }
 
-/* 4. Tilty: Маятник снизу */
 @keyframes tilty {
-  0% { transform: rotate(-12deg); }
-  50% { transform: rotate(12deg); }
-  100% { transform: rotate(-12deg); }
+  0% { transform: rotate(-10deg); }
+  50% { transform: rotate(10deg); }
+  100% { transform: rotate(-10deg); }
 }
 
-/* 5. Jelly: Желеобразная физика */
 @keyframes jelly {
   0% { transform: scale(1, 1); }
-  25% { transform: scale(1.25, 0.75); }
-  50% { transform: scale(0.75, 1.25); }
-  75% { transform: scale(1.15, 0.85); }
+  25% { transform: scale(1.15, 0.85); }
+  50% { transform: scale(0.85, 1.15); }
+  75% { transform: scale(1.05, 0.95); }
   100% { transform: scale(1, 1); }
 }
 
-/* 6. Bouncy: Прыжок со сплющиванием */
 @keyframes bouncy {
-  0% { transform: translateY(0) scale(1.1, 0.9); animation-timing-function: ease-out; }
-  10% { transform: translateY(0) scale(1, 1); }
-  45% { transform: translateY(-30%) scale(1, 1); animation-timing-function: ease-in; }
-  90% { transform: translateY(0) scale(1, 1); }
-  95% { transform: translateY(0) scale(1.15, 0.85); }
-  100% { transform: translateY(0) scale(1.1, 0.9); }
+  0%, 100% { transform: translateY(0) scale(1.1, 0.9); }
+  50% { transform: translateY(-30px) scale(0.9, 1.1); }
 }
 
-/* 7. Peeker: Появление снизу */
 @keyframes peeker {
-  0% { transform: translateY(110%); }
-  30% { transform: translateY(0%); }
-  70% { transform: translateY(0%); }
-  100% { transform: translateY(110%); }
+  0% { transform: translateY(100%); }
+  50% { transform: translateY(0); }
+  100% { transform: translateY(100%); }
 }
 
-/* 8. Floaties: Левитация (для шлейфа) */
 @keyframes floaties {
-  0% { transform: translateY(-5%) rotate(-2deg); }
-  50% { transform: translateY(5%) rotate(2deg); }
-  100% { transform: translateY(-5%) rotate(-2deg); }
+  0%, 100% { transform: translateY(-5px); }
+  50% { transform: translateY(5px); }
 }
