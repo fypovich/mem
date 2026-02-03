@@ -12,147 +12,129 @@ class VideoEditorService:
 
     def _apply_filter(self, clip, filter_name):
         """Применение продвинутых эффектов к видео"""
+        print(f"🎨 [VideoEditor] Applying filter: '{filter_name}'")
+
         if not filter_name or filter_name == "No Filter":
             return clip
         
-        # 1. BLACK & WHITE + NOISE (Зернистость пленки)
+        # 1. BLACK & WHITE + NOISE (Зернистость)
         if filter_name == "Black & White":
-            # Сначала делаем ЧБ
+            print("   -> Applying BW + Noise")
             bw_clip = clip.fx(vfx.blackwhite)
             
             def add_noise(get_frame, t):
                 frame = get_frame(t)
-                # Генерируем шум: случайные числа от -30 до 30
-                noise = np.random.randint(-30, 30, frame.shape, dtype='int16')
-                # Добавляем шум и обрезаем значения, чтобы остаться в 0-255
-                noisy_frame = np.clip(frame.astype('int16') + noise, 0, 255).astype('uint8')
-                return noisy_frame
+                # Шум: матрица случайных чисел от -50 до 50 (усилено для видимости)
+                noise = np.random.randint(-50, 50, frame.shape, dtype='int16')
+                return np.clip(frame.astype('int16') + noise, 0, 255).astype('uint8')
             
             return bw_clip.fl(add_noise)
 
-        # 2. RAINBOW (Циклическая смена цветов)
+        # 2. RAINBOW (Переливание цветов)
         elif filter_name == "Rainbow":
+            print("   -> Applying Rainbow")
             def color_cycle(get_frame, t):
                 frame = get_frame(t)
-                # Создаем матрицу смещения цветов на основе времени
-                # Синусоиды со сдвигом фазы для R, G, B каналов
-                r_factor = (np.sin(t * 2) + 1) / 2 * 0.5 + 0.5 # от 0.5 до 1.0
-                g_factor = (np.sin(t * 2 + 2) + 1) / 2 * 0.5 + 0.5
-                b_factor = (np.sin(t * 2 + 4) + 1) / 2 * 0.5 + 0.5
+                # Смена каналов по синусоиде
+                r_factor = (np.sin(t * 3) + 1) / 2  # 0.0 - 1.0
+                g_factor = (np.sin(t * 3 + 2) + 1) / 2
+                b_factor = (np.sin(t * 3 + 4) + 1) / 2
                 
-                # Умножаем каналы
                 frame_colored = frame.astype(float)
-                frame_colored[:, :, 0] *= r_factor
-                frame_colored[:, :, 1] *= g_factor
-                frame_colored[:, :, 2] *= b_factor
+                # Усиленное наложение цвета
+                frame_colored[:, :, 0] = frame_colored[:, :, 0] * 0.5 + (r_factor * 255 * 0.5)
+                frame_colored[:, :, 1] = frame_colored[:, :, 1] * 0.5 + (g_factor * 255 * 0.5)
+                frame_colored[:, :, 2] = frame_colored[:, :, 2] * 0.5 + (b_factor * 255 * 0.5)
                 
                 return np.clip(frame_colored, 0, 255).astype('uint8')
             
             return clip.fl(color_cycle)
 
-        # 3. RUMBLE (Землетрясение / Тряска)
+        # 3. RUMBLE (Тряска)
         elif filter_name == "Rumble":
+            print("   -> Applying Rumble")
             w, h = clip.size
-            # Немного увеличиваем видео, чтобы при тряске не было видно черных краев
-            zoom_ratio = 1.1
-            clip_zoomed = clip.resize(zoom_ratio)
-            cw, ch = clip_zoomed.size
+            # Зум, чтобы не было черных полос при тряске
+            clip_zoomed = clip.resize(1.1) 
             
-            def shake(get_frame, t):
-                # Случайный сдвиг центра
-                max_offset = (cw - w) / 2
-                dx = int((random.random() - 0.5) * max_offset * 1.5) # Резкие скачки
-                dy = int((random.random() - 0.5) * max_offset * 1.5)
+            def rumble_effect(get_frame, t):
+                # Случайное смещение каждые 0.05 сек (чтобы тряска была резкой)
+                dt = int(t * 20) 
+                random.seed(dt) # Фиксируем сид для кадра, чтобы не мерцало внутри кадра
+                dx = random.randint(-15, 15)
+                dy = random.randint(-15, 15)
                 
-                # Возвращаем исходный кадр, но со сдвигом (crop логика)
-                # get_frame в fl возвращает полный кадр, здесь мы должны сами "вырезать"
-                # Но moviepy fl работает с пикселями.
-                # Проще использовать scroll, но он предсказуем.
-                # Используем геометрический кроп через transform
-                return get_frame(t) # Заглушка, реальный Rumble делается через fx ниже
+                # Получаем кадр из зумированного видео со смещением
+                # Центр зумированного видео
+                cx = (clip_zoomed.w - w) / 2
+                cy = (clip_zoomed.h - h) / 2
+                
+                # Вырезаем область размером w, h
+                return clip_zoomed.get_frame(t)[
+                    int(cy + dy) : int(cy + dy + h),
+                    int(cx + dx) : int(cx + dx + w)
+                ]
 
-            # Правильный способ сделать Rumble в MoviePy - это двигать crop window
-            def get_rumble_pos(t):
-                # t - время. Возвращаем (x, y) верхнего левого угла
-                # Центрируем кроп
-                center_x = (cw - w) / 2
-                center_y = (ch - h) / 2
-                # Добавляем "тряску"
-                x_shake = random.randint(-10, 10)
-                y_shake = random.randint(-10, 10)
-                return (center_x + x_shake, center_y + y_shake)
+            # Используем make_frame вместо fl для полного контроля
+            return clip.fl(rumble_effect)
 
-            return clip_zoomed.fl(lambda gf, t: gf(t)[
-                int(get_rumble_pos(t)[1]):int(get_rumble_pos(t)[1])+h,
-                int(get_rumble_pos(t)[0]):int(get_rumble_pos(t)[0])+w
-            ], apply_to=['mask', 'video'])
-
-        # 4. VHS (Старая кассета)
+        # 4. VHS (Помехи + сдвиг каналов)
         elif filter_name == "VHS":
+            print("   -> Applying VHS")
             def vhs_effect(get_frame, t):
                 frame = get_frame(t)
                 frame_float = frame.astype(float)
                 
-                # A. Channel Split (Сдвиг каналов - хроматическая аберрация)
-                # Сдвигаем красный канал влево, синий вправо
-                r_channel = np.roll(frame_float[:, :, 0], shift=3, axis=1)
+                # Сдвиг цветовых каналов (RGB Split)
+                r_channel = np.roll(frame_float[:, :, 0], shift=5, axis=1)
                 g_channel = frame_float[:, :, 1]
-                b_channel = np.roll(frame_float[:, :, 2], shift=-3, axis=1)
+                b_channel = np.roll(frame_float[:, :, 2], shift=-5, axis=1)
                 
-                # Собираем обратно
                 merged = np.stack([r_channel, g_channel, b_channel], axis=2)
                 
-                # B. Scanlines (Горизонтальные полосы)
-                # Каждая 4-я строка темнее
-                merged[::4, :] *= 0.8
+                # Полосы (Scanlines) - затемняем каждую 3 строку
+                merged[::3, :] *= 0.85
                 
-                # C. Tracking Noise (Полоса помех снизу, которая "едет")
-                h, w, _ = frame.shape
-                # Полоса шума движется сверху вниз
-                noise_y = int((t * 50) % h) 
-                noise_height = 10
-                if noise_y < h - noise_height:
-                    noise = np.random.randint(-50, 50, (noise_height, w, 3))
-                    merged[noise_y:noise_y+noise_height, :] += noise
+                # Бегущая полоса шума (Tracking error)
+                h_img, w_img, _ = frame.shape
+                # Полоса едет вниз
+                noise_y = int((t * 150) % h_img) 
+                noise_h = 30
+                if noise_y < h_img - noise_h:
+                    noise = np.random.randint(-100, 100, (noise_h, w_img, 3))
+                    merged[noise_y:noise_y+noise_h, :] += noise
 
                 return np.clip(merged, 0, 255).astype('uint8')
 
-            # Добавляем немного контраста для "VHS look"
-            return clip.fx(vfx.lum_contrast, contrast=1.2).fl(vhs_effect)
+            # Добавляем контраст для стиля
+            return clip.fx(vfx.lum_contrast, contrast=1.4).fl(vhs_effect)
 
-        # 5. GROOVY (Пьяный эффект / Волны)
+        # 5. GROOVY (Волны и шлейф)
         elif filter_name == "Groovy":
-            # Эффект: Медленное плавание (sine wave) + шлейф (trails)
-            
-            # 1. Добавляем шлейф (смешиваем с предыдущим кадром)
-            # В MoviePy сложно сделать настоящий trail без буфера, поэтому симулируем
-            # через наложение копии со сдвигом по времени
+            print("   -> Applying Groovy")
+            # Шлейф
             clip_delayed = clip.fl_time(lambda t: max(0, t - 0.2), keep_duration=True)
-            clip_blend = CompositeVideoClip([clip, clip_delayed.set_opacity(0.5)])
+            clip_blend = CompositeVideoClip([clip, clip_delayed.set_opacity(0.6)]) # 0.6 opacity
             
             w, h = clip.size
+            clip_zoomed = clip_blend.resize(1.1)
             
-            # 2. "Плавание" (Wobble)
-            # Мы используем scroll, но по синусоиде
-            zoom = 1.2
-            clip_zoomed = clip_blend.resize(zoom)
-            zw, zh = clip_zoomed.size
-            
-            def groovy_pos(t):
-                # Центр
-                cx = (zw - w) / 2
-                cy = (zh - h) / 2
-                # Добавляем плавное покачивание
-                dx = np.sin(t * 2) * (cx * 0.8)
-                dy = np.cos(t * 3) * (cy * 0.8)
-                return (int(cx + dx), int(cy + dy))
+            def groovy_pos(get_frame, t):
+                # Плавное покачивание камеры
+                dx = int(np.sin(t * 3) * 20)
+                dy = int(np.cos(t * 2) * 20)
+                
+                cx = (clip_zoomed.w - w) / 2
+                cy = (clip_zoomed.h - h) / 2
+                
+                return clip_zoomed.get_frame(t)[
+                    int(cy + dy) : int(cy + dy + h),
+                    int(cx + dx) : int(cx + dx + w)
+                ]
 
-            # Вырезаем плавающее окно
-            return clip_zoomed.fl(lambda gf, t: gf(t)[
-                groovy_pos(t)[1]:groovy_pos(t)[1]+h,
-                groovy_pos(t)[0]:groovy_pos(t)[0]+w
-            ], apply_to=['mask', 'video'])
+            return clip_zoomed.fl(groovy_pos)
             
+        print(f"   -> No matching filter found for '{filter_name}'")
         return clip
 
     def process_video(
@@ -169,16 +151,17 @@ class VideoEditorService:
     ) -> str:
         clip = None
         try:
+            print(f"🎬 START PROCESSING video: {input_path}")
             clip = VideoFileClip(input_path)
             
-            # 1. Тримминг
+            # 1. Trimming
             if trim_start is not None and trim_end is not None:
                 start = max(0, trim_start)
                 end = min(clip.duration, trim_end)
                 if start < end:
                     clip = clip.subclip(start, end)
 
-            # 2. Кроп
+            # 2. Cropping
             if crop:
                 clip = clip.crop(
                     x1=crop.get('x', 0),
@@ -187,7 +170,7 @@ class VideoEditorService:
                     height=crop.get('height')
                 )
 
-            # 3. Аудио
+            # 3. Audio
             if remove_audio:
                 clip = clip.without_audio()
             elif new_audio_path and os.path.exists(new_audio_path):
@@ -196,13 +179,11 @@ class VideoEditorService:
                     new_audio = new_audio.subclip(0, clip.duration)
                 clip = clip.set_audio(new_audio)
 
-            # 4. Фильтры (Применяем ДО текста, чтобы текст был четким)
+            # 4. Filters
             clip = self._apply_filter(clip, filter_name)
 
-            # 5. Текст (Накладываем ПОВЕРХ эффектов)
+            # 5. Text
             if text_config and text_config.get('text'):
-                # Вычисляем размер шрифта относительно высоты видео
-                # Базовый размер 50 для высоты 720p, масштабируем
                 base_height = 720
                 font_scale = clip.h / base_height
                 fontsize = float(text_config.get('size', 50)) * font_scale
@@ -220,11 +201,8 @@ class VideoEditorService:
                 
                 clip = CompositeVideoClip([clip, txt_clip])
 
-            # 6. Сохранение
+            # Save
             output_path = os.path.join(self.output_dir, output_filename)
-            
-            # preset='ultrafast' - для быстрого тестирования
-            # preset='medium' - лучшее качество/размер, но медленнее
             clip.write_videofile(
                 output_path,
                 codec='libx264',
@@ -232,17 +210,18 @@ class VideoEditorService:
                 preset='ultrafast',
                 fps=24,
                 threads=4,
-                logger=None
+                logger='bar' # Включаем логгер moviepy
             )
             
+            print(f"✅ DONE: {output_path}")
             return output_path
 
         except Exception as e:
-            print(f"VideoEditorService Error: {e}")
+            print(f"❌ VideoEditorService Error: {e}")
             raise e
         finally:
             if clip:
-                try:
+                try: 
                     clip.close()
-                except:
+                except: 
                     pass
