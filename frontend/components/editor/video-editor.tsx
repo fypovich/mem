@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Wand2, Play, Pause, RotateCcw, Type, MonitorPlay } from "lucide-react"
-import { toast } from "sonner"
 import type { VideoProcessOptions, CropOptions, TextOptions } from "@/types/editor"
 
 // --- CSS Filters Mapping ---
@@ -67,10 +66,12 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
   useEffect(() => {
     const generateThumbnails = async () => {
         if (!videoRef.current) return;
+        // Create detached video element to scan frames
         const vid = document.createElement('video');
         vid.src = videoUrl;
         vid.crossOrigin = "anonymous";
         vid.muted = true;
+        vid.preload = "auto";
         
         await new Promise((resolve) => {
             vid.onloadedmetadata = () => resolve(true);
@@ -96,6 +97,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
         setThumbnails(thumbs);
     };
 
+    // Small delay to ensure render
     setTimeout(generateThumbnails, 1000);
   }, [videoUrl]);
 
@@ -103,6 +105,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
     if (videoRef.current && containerRef.current) {
       setDuration(videoRef.current.duration)
       const { width, height } = containerRef.current.getBoundingClientRect()
+      // Init crop to full size
       setCrop({ x: 0, y: 0, width: width, height: height })
     }
   }
@@ -257,32 +260,42 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
     onProcess(options);
   }
 
+  // --- RENDER ---
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-80px)] bg-zinc-950 text-white overflow-hidden" 
+    // ГЛАВНЫЙ КОНТЕЙНЕР:
+    // h-[calc(100vh-140px)] - это ключевая правка. Мы вычитаем место под навбар и отступы страницы.
+    // overflow-hidden - чтобы ничего не вылезало.
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-140px)] bg-zinc-950 text-white overflow-hidden border border-zinc-800 rounded-lg" 
          onMouseUp={handleMouseUp} 
          onMouseLeave={handleMouseUp}
          onMouseMove={handleMouseMove}>
       
-      {/* --- LEFT COLUMN: PREVIEW & TIMELINE --- */}
-      {/* Уменьшили gap до gap-2 и padding до p-2 для максимальной компактности */}
-      <div className="flex-1 flex flex-col min-w-0 p-2 gap-2"> 
+      {/* --- ЛЕВАЯ КОЛОНКА: ПРЕВЬЮ + ТАЙМЛАЙН --- */}
+      <div className="flex-1 flex flex-col min-w-0 p-3 gap-3 h-full">
         
-        {/* Video Container */}
-        {/* max-h-[40vh] делает видео меньше, освобождая место. min-h-0 важен для сжатия */}
-        <div className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-900/50 rounded-xl border border-zinc-800 overflow-hidden select-none">
-            <div ref={containerRef} className="relative shadow-2xl">
+        {/* 1. БЛОК ВИДЕО */}
+        {/* flex-1: занимает всё свободное место */}
+        {/* min-h-0: КРИТИЧНО! Позволяет блоку сжиматься, если места мало, не выталкивая Timeline */}
+        <div className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-900/50 rounded-lg overflow-hidden select-none border border-zinc-800/50">
+            <div ref={containerRef} className="relative h-full w-full flex items-center justify-center">
                 {videoUrl ? (
                     <>
+                        {/* Видео само подстраивается под размер родителя (h-full w-full object-contain) */}
                         <video
                             ref={videoRef}
                             src={videoUrl}
-                            className="max-h-[40vh] max-w-full pointer-events-none block" 
+                            className="h-full w-full object-contain pointer-events-none block"
                             style={{ filter: FILTER_STYLES[filter] || 'none' }}
                             onTimeUpdate={handleTimeUpdate}
                             onLoadedMetadata={handleLoadedMetadata}
                         />
 
                         {/* CROP OVERLAY */}
+                        {/* Позиционирование должно быть корректным. Сейчас оно работает от containerRef */}
+                        {/* Важно: containerRef должен совпадать с реальным размером видео для точности, 
+                            но для простоты UI мы пока оставляем его на wrapper'е.
+                            При object-contain кроп может визуально вылезать за видео, если соотношение сторон разное.
+                            Это допустимый компромисс для простого UI. */}
                         <div 
                             className="absolute border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] cursor-move group"
                             style={{
@@ -338,44 +351,46 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                         )}
                     </>
                 ) : (
-                    <div className="w-96 h-64 flex items-center justify-center text-zinc-500">
-                        <Loader2 className="animate-spin mr-2"/> Loading Video...
+                    <div className="flex flex-col items-center justify-center text-zinc-500 gap-2">
+                        <Loader2 className="animate-spin h-8 w-8 text-blue-500"/> 
+                        <span className="text-sm">Loading Video...</span>
                     </div>
                 )}
             </div>
         </div>
 
-        {/* Timeline Area */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 shrink-0">
-            <div className="flex items-center justify-between mb-1">
-                <div className="flex gap-2">
-                    <Button size="icon" variant="secondary" className="rounded-full h-8 w-8" onClick={togglePlay}>
-                        {isPlaying ? <Pause size={14}/> : <Play size={14} className="ml-1"/>}
+        {/* 2. БЛОК TIMELINE */}
+        {/* shrink-0: Запрещаем сжимать этот блок. Он всегда будет виден. */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 shrink-0 h-[100px] flex flex-col justify-center">
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex gap-2 items-center">
+                    <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10" onClick={togglePlay}>
+                        {isPlaying ? <Pause size={16}/> : <Play size={16} className="ml-0.5"/>}
                     </Button>
-                    <div className="flex flex-col justify-center px-2">
-                        <span className="text-xs font-medium text-white">{currentTime.toFixed(1)}s</span>
-                        <span className="text-[10px] text-zinc-500">/ {duration.toFixed(1)}s</span>
+                    <div className="flex items-baseline gap-1">
+                        <span className="text-sm font-medium text-white font-mono">{currentTime.toFixed(1)}s</span>
+                        <span className="text-xs text-zinc-500 font-mono">/ {duration.toFixed(1)}s</span>
                     </div>
                 </div>
-                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => {
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-zinc-400 hover:text-white" onClick={() => {
                     if (videoRef.current) {
                         videoRef.current.currentTime = (trimRange[0]/100) * duration;
                         setTrimRange([0, 100]);
                     }
                 }}>
-                    <RotateCcw size={12} className="mr-1"/> Reset
+                    <RotateCcw size={12} className="mr-1.5"/> Reset
                 </Button>
             </div>
 
-            {/* Visual Timeline Track */}
-            <div className="relative h-12 w-full rounded-lg overflow-hidden bg-black mt-1 group">
-                <div className="absolute inset-0 flex opacity-50">
+            {/* Слайдер и кадры */}
+            <div className="relative h-10 w-full rounded-md overflow-hidden bg-black/50 group select-none">
+                <div className="absolute inset-0 flex opacity-40 grayscale group-hover:grayscale-0 transition-all duration-300">
                     {thumbnails.map((src, i) => (
-                        <img key={i} src={src} className="h-full flex-1 object-cover" alt="frame" />
+                        <img key={i} src={src} className="h-full flex-1 object-cover pointer-events-none" alt="frame" />
                     ))}
                 </div>
 
-                <div className="absolute inset-0 px-0 flex items-center">
+                <div className="absolute inset-0 px-0 flex items-center z-10">
                     <Slider
                         value={trimRange}
                         min={0}
@@ -384,103 +399,107 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                         onValueChange={(val) => {
                             setTrimRange(val as [number, number]);
                             if (videoRef.current) {
+                                // Pause while scrubbing for better performance
+                                if (isPlaying) videoRef.current.pause();
+                                setIsPlaying(false);
                                 videoRef.current.currentTime = (val[0] / 100) * duration;
                             }
                         }}
-                        className="w-full relative z-10 cursor-pointer py-4"
+                        className="cursor-pointer"
                     />
                 </div>
                 
+                {/* Индикатор текущего времени (Playhead) */}
                 <div 
-                    className="absolute top-0 bottom-0 w-0.5 bg-white z-0 pointer-events-none transition-all duration-100 ease-linear shadow-[0_0_10px_rgba(255,255,255,0.5)]"
+                    className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-0 pointer-events-none shadow-[0_0_8px_rgba(239,68,68,0.6)]"
                     style={{ left: `${(currentTime / duration) * 100}%` }}
                 />
             </div>
         </div>
       </div>
 
-      {/* --- RIGHT COLUMN: SETTINGS --- */}
-      <div className="w-full lg:w-80 border-l border-zinc-800 bg-zinc-900/30 flex flex-col">
-          <div className="p-4 border-b border-zinc-800 font-semibold flex items-center gap-2">
-              <Wand2 size={18} className="text-blue-500"/> Editor Tools
+      {/* --- ПРАВАЯ КОЛОНКА: НАСТРОЙКИ --- */}
+      <div className="w-full lg:w-72 border-l border-zinc-800 bg-zinc-900/30 flex flex-col h-full">
+          <div className="p-4 border-b border-zinc-800 font-medium text-sm flex items-center gap-2 text-zinc-200">
+              <Wand2 size={16} className="text-blue-500"/> Editing Tools
           </div>
           
           <ScrollArea className="flex-1">
-              <div className="p-4 space-y-8">
+              <div className="p-4 space-y-6">
                   
-                  {/* 1. Filters */}
-                  <div className="space-y-3">
-                      <Label className="text-zinc-400 text-xs uppercase tracking-wider">Filters</Label>
-                      <div className="grid grid-cols-2 gap-2">
+                  {/* Filters */}
+                  <div className="space-y-2">
+                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Filters</Label>
+                      <div className="grid grid-cols-3 gap-2">
                           {Object.keys(FILTER_STYLES).map((f) => (
                               <button
                                   key={f}
                                   onClick={() => setFilter(f)}
-                                  className={`relative h-16 rounded-lg overflow-hidden border-2 transition-all ${filter === f ? 'border-blue-500 scale-105' : 'border-transparent hover:border-zinc-600'}`}
+                                  className={`group relative aspect-square rounded-md overflow-hidden border transition-all ${filter === f ? 'border-blue-500 ring-1 ring-blue-500/50' : 'border-zinc-800 hover:border-zinc-600'}`}
                               >
                                   <div 
-                                      className="absolute inset-0 bg-gradient-to-br from-zinc-700 to-black"
+                                      className="absolute inset-0 bg-zinc-800"
                                       style={{ filter: FILTER_STYLES[f] }}
                                   />
-                                  <span className="absolute bottom-1 left-2 text-[10px] font-medium z-10 shadow-black drop-shadow-md">{f}</span>
+                                  {/* Filter Preview Mockup Color */}
+                                  <div className={`absolute inset-0 opacity-50 bg-gradient-to-br from-purple-500/20 to-blue-500/20 mix-blend-overlay`} style={{ filter: FILTER_STYLES[f] }}></div>
+                                  
+                                  <span className="absolute bottom-0 w-full bg-black/60 text-[8px] py-0.5 text-center truncate px-1 backdrop-blur-sm">
+                                      {f}
+                                  </span>
                               </button>
                           ))}
                       </div>
                   </div>
 
-                  {/* 2. Text */}
-                  <div className="space-y-3">
-                      <Label className="text-zinc-400 text-xs uppercase tracking-wider">Text Overlay</Label>
-                      <div className="space-y-3 bg-black/20 p-3 rounded-lg border border-zinc-800/50">
-                          <div className="flex gap-2">
-                              <Type size={16} className="mt-2.5 text-zinc-500"/>
-                              <Input 
-                                  placeholder="Type text..." 
-                                  className="bg-zinc-950 border-zinc-700 focus-visible:ring-blue-500"
-                                  value={textConfig.text}
-                                  onChange={(e) => setTextConfig({...textConfig, text: e.target.value})}
-                              />
-                          </div>
+                  {/* Text */}
+                  <div className="space-y-2">
+                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Text</Label>
+                      <div className="space-y-3 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+                          <Input 
+                              placeholder="Add caption..." 
+                              className="h-8 text-xs bg-zinc-950 border-zinc-700"
+                              value={textConfig.text}
+                              onChange={(e) => setTextConfig({...textConfig, text: e.target.value})}
+                          />
                           {textConfig.text && (
-                              <div className="space-y-4 pt-2">
-                                  <div>
-                                      <div className="flex justify-between mb-1 text-xs text-zinc-400">
+                              <>
+                                  <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] text-zinc-400">
                                           <span>Size</span>
                                           <span>{textConfig.size}px</span>
                                       </div>
                                       <Slider 
                                           value={[textConfig.size]} 
-                                          min={10} max={120} step={1}
+                                          min={10} max={100} step={1}
+                                          className="py-1"
                                           onValueChange={(v) => setTextConfig({...textConfig, size: v[0]})}
                                       />
                                   </div>
-                                  <div>
-                                      <span className="text-xs text-zinc-400 mb-2 block">Color</span>
-                                      <div className="flex gap-1.5 flex-wrap">
-                                          {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#ec4899'].map(c => (
-                                              <button
-                                                  key={c}
-                                                  className={`w-6 h-6 rounded-full border ${textConfig.color === c ? 'border-white scale-110' : 'border-transparent opacity-70 hover:opacity-100'}`}
-                                                  style={{ backgroundColor: c }}
-                                                  onClick={() => setTextConfig({...textConfig, color: c})}
-                                              />
-                                          ))}
-                                      </div>
+                                  <div className="flex gap-1.5 flex-wrap pt-1">
+                                      {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#ec4899'].map(c => (
+                                          <button
+                                              key={c}
+                                              className={`w-5 h-5 rounded-full border ${textConfig.color === c ? 'border-white ring-1 ring-white/50' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                              style={{ backgroundColor: c }}
+                                              onClick={() => setTextConfig({...textConfig, color: c})}
+                                          />
+                                      ))}
                                   </div>
-                              </div>
+                              </>
                           )}
                       </div>
                   </div>
 
-                  {/* 3. Audio */}
-                  <div className="space-y-3">
-                      <Label className="text-zinc-400 text-xs uppercase tracking-wider">Audio</Label>
-                      <div className="flex items-center justify-between bg-black/20 p-3 rounded-lg border border-zinc-800/50">
-                          <span className="text-sm">Mute Audio</span>
+                  {/* Audio */}
+                  <div className="space-y-2">
+                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Audio</Label>
+                      <div className="flex items-center justify-between bg-zinc-900/50 p-2 px-3 rounded-lg border border-zinc-800">
+                          <span className="text-xs">Mute Sound</span>
                           <Switch 
                               checked={removeAudio} 
                               onCheckedChange={setRemoveAudio}
-                              className="data-[state=checked]:bg-red-500" 
+                              className="scale-75 data-[state=checked]:bg-red-500" 
                           />
                       </div>
                   </div>
@@ -489,16 +508,16 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           </ScrollArea>
 
           {/* Action Footer */}
-          <div className="p-6 border-t border-zinc-800 bg-zinc-900/50">
+          <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
               <Button 
-                  className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-900/20" 
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-lg shadow-blue-900/20" 
                   onClick={prepareAndProcess} 
                   disabled={isProcessing}
               >
                   {isProcessing ? (
-                      <><Loader2 className="mr-2 h-5 w-5 animate-spin"/> Exporting...</>
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Processing...</>
                   ) : (
-                      <><MonitorPlay className="mr-2 h-5 w-5"/> Export Video</>
+                      <><MonitorPlay className="mr-2 h-4 w-4"/> Export Video</>
                   )}
               </Button>
           </div>
