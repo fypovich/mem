@@ -42,7 +42,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
   
   // --- Editor Options ---
   const [trimRange, setTrimRange] = useState<[number, number]>([0, 100]) // %
-  const [crop, setCrop] = useState<CropOptions>({ x: 0, y: 0, width: 0, height: 0 }) // Pixels relative to container
+  const [crop, setCrop] = useState<CropOptions>({ x: 0, y: 0, width: 0, height: 0 }) 
   const [textConfig, setTextConfig] = useState<TextOptions>({
     text: "",
     size: 40,
@@ -65,7 +65,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
 
   // --- Initialization & Thumbnail Generation ---
   useEffect(() => {
-    // Generate thumbnails roughly representing the video content
     const generateThumbnails = async () => {
         if (!videoRef.current) return;
         const vid = document.createElement('video');
@@ -82,10 +81,10 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
         if (!ctx) return;
 
         const thumbs: string[] = [];
-        const count = 10; // Number of thumbnails
+        const count = 10;
         const interval = vid.duration / count;
         
-        canvas.width = 160; // Low res for performance
+        canvas.width = 160;
         canvas.height = 90;
 
         for (let i = 0; i < count; i++) {
@@ -97,14 +96,12 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
         setThumbnails(thumbs);
     };
 
-    // Delay slightly to let DOM render
     setTimeout(generateThumbnails, 1000);
   }, [videoUrl]);
 
   const handleLoadedMetadata = () => {
     if (videoRef.current && containerRef.current) {
       setDuration(videoRef.current.duration)
-      // Initialize Crop to full size by default
       const { width, height } = containerRef.current.getBoundingClientRect()
       setCrop({ x: 0, y: 0, width: width, height: height })
     }
@@ -124,22 +121,19 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       const time = videoRef.current.currentTime;
       setCurrentTime(time);
       
-      // Auto-loop within trim range
       const endSecond = (trimRange[1] / 100) * duration;
       const startSecond = (trimRange[0] / 100) * duration;
       
       if (time >= endSecond) {
           videoRef.current.currentTime = startSecond;
-          if(!isPlaying) togglePlay(); // Optional: stop or loop
+          if(!isPlaying) togglePlay(); 
       }
     }
   }
 
-// --- Interaction Helpers ---
+  // --- Interaction Helpers ---
   const getMousePos = (e: React.MouseEvent) => {
-      // ИСПРАВЛЕНИЕ: Всегда возвращаем полный объект, даже если реф пуст
       if (!containerRef.current) return { x: 0, y: 0, containerW: 0, containerH: 0 };
-      
       const rect = containerRef.current.getBoundingClientRect();
       return {
           x: e.clientX - rect.left,
@@ -149,10 +143,10 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       }
   }
 
-// --- Mouse Handlers (The Core Logic) ---
+  // --- Mouse Handlers ---
   const handleMouseDown = (e: React.MouseEvent, mode: InteractionMode, handle?: ResizeHandle) => {
       e.stopPropagation();
-      e.preventDefault(); // Предотвращаем выделение текста браузером
+      e.preventDefault(); 
       const pos = getMousePos(e);
       
       dragStartRef.current = { x: pos.x, y: pos.y };
@@ -160,7 +154,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
 
       if (mode === 'crop-resize' && handle) {
           activeHandleRef.current = handle;
-          // Копируем текущий кроп, чтобы отталкиваться от него
           cropStartRef.current = { ...crop };
       } else if (mode === 'crop-move') {
           cropStartRef.current = { ...crop };
@@ -171,7 +164,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       if (interactionMode === 'none' || !dragStartRef.current || !containerRef.current) return;
       
       const pos = getMousePos(e);
-      // Если контейнер вдруг 0 (например, не загрузился), выходим
       if (pos.containerW === 0) return;
 
       const deltaX = pos.x - dragStartRef.current.x;
@@ -190,7 +182,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           let newX = cropStartRef.current.x + deltaX;
           let newY = cropStartRef.current.y + deltaY;
 
-          // Constraints
           newX = Math.max(0, Math.min(newX, pos.containerW - crop.width));
           newY = Math.max(0, Math.min(newY, pos.containerH - crop.height));
 
@@ -200,32 +191,26 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       // 3. RESIZE CROP
       if (interactionMode === 'crop-resize' && cropStartRef.current && activeHandleRef.current) {
           const start = cropStartRef.current;
-          let { x, y, width, height } = start; // Используем let, так как будем менять значения
+          let { x, y, width, height } = start; 
           const handle = activeHandleRef.current;
 
-          // Horizontal Resize
           if (handle.includes('e')) width = start.width + deltaX;
           if (handle.includes('w')) {
               width = start.width - deltaX;
               x = start.x + deltaX;
           }
 
-          // Vertical Resize
           if (handle.includes('s')) height = start.height + deltaY;
           if (handle.includes('n')) {
               height = start.height - deltaY;
               y = start.y + deltaY;
           }
 
-          // Min Size Constraints
           if (width < 50) width = 50;
           if (height < 50) height = 50;
 
-          // Boundary Constraints (prevent resizing outside container)
           if (x < 0) { width += x; x = 0; }
           if (y < 0) { height += y; y = 0; }
-          
-          // Исправлено: теперь TypeScript знает, что pos.containerW существует
           if (x + width > pos.containerW) width = pos.containerW - x;
           if (y + height > pos.containerH) height = pos.containerH - y;
 
@@ -244,7 +229,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
   const prepareAndProcess = () => {
     if (!videoRef.current || !containerRef.current) return;
 
-    // Scale Crop to Real Video Resolution
     const videoRect = containerRef.current.getBoundingClientRect();
     const naturalWidth = videoRef.current.videoWidth;
     const naturalHeight = videoRef.current.videoHeight;
@@ -280,10 +264,11 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
          onMouseMove={handleMouseMove}>
       
       {/* --- LEFT COLUMN: PREVIEW & TIMELINE --- */}
-      <div className="flex-1 flex flex-col min-w-0 p-4 gap-2"> {/* gap-4 -> gap-2 */}
+      {/* Уменьшили gap до gap-2 и padding до p-2 для максимальной компактности */}
+      <div className="flex-1 flex flex-col min-w-0 p-2 gap-2"> 
         
         {/* Video Container */}
-        {/* Added min-h-0 to allow proper flex shrinking */}
+        {/* max-h-[40vh] делает видео меньше, освобождая место. min-h-0 важен для сжатия */}
         <div className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-900/50 rounded-xl border border-zinc-800 overflow-hidden select-none">
             <div ref={containerRef} className="relative shadow-2xl">
                 {videoUrl ? (
@@ -291,13 +276,13 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                         <video
                             ref={videoRef}
                             src={videoUrl}
-                            className="max-h-[50vh] max-w-full pointer-events-none block" // Reduced to 50vh
+                            className="max-h-[40vh] max-w-full pointer-events-none block" 
                             style={{ filter: FILTER_STYLES[filter] || 'none' }}
                             onTimeUpdate={handleTimeUpdate}
                             onLoadedMetadata={handleLoadedMetadata}
                         />
 
-                        {/* CROP OVERLAY (Always Active) */}
+                        {/* CROP OVERLAY */}
                         <div 
                             className="absolute border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] cursor-move group"
                             style={{
@@ -308,7 +293,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                             }}
                             onMouseDown={(e) => handleMouseDown(e, 'crop-move')}
                         >
-                            {/* Grid Lines (Rule of Thirds) */}
                             <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-0 group-hover:opacity-30 transition-opacity">
                                 <div className="border-r border-white/50 col-span-1 row-span-3"></div>
                                 <div className="border-r border-white/50 col-span-1 row-span-3"></div>
@@ -316,7 +300,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                                 <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-2/3"></div>
                             </div>
 
-                            {/* Resize Handles */}
                             {(['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'] as ResizeHandle[]).map((h) => (
                                 <div
                                     key={h}
@@ -363,37 +346,35 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
         </div>
 
         {/* Timeline Area */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 shrink-0">
-            <div className="flex items-center justify-between mb-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 shrink-0">
+            <div className="flex items-center justify-between mb-1">
                 <div className="flex gap-2">
-                    <Button size="icon" variant="secondary" className="rounded-full h-10 w-10" onClick={togglePlay}>
-                        {isPlaying ? <Pause size={18}/> : <Play size={18} className="ml-1"/>}
+                    <Button size="icon" variant="secondary" className="rounded-full h-8 w-8" onClick={togglePlay}>
+                        {isPlaying ? <Pause size={14}/> : <Play size={14} className="ml-1"/>}
                     </Button>
                     <div className="flex flex-col justify-center px-2">
-                        <span className="text-sm font-medium text-white">{currentTime.toFixed(1)}s</span>
-                        <span className="text-xs text-zinc-500">/ {duration.toFixed(1)}s</span>
+                        <span className="text-xs font-medium text-white">{currentTime.toFixed(1)}s</span>
+                        <span className="text-[10px] text-zinc-500">/ {duration.toFixed(1)}s</span>
                     </div>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => {
+                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => {
                     if (videoRef.current) {
                         videoRef.current.currentTime = (trimRange[0]/100) * duration;
                         setTrimRange([0, 100]);
                     }
                 }}>
-                    <RotateCcw size={14} className="mr-1"/> Reset Trim
+                    <RotateCcw size={12} className="mr-1"/> Reset
                 </Button>
             </div>
 
             {/* Visual Timeline Track */}
-            <div className="relative h-16 w-full rounded-lg overflow-hidden bg-black mt-2 group">
-                {/* Thumbnails Background */}
+            <div className="relative h-12 w-full rounded-lg overflow-hidden bg-black mt-1 group">
                 <div className="absolute inset-0 flex opacity-50">
                     {thumbnails.map((src, i) => (
                         <img key={i} src={src} className="h-full flex-1 object-cover" alt="frame" />
                     ))}
                 </div>
 
-                {/* Slider */}
                 <div className="absolute inset-0 px-0 flex items-center">
                     <Slider
                         value={trimRange}
@@ -402,16 +383,14 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                         step={0.1}
                         onValueChange={(val) => {
                             setTrimRange(val as [number, number]);
-                            // Seek on drag
                             if (videoRef.current) {
                                 videoRef.current.currentTime = (val[0] / 100) * duration;
                             }
                         }}
-                        className="w-full relative z-10 cursor-pointer py-8" // Increased touch area
+                        className="w-full relative z-10 cursor-pointer py-4"
                     />
                 </div>
                 
-                {/* Playhead Indicator */}
                 <div 
                     className="absolute top-0 bottom-0 w-0.5 bg-white z-0 pointer-events-none transition-all duration-100 ease-linear shadow-[0_0_10px_rgba(255,255,255,0.5)]"
                     style={{ left: `${(currentTime / duration) * 100}%` }}
@@ -510,7 +489,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           </ScrollArea>
 
           {/* Action Footer */}
-          {/* Increased padding to lift the button visually */}
           <div className="p-6 border-t border-zinc-800 bg-zinc-900/50">
               <Button 
                   className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-900/20" 
