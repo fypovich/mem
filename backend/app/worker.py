@@ -239,16 +239,25 @@ def animate_sticker_task(self, image_path: str, animation: str,
         print(f"Worker Error: {e}")
         raise e
     
-@shared_task(bind=True, name="app.worker.process_video_editor_task")
+@celery_app.task(name="app.worker.process_video_editor_task", bind=True)
 def process_video_editor_task(self, video_path: str, options: dict, audio_path: str = None):
     """
-    Фоновая задача обработки видео редактора.
+    Обработка видео с использованием нового VideoEditorService (MoviePy + NumPy)
     """
+    task_id = self.request.id
+    
+    # Обновляем статус: STARTED
+    redis_client.set(f"task:{task_id}", json.dumps({"status": "PROCESSING", "progress": 0}))
+
     try:
-        output_filename = f"edited_video_{uuid.uuid4()}.mp4"
-        service = VideoEditorService(output_dir="uploads")
+        # Инициализируем новый сервис
+        editor_service = VideoEditorService(output_dir=settings.UPLOAD_DIR)
         
-        final_path = service.process_video(
+        # Генерируем имя выходного файла
+        output_filename = f"edited_{uuid.uuid4()}.mp4"
+        
+        # Запускаем обработку (это займет время)
+        result_path = editor_service.process_video(
             input_path=video_path,
             output_filename=output_filename,
             trim_start=options.get('trim_start'),
@@ -257,21 +266,26 @@ def process_video_editor_task(self, video_path: str, options: dict, audio_path: 
             remove_audio=options.get('remove_audio', False),
             new_audio_path=audio_path,
             text_config=options.get('text_config'),
-            filter_name=options.get('filter_name')
+            filter_name=options.get('filter_name') # Теперь передаем имя фильтра (VHS, Groovy и т.д.)
         )
+
+        # Формируем URL результата
+        # Предполагаем, что UPLOAD_DIR раздается как static или через nginx
+        result_url = f"/static/{output_filename}"
+
+        # Обновляем статус: SUCCESS
+        result_data = {"status": "SUCCESS", "url": result_url}
+        redis_client.set(f"task:{task_id}", json.dumps(result_data))
         
-        # Удаляем временные файлы после успешной обработки
-        if os.path.exists(video_path):
-            os.remove(video_path)
-        if audio_path and os.path.exists(audio_path):
-            os.remove(audio_path)
-            
-        return {"url": f"/static/{output_filename}"}
+        # Опционально: Удаляем исходники, если они временные
+        # if os.path.exists(video_path): os.remove(video_path)
         
+        return result_data
+
     except Exception as e:
-        print(f"Video Editor Task Error: {e}")
-        # Не удаляем файлы сразу в случае ошибки, чтобы можно было дебажить, 
-        # или можно удалять в finally
+        print(f"Error processing video: {e}")
+        error_data = {"status": "FAILURE", "error": str(e)}
+        redis_client.set(f"task:{task_id}", json.dumps(error_data))
         raise e
 
 # ==========================================
