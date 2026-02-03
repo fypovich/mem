@@ -7,14 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, ChevronLeft, Download, Layers, Type, Sparkles, Image as ImageIcon, Check } from "lucide-react";
+import { Loader2, Upload, ChevronLeft, Download, Layers, Type, Sparkles, Image as ImageIcon, Check, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
 import { MaskEditor, MaskEditorRef } from "@/components/editor/mask-editor";
 
-// Анимации
+// Animations
 const ANIMATIONS = [
-    { id: 'none', label: 'Нет', icon: '🚫' },
+    { id: 'none', label: 'None', icon: '🚫' },
     { id: 'bouncy', label: 'Bouncy', icon: '🏀' },
     { id: 'jelly', label: 'Jelly', icon: '🍮' },
     { id: 'flippy', label: 'Flippy', icon: '🔄' },
@@ -29,17 +29,17 @@ export default function StickerMakerPage() {
   const router = useRouter();
   const [step, setStep] = useState<"upload" | "cutout" | "design" | "result">("upload");
   
-  // Изображения
+  // Images
   const [originalSrc, setOriginalSrc] = useState<string | null>(null);
-  const [maskedSrc, setMaskedSrc] = useState<string | null>(null); // Результат обтравки
+  const [maskedSrc, setMaskedSrc] = useState<string | null>(null); 
   const [serverPath, setServerPath] = useState<string | null>(null);
   const [finalResult, setFinalResult] = useState<string | null>(null);
 
-  // Состояние MaskEditor
+  // MaskEditor Ref
   const maskEditorRef = useRef<MaskEditorRef>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Состояние Design
+  // Design State
   const previewRef = useRef<HTMLDivElement>(null);
   const [isDraggingText, setIsDraggingText] = useState(false);
   
@@ -61,11 +61,11 @@ export default function StickerMakerPage() {
     setStep("cutout");
   };
 
-  // 2. AUTO REMOVE (Вызывается из MaskEditor)
+  // 2. AUTO REMOVE
   const handleAutoRemove = async () => {
     if (!originalSrc) return;
     setIsProcessing(true);
-    const toastId = toast.loading("AI удаляет фон...");
+    const toastId = toast.loading("AI removing background...");
     try {
         const blob = await fetch(originalSrc).then(r => r.blob());
         const file = new File([blob], "image.png", { type: blob.type });
@@ -77,16 +77,6 @@ export default function StickerMakerPage() {
                 if (status.status === "SUCCESS") {
                     clearInterval(interval);
                     const fullUrl = getFullUrl(status.result.url);
-                    // Мы не меняем originalSrc, а передаем initialMaskedUrl в редактор? 
-                    // Лучше перезагрузить MaskEditor с маской
-                    // Но MaskEditor принимает initialMaskedUrl.
-                    // Проблема: MaskEditor сейчас монтируется один раз.
-                    // Решение: заставим его перерисоваться, изменив ключ или просто передав проп
-                    // Но проще: обновим состояние, которое MaskEditor слушает
-                    // В текущей реализации MaskEditor реагирует на initialMaskedUrl в useEffect
-                    // Но нам нужно сбросить историю.
-                    
-                    // Самый простой способ: обновить ключ компонента, чтобы он пересоздался с новой маской
                     setMaskedSrc(fullUrl); 
                     setIsProcessing(false);
                     toast.dismiss(toastId);
@@ -94,7 +84,7 @@ export default function StickerMakerPage() {
                     clearInterval(interval);
                     setIsProcessing(false);
                     toast.dismiss(toastId);
-                    toast.error("Ошибка AI");
+                    toast.error("AI Error");
                 }
             } catch (e) {}
         }, 1000);
@@ -108,10 +98,9 @@ export default function StickerMakerPage() {
       if (!blob) return;
 
       const url = URL.createObjectURL(blob);
-      setMaskedSrc(url); // Теперь это наше базовое изображение для дизайна
+      setMaskedSrc(url);
       setStep("design");
 
-      // Фоновая загрузка на сервер
       uploadMaskToServer(blob);
   };
 
@@ -134,11 +123,11 @@ export default function StickerMakerPage() {
   // 4. GENERATE FINAL STICKER
   const handleGenerate = async () => {
     if (!serverPath) {
-        toast.error("Изображение еще обрабатывается...");
+        toast.error("Image is still processing...");
         return;
     }
     setIsProcessing(true);
-    const toastId = toast.loading("Создаем стикер...");
+    const toastId = toast.loading("Creating sticker...");
     try {
         // @ts-ignore
         const { task_id } = await createSticker(serverPath, anim, {
@@ -163,7 +152,7 @@ export default function StickerMakerPage() {
     } catch (e) { 
         setIsProcessing(false); 
         toast.dismiss(toastId);
-        toast.error("Ошибка при создании");
+        toast.error("Creation failed");
     }
   };
 
@@ -223,10 +212,10 @@ export default function StickerMakerPage() {
                     <ImageIcon className="h-12 w-12 text-zinc-500" />
                 </div>
                 <h1 className="mb-2 text-3xl font-bold text-white">Sticker Maker</h1>
-                <p className="mb-8 text-zinc-400">Загрузи фото, чтобы создать мем</p>
-                <Button size="lg" className="relative cursor-pointer bg-blue-600 hover:bg-blue-700 text-white rounded-full px-10 py-6 text-lg">
+                <p className="mb-8 text-zinc-400">Upload a photo to create a meme</p>
+                <Button size="lg" className="relative cursor-pointer bg-blue-600 hover:bg-blue-700 text-white rounded-full px-10 py-6 text-lg transition-all hover:scale-105">
                     <input type="file" accept="image/*" onChange={handleFileSelect} className="absolute inset-0 opacity-0 cursor-pointer" />
-                    <Upload className="mr-2 h-5 w-5" /> Выбрать фото
+                    <Upload className="mr-2 h-5 w-5" /> Select Photo
                 </Button>
             </div>
         </div>
@@ -240,16 +229,16 @@ export default function StickerMakerPage() {
                    <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20">
                        <Check className="text-green-500" size={32}/>
                    </div>
-                   <h2 className="text-2xl font-bold text-white mb-6">Готово!</h2>
+                   <h2 className="text-2xl font-bold text-white mb-6">Done!</h2>
                    <div className="bg-[url('/transparent-grid.png')] rounded-xl overflow-hidden mb-8 border border-zinc-800">
                         <img src={finalResult} className="w-full h-auto object-contain" />
                    </div>
                    <div className="flex gap-3">
                        <Button className="flex-1 h-12 text-base font-semibold bg-white text-black hover:bg-zinc-200 rounded-xl" onClick={() => window.open(finalResult, "_blank")}>
-                           <Download className="mr-2 h-4 w-4"/> Скачать
+                           <Download className="mr-2 h-4 w-4"/> Download
                        </Button>
                        <Button variant="outline" className="h-12 border-zinc-700 hover:bg-zinc-800 text-white rounded-xl" onClick={() => { setStep("upload"); setOriginalSrc(null); setMaskedSrc(null); setText(""); }}>
-                           Заново
+                           New
                        </Button>
                    </div>
                </div>
@@ -260,126 +249,141 @@ export default function StickerMakerPage() {
   return (
     <div className="flex h-screen flex-col bg-zinc-950 overflow-hidden">
       
-      {/* HEADER (Top Bar) */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-900 bg-zinc-950 z-30">
-        <Button variant="ghost" size="icon" onClick={() => step === "design" ? setStep("cutout") : setStep("upload")} className="text-zinc-400 hover:text-white">
-          <ChevronLeft className="h-6 w-6" />
-        </Button>
-        <span className="font-medium text-white">{step === 'cutout' ? 'Обтравка' : 'Дизайн'}</span>
-        <Button 
-            variant="ghost" 
-            className="text-blue-500 hover:text-blue-400 font-semibold"
-            onClick={step === 'cutout' ? handleCutoutFinish : handleGenerate}
-            disabled={isProcessing}
-        >
-          {isProcessing ? <Loader2 className="animate-spin h-5 w-5"/> : (step === 'cutout' ? 'Далее' : 'Сохранить')}
-        </Button>
-      </div>
-
-      {/* WORKSPACE */}
+      {/* Editor Workspace */}
       <div className="flex-1 relative bg-zinc-950 overflow-hidden">
         {step === "cutout" && originalSrc && (
-            // Ключ maskedSrc заставит MaskEditor пересоздаться, если AI вернет маску
             <MaskEditor
                 key={maskedSrc || "original"} 
                 ref={maskEditorRef}
                 originalUrl={originalSrc}
-                initialMaskedUrl={maskedSrc} // Если AI удалил фон, передаем сюда
+                initialMaskedUrl={maskedSrc} 
                 isProcessing={isProcessing}
                 onAutoRemove={handleAutoRemove}
+                onNext={handleCutoutFinish}
             />
         )}
 
         {step === "design" && maskedSrc && (
-            <div className="w-full h-full flex flex-col">
-                {/* SVG Filter for Outline */}
-                <svg width="0" height="0" className="absolute">
-                    <filter id="hard-outline">
-                        <feMorphology operator="dilate" radius={outlineWidth / 3} in="SourceAlpha" result="dilated"/>
-                        <feFlood floodColor={outlineColor || 'transparent'} result="flood"/>
-                        <feComposite in="flood" in2="dilated" operator="in" result="outline"/>
-                        <feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge>
-                    </filter>
-                </svg>
+            <div className="flex h-full w-full bg-zinc-950 p-4 gap-4">
+                {/* Left: Preview Area */}
+                <div className="flex-1 flex flex-col gap-4 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setStep('cutout')} 
+                            className="bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800"
+                        >
+                            <ChevronLeft size={18} className="mr-1" /> Back
+                        </Button>
+                    </div>
 
-                {/* Preview Area */}
-                <div 
-                    ref={previewRef}
-                    className="flex-1 relative overflow-hidden flex items-center justify-center bg-[url('/transparent-grid.png')]"
-                    onMouseMove={handleTextDrag}
-                    onMouseUp={() => setIsDraggingText(false)}
-                    onMouseLeave={() => setIsDraggingText(false)}
-                    onTouchMove={handleTextDrag}
-                    onTouchEnd={() => setIsDraggingText(false)}
-                    onMouseDown={() => setIsDraggingText(true)}
-                    onTouchStart={() => setIsDraggingText(true)}
-                >
                     <div 
-                        className="will-change-transform relative transition-transform"
-                        style={{ 
-                            animation: `${anim} 2s infinite linear`,
-                            animationTimingFunction: ['bouncy','jelly','zoomie','tilty','floaties'].includes(anim) ? 'ease-in-out' : anim === 'flippy' ? 'steps(1, end)' : 'linear',
-                            transformOrigin: ['tilty','bouncy'].includes(anim) ? 'bottom center' : 'center center',
-                            filter: outlineColor ? 'url(#hard-outline)' : 'none'
-                        }}
+                        ref={previewRef}
+                        className="flex-1 relative overflow-hidden rounded-xl border border-zinc-800 bg-[url('/transparent-grid.png')] flex items-center justify-center touch-none shadow-inner"
+                        onMouseMove={handleTextDrag}
+                        onMouseUp={() => setIsDraggingText(false)}
+                        onMouseLeave={() => setIsDraggingText(false)}
+                        onTouchMove={handleTextDrag}
+                        onTouchEnd={() => setIsDraggingText(false)}
+                        onMouseDown={() => setIsDraggingText(true)}
+                        onTouchStart={() => setIsDraggingText(true)}
                     >
-                         {anim === 'floaties' && [1, 2, 3].map(i => (
-                            <div key={i} className="absolute inset-0 opacity-20" style={{ animation: `floaties 2s infinite ease-in-out`, animationDelay: `-${i * 0.15}s`, zIndex: -i }}>
-                                <StickerPreviewContent />
-                            </div>
-                         ))}
-                         <StickerPreviewContent />
+                        <div 
+                            className="will-change-transform relative transition-transform"
+                            style={{ 
+                                animation: `${anim} 2s infinite linear`,
+                                animationTimingFunction: ['bouncy','jelly','zoomie','tilty','floaties'].includes(anim) ? 'ease-in-out' : anim === 'flippy' ? 'steps(1, end)' : 'linear',
+                                transformOrigin: ['tilty','bouncy'].includes(anim) ? 'bottom center' : 'center center',
+                                filter: outlineColor ? 'url(#hard-outline)' : 'none'
+                            }}
+                        >
+                             {/* SVG Filter for Outline */}
+                            <svg width="0" height="0" className="absolute">
+                                <filter id="hard-outline">
+                                    <feMorphology operator="dilate" radius={outlineWidth / 3} in="SourceAlpha" result="dilated"/>
+                                    <feFlood floodColor={outlineColor || 'transparent'} result="flood"/>
+                                    <feComposite in="flood" in2="dilated" operator="in" result="outline"/>
+                                    <feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge>
+                                </filter>
+                            </svg>
+
+                             {anim === 'floaties' && [1, 2, 3].map(i => (
+                                <div key={i} className="absolute inset-0 opacity-20" style={{ animation: `floaties 2s infinite ease-in-out`, animationDelay: `-${i * 0.15}s`, zIndex: -i }}>
+                                    <StickerPreviewContent />
+                                </div>
+                             ))}
+                             <StickerPreviewContent />
+                        </div>
                     </div>
                 </div>
 
-                {/* Bottom Tabs (Style 2.png) */}
-                <div className="bg-zinc-950 border-t border-zinc-900 pb-safe z-20">
-                     <Tabs defaultValue="outline" className="w-full">
+                {/* Right: Design Controls */}
+                <div className="w-80 flex flex-col bg-zinc-900 rounded-xl border border-zinc-800 shadow-xl h-full overflow-hidden flex-shrink-0">
+                     <Tabs defaultValue="outline" className="flex-1 flex flex-col">
                          
-                         {/* Controls Area */}
-                         <div className="h-40 p-4 overflow-y-auto">
-                            <TabsContent value="outline" className="mt-0 space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="flex justify-between text-sm text-zinc-400"><span>Толщина</span><span>{outlineWidth}px</span></div>
-                                <Slider value={[outlineWidth]} onValueChange={v => setOutlineWidth(v[0])} max={20} step={1} />
-                                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                                    <button onClick={() => setOutlineColor(null)} className="w-8 h-8 rounded-full border border-zinc-700 flex items-center justify-center flex-shrink-0">✕</button>
-                                    {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#ec4899', '#8b5cf6'].map(c => (
-                                        <button 
-                                            key={c}
-                                            className={`w-8 h-8 rounded-full border-2 flex-shrink-0 transition-all ${outlineColor === c ? 'border-white scale-110' : 'border-transparent'}`}
-                                            style={{ backgroundColor: c }}
-                                            onClick={() => setOutlineColor(c)}
-                                        />
-                                    ))}
-                                </div>
-                            </TabsContent>
+                         <div className="p-4 border-b border-zinc-800">
+                            <h3 className="text-lg font-bold text-white mb-4">Design</h3>
+                            <TabsList className="w-full grid grid-cols-3 bg-zinc-950">
+                                <TabsTrigger value="outline">Outline</TabsTrigger>
+                                <TabsTrigger value="text">Text</TabsTrigger>
+                                <TabsTrigger value="effects">Effect</TabsTrigger>
+                            </TabsList>
+                         </div>
 
-                            <TabsContent value="text" className="mt-0 space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="flex gap-2">
-                                    <Input 
-                                        placeholder="Текст мема..." 
-                                        value={text}
-                                        onChange={(e) => setText(e.target.value)}
-                                        className="bg-zinc-900 border-zinc-800 text-white focus:ring-0"
-                                    />
-                                    <div className="w-10 h-10 rounded-md border border-zinc-700 overflow-hidden relative flex-shrink-0">
-                                         <input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full"/>
-                                         <div className="w-full h-full" style={{backgroundColor: textColor}}/>
+                         <div className="flex-1 p-6 overflow-y-auto">
+                            <TabsContent value="outline" className="mt-0 space-y-6 animate-in fade-in slide-in-from-right-4">
+                                <div className="space-y-4">
+                                    <Label className="text-white">Color</Label>
+                                    <div className="grid grid-cols-5 gap-2">
+                                        <button onClick={() => setOutlineColor(null)} className="aspect-square rounded-full border border-zinc-700 flex items-center justify-center hover:bg-zinc-800 text-zinc-400">✕</button>
+                                        {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#ec4899', '#8b5cf6', '#f97316'].map(c => (
+                                            <button 
+                                                key={c}
+                                                className={`aspect-square rounded-full border-2 transition-all ${outlineColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+                                                style={{ backgroundColor: c }}
+                                                onClick={() => setOutlineColor(c)}
+                                            />
+                                        ))}
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-xs text-zinc-500">Размер</span>
-                                    <Slider value={[textSize]} onValueChange={v => setTextSize(v[0])} min={10} max={60} step={1} className="flex-1" />
+                                <div className="space-y-4">
+                                    <div className="flex justify-between text-sm text-zinc-400"><span>Width</span><span>{outlineWidth}px</span></div>
+                                    <Slider value={[outlineWidth]} onValueChange={v => setOutlineWidth(v[0])} max={20} step={1} />
                                 </div>
                             </TabsContent>
 
-                            <TabsContent value="effects" className="mt-0 animate-in fade-in slide-in-from-bottom-4">
-                                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                            <TabsContent value="text" className="mt-0 space-y-6 animate-in fade-in slide-in-from-right-4">
+                                <div className="space-y-3">
+                                    <Label className="text-white">Content</Label>
+                                    <div className="flex gap-2">
+                                        <Input 
+                                            placeholder="Top text..." 
+                                            value={text}
+                                            onChange={(e) => setText(e.target.value)}
+                                            className="bg-zinc-950 border-zinc-800 text-white focus:ring-purple-500"
+                                        />
+                                        <div className="w-10 h-10 rounded-md border border-zinc-700 overflow-hidden relative flex-shrink-0 cursor-pointer">
+                                             <input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"/>
+                                             <div className="w-full h-full" style={{backgroundColor: textColor}}/>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between text-sm text-zinc-400"><span>Size</span><span>{textSize}</span></div>
+                                    <Slider value={[textSize]} onValueChange={v => setTextSize(v[0])} min={10} max={60} step={1} />
+                                </div>
+                                <div className="text-xs text-zinc-500 p-3 bg-zinc-950 rounded-lg border border-zinc-800">
+                                    Tip: Drag text on the image to position it.
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="effects" className="mt-0 space-y-4 animate-in fade-in slide-in-from-right-4">
+                                <div className="grid grid-cols-3 gap-3">
                                     {ANIMATIONS.map(a => (
                                         <button 
                                             key={a.id} 
                                             onClick={() => setAnim(a.id)}
-                                            className={`flex flex-col items-center gap-1 p-2 rounded-xl min-w-[70px] border transition-all ${anim === a.id ? 'bg-zinc-800 border-zinc-600 text-white' : 'border-transparent text-zinc-500 hover:bg-zinc-900'}`}
+                                            className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${anim === a.id ? 'bg-purple-600 border-purple-500 text-white shadow-lg' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
                                         >
                                             <span className="text-2xl">{a.icon}</span>
                                             <span className="text-[10px] font-medium">{a.label}</span>
@@ -389,21 +393,12 @@ export default function StickerMakerPage() {
                             </TabsContent>
                          </div>
 
-                         {/* Tab Triggers */}
-                         <TabsList className="w-full h-16 rounded-none bg-zinc-950 border-t border-zinc-900 grid grid-cols-3 p-0">
-                            <TabsTrigger value="outline" className="h-full rounded-none border-t-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-zinc-900/50 data-[state=active]:text-white text-zinc-500 flex flex-col gap-1">
-                                <div className="w-5 h-5 border-2 border-current rounded-full" />
-                                <span className="text-[10px]">Обводка</span>
-                            </TabsTrigger>
-                            <TabsTrigger value="text" className="h-full rounded-none border-t-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-zinc-900/50 data-[state=active]:text-white text-zinc-500 flex flex-col gap-1">
-                                <Type size={20} />
-                                <span className="text-[10px]">Текст</span>
-                            </TabsTrigger>
-                             <TabsTrigger value="effects" className="h-full rounded-none border-t-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-zinc-900/50 data-[state=active]:text-white text-zinc-500 flex flex-col gap-1">
-                                <Sparkles size={20} />
-                                <span className="text-[10px]">Эффекты</span>
-                            </TabsTrigger>
-                        </TabsList>
+                         <div className="p-6 border-t border-zinc-800 bg-zinc-900 mt-auto">
+                            <Button onClick={handleGenerate} disabled={isProcessing} className="w-full h-12 bg-white text-black hover:bg-zinc-200 font-bold text-lg rounded-xl shadow-lg">
+                                {isProcessing ? <Loader2 className="animate-spin mr-2"/> : <Sparkles className="mr-2" size={18}/>}
+                                Create Sticker
+                            </Button>
+                         </div>
                     </Tabs>
                 </div>
             </div>

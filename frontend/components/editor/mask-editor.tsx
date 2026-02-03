@@ -3,14 +3,16 @@
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { Eraser, RotateCcw, Scissors, Wand2, Undo, Redo, ZoomIn } from "lucide-react";
+import { Eraser, RotateCcw, Scissors, Wand2, Undo, Redo, ZoomIn, ChevronRight, MousePointer2 } from "lucide-react";
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface MaskEditorProps {
   originalUrl: string;
   initialMaskedUrl?: string | null;
   isProcessing?: boolean;
   onAutoRemove?: () => void;
+  onNext?: () => void;
 }
 
 export interface MaskEditorRef {
@@ -20,33 +22,33 @@ export interface MaskEditorRef {
 }
 
 export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
-  ({ originalUrl, initialMaskedUrl, isProcessing, onAutoRemove }, ref) => {
+  ({ originalUrl, initialMaskedUrl, isProcessing, onAutoRemove, onNext }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
-    // Состояние изображения
+    // Image State
     const [originalImg, setOriginalImg] = useState<HTMLImageElement | null>(null);
     
-    // Состояние UI (убрали 'brush', так как есть 'restore')
+    // UI State
     const [tool, setTool] = useState<'eraser' | 'restore' | 'lasso' | 'move'>('eraser');
     const [brushSize, setBrushSize] = useState(30);
     
-    // Состояние холста (Zoom/Pan)
+    // Canvas State (Zoom/Pan)
     const [scale, setScale] = useState(1);
     const [offset, setOffset] = useState({ x: 0, y: 0 });
     const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
     const [lastPointerPos, setLastPointerPos] = useState({ x: 0, y: 0 });
 
-    // История
+    // History
     const [history, setHistory] = useState<ImageData[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
-    // Рисование
+    // Drawing
     const [isDrawing, setIsDrawing] = useState(false);
     const [lassoPoints, setLassoPoints] = useState<{x: number, y: number}[]>([]);
     const [currentPointer, setCurrentPointer] = useState<{x: number, y: number} | null>(null);
 
-    // 1. Инициализация
+    // 1. Initialization
     useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -59,20 +61,16 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
       img.onload = () => {
         setOriginalImg(img);
         
-        // Устанавливаем размер канваса равным размеру картинки
         canvas.width = img.width;
         canvas.height = img.height;
 
-        // Начальная отрисовка
         ctx.drawImage(img, 0, 0);
 
-        // Если есть маска от AI
         if (initialMaskedUrl) {
           const mask = new Image();
           mask.crossOrigin = "anonymous";
           mask.src = initialMaskedUrl;
           mask.onload = () => {
-             // Очищаем канвас и рисуем маску
              ctx.clearRect(0, 0, canvas.width, canvas.height);
              ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
              saveState();
@@ -85,13 +83,12 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
       };
     }, [originalUrl, initialMaskedUrl]);
 
-    // Центрирование изображения при загрузке
     const centerImage = (imgW: number, imgH: number) => {
         if (!containerRef.current) return;
         const { clientWidth, clientHeight } = containerRef.current;
         const scaleX = clientWidth / imgW;
         const scaleY = clientHeight / imgH;
-        const newScale = Math.min(scaleX, scaleY) * 0.9; // 90% заполнения
+        const newScale = Math.min(scaleX, scaleY) * 0.9;
         
         setScale(newScale);
         setOffset({
@@ -100,7 +97,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         });
     };
 
-    // 2. История изменений
+    // 2. History
     const saveState = () => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
@@ -110,7 +107,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(imageData);
         
-        if (newHistory.length > 20) newHistory.shift(); // Лимит истории
+        if (newHistory.length > 20) newHistory.shift();
         
         setHistory(newHistory);
         setHistoryIndex(newHistory.length - 1);
@@ -134,7 +131,6 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         }
     };
 
-    // 3. API для родителя
     useImperativeHandle(ref, () => ({
         save: async () => {
             return new Promise((resolve) => {
@@ -145,7 +141,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         redo: handleRedo
     }));
 
-    // 4. Логика взаимодействия
+    // 3. Interaction
     const getPointerPos = (e: React.PointerEvent) => {
         if (!containerRef.current) return { x: 0, y: 0 };
         const rect = containerRef.current.getBoundingClientRect();
@@ -166,7 +162,6 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         const { x, y } = getPointerPos(e);
         setLastPointerPos({ x, y });
         
-        // Если это перемещение холста (или пробел/средняя кнопка)
         if (tool === 'move' || e.button === 1) {
             setIsDraggingCanvas(true);
             return;
@@ -187,7 +182,6 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         const p = toCanvasCoords(x, y);
         setCurrentPointer(p);
 
-        // Перемещение холста
         if (isDraggingCanvas) {
             const dx = x - lastPointerPos.x;
             const dy = y - lastPointerPos.y;
@@ -217,7 +211,6 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         }
     };
 
-    // Функция рисования (Кисть / Ластик)
     const draw = (x: number, y: number) => {
         const ctx = canvasRef.current?.getContext('2d');
         if (!ctx || !originalImg) return;
@@ -229,23 +222,20 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         if (tool === 'eraser') {
             ctx.globalCompositeOperation = 'destination-out';
             ctx.beginPath();
-            ctx.moveTo(x, y); // Для точек
-            ctx.lineTo(x, y); // Для линий
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y);
             ctx.stroke();
         } else if (tool === 'restore') {
-            // Восстановление: рисуем оригинальным изображением
             ctx.globalCompositeOperation = 'source-over';
             ctx.save();
             ctx.beginPath();
             ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
             ctx.clip();
-            // Рисуем оригинал ровно в том месте, где он должен быть
             ctx.drawImage(originalImg, 0, 0);
             ctx.restore();
         }
     };
 
-    // Применение лассо
     const applyLasso = () => {
         const ctx = canvasRef.current?.getContext('2d');
         if (!ctx || lassoPoints.length < 3) {
@@ -268,117 +258,133 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
     };
 
     return (
-        <div className="relative w-full h-full flex flex-col bg-zinc-950 overflow-hidden">
-            {/* Рабочая область */}
-            <div 
-                ref={containerRef}
-                className="flex-1 relative overflow-hidden touch-none bg-[url('/transparent-grid.png')]"
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerLeave={handlePointerUp}
-                onWheel={(e) => {
-                    const newScale = Math.max(0.1, Math.min(5, scale - e.deltaY * 0.001));
-                    setScale(newScale);
-                }}
-            >
-                <canvas 
-                    ref={canvasRef}
-                    className="absolute origin-top-left"
-                    style={{
-                        transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-                        cursor: tool === 'move' ? 'grab' : 'none'
-                    }}
-                />
-
-                <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                    {/* Линия лассо */}
-                    {tool === 'lasso' && lassoPoints.length > 0 && (
-                        <path 
-                            d={`M ${lassoPoints.map(p => `${p.x * scale + offset.x},${p.y * scale + offset.y}`).join(' L ')}`}
-                            fill="rgba(59, 130, 246, 0.2)"
-                            stroke="#3b82f6"
-                            strokeWidth="2"
-                        />
-                    )}
+        <div className="flex h-full w-full bg-zinc-950 p-4 gap-4">
+            {/* Left Column: Canvas & History */}
+            <div className="flex-1 flex flex-col gap-4 min-w-0">
+                {/* Header Actions (Undo/Redo) */}
+                <div className="flex items-center gap-2">
+                    <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={handleUndo} 
+                        disabled={historyIndex <= 0} 
+                        className="bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800 w-10 h-10"
+                    >
+                        <Undo size={18} />
+                    </Button>
+                    <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={handleRedo} 
+                        disabled={historyIndex >= history.length - 1} 
+                        className="bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800 w-10 h-10"
+                    >
+                        <Redo size={18} />
+                    </Button>
                     
-                    {/* Курсор кисти */}
-                    {currentPointer && tool !== 'lasso' && tool !== 'move' && (
-                        <circle 
-                            cx={currentPointer.x * scale + offset.x}
-                            cy={currentPointer.y * scale + offset.y}
-                            r={(brushSize * scale) / 2}
-                            fill="none"
-                            stroke={tool === 'restore' ? '#22c55e' : 'white'}
-                            strokeWidth="2"
-                            className="drop-shadow-md"
-                        />
-                    )}
-                </svg>
+                    <div className="ml-auto flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
+                        <MousePointer2 size={12}/> Scroll to zoom • Drag to pan
+                    </div>
+                </div>
+
+                {/* Canvas Area */}
+                <div 
+                    ref={containerRef}
+                    className="flex-1 relative overflow-hidden rounded-xl border border-zinc-800 bg-[url('/transparent-grid.png')] touch-none shadow-inner"
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerLeave={handlePointerUp}
+                    onWheel={(e) => {
+                        const newScale = Math.max(0.1, Math.min(5, scale - e.deltaY * 0.001));
+                        setScale(newScale);
+                    }}
+                >
+                    <canvas 
+                        ref={canvasRef}
+                        className="absolute origin-top-left"
+                        style={{
+                            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+                            cursor: tool === 'move' ? 'grab' : 'none'
+                        }}
+                    />
+
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                        {tool === 'lasso' && lassoPoints.length > 0 && (
+                            <path 
+                                d={`M ${lassoPoints.map(p => `${p.x * scale + offset.x},${p.y * scale + offset.y}`).join(' L ')}`}
+                                fill="rgba(59, 130, 246, 0.2)"
+                                stroke="#3b82f6"
+                                strokeWidth="2"
+                            />
+                        )}
+                        {currentPointer && tool !== 'lasso' && tool !== 'move' && (
+                            <circle 
+                                cx={currentPointer.x * scale + offset.x}
+                                cy={currentPointer.y * scale + offset.y}
+                                r={(brushSize * scale) / 2}
+                                fill="none"
+                                stroke={tool === 'restore' ? '#22c55e' : 'white'}
+                                strokeWidth="2"
+                                className="drop-shadow-md"
+                            />
+                        )}
+                    </svg>
+                </div>
             </div>
 
-            {/* Нижняя панель инструментов */}
-            <div className="h-auto bg-zinc-950 border-t border-zinc-900 p-4 pb-8 flex flex-col gap-4 z-20">
-                
-                {/* Слайдер размера (только для кисти/ластика) - ИСПРАВЛЕНА ОШИБКА ТУТ */}
-                {(tool === 'eraser' || tool === 'restore') && (
-                    <div className="flex items-center gap-4 px-4 animate-in slide-in-from-bottom-2">
-                        <span className="text-xs text-zinc-500 font-medium w-12">Размер</span>
-                        <Slider 
-                            value={[brushSize]} 
-                            onValueChange={v => setBrushSize(v[0])} 
-                            min={5} max={100} step={1} 
-                            className="flex-1"
-                        />
-                        <span className="text-xs text-zinc-400 w-8 text-right">{brushSize}</span>
-                    </div>
-                )}
+            {/* Right Column: Tools */}
+            <div className="w-80 flex flex-col gap-6 bg-zinc-900 rounded-xl p-6 border border-zinc-800 shadow-xl h-full flex-shrink-0">
+                <div>
+                    <h3 className="text-lg font-bold text-white mb-1">Tools</h3>
+                    <p className="text-xs text-zinc-500">Remove background and clean up</p>
+                </div>
 
-                {/* Основные кнопки */}
-                <div className="flex items-center justify-between max-w-md mx-auto w-full px-2">
-                    {/* История */}
-                    <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={handleUndo} disabled={historyIndex <= 0} className="text-zinc-400 hover:text-white">
-                            <Undo size={20} />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="text-zinc-400 hover:text-white">
-                            <Redo size={20} />
-                        </Button>
+                {/* Auto Remove */}
+                <Button 
+                    variant="outline"
+                    onClick={onAutoRemove}
+                    disabled={isProcessing}
+                    className="w-full justify-start gap-3 h-14 bg-zinc-950 border-zinc-800 hover:bg-zinc-800 hover:border-purple-500/50 text-left group transition-all"
+                >
+                    <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center group-hover:bg-purple-500/20">
+                        {isProcessing ? <Loader2 className="animate-spin text-purple-500" size={18}/> : <Wand2 className="text-purple-500" size={18}/>}
                     </div>
+                    <div className="flex flex-col items-start">
+                        <span className="text-sm font-bold text-white">Auto Remove</span>
+                        <span className="text-[10px] text-zinc-500">AI Background Removal</span>
+                    </div>
+                </Button>
 
-                    {/* Инструменты */}
-                    <div className="flex bg-zinc-900 rounded-full p-1 gap-1 border border-zinc-800">
-                        <ToolButton 
-                            active={tool === 'lasso'} 
-                            onClick={() => setTool('lasso')} 
-                            icon={<Scissors size={18} />} 
-                        />
-                         <ToolButton 
-                            active={tool === 'eraser'} 
-                            onClick={() => setTool('eraser')} 
-                            icon={<Eraser size={18} />} 
-                        />
-                         <ToolButton 
-                            active={tool === 'restore'} 
-                            onClick={() => setTool('restore')} 
-                            icon={<RotateCcw size={18} />} 
-                        />
-                         <ToolButton 
-                            active={tool === 'move'} 
-                            onClick={() => setTool('move')} 
-                            icon={<ZoomIn size={18} />} 
-                        />
+                <div className="space-y-4 flex-1">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Manual Tools</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                        <ToolButton active={tool === 'eraser'} onClick={() => setTool('eraser')} icon={<Eraser size={20} />} label="Eraser" />
+                        <ToolButton active={tool === 'restore'} onClick={() => setTool('restore')} icon={<RotateCcw size={20} />} label="Restore" />
+                        <ToolButton active={tool === 'lasso'} onClick={() => setTool('lasso')} icon={<Scissors size={20} />} label="Lasso" />
+                        <ToolButton active={tool === 'move'} onClick={() => setTool('move')} icon={<ZoomIn size={20} />} label="Move" />
                     </div>
 
-                    {/* AI Magic */}
+                    {(tool === 'eraser' || tool === 'restore') && (
+                        <div className="space-y-3 p-4 bg-zinc-950 rounded-xl border border-zinc-800 mt-4 animate-in fade-in slide-in-from-top-2">
+                            <div className="flex justify-between text-xs font-medium text-zinc-400">
+                                <span>Brush Size</span>
+                                <span className="text-white">{brushSize}px</span>
+                            </div>
+                            <Slider value={[brushSize]} onValueChange={v => setBrushSize(v[0])} min={5} max={100} step={1} className="py-2" />
+                        </div>
+                    )}
+                </div>
+
+                <div className="mt-auto pt-6 border-t border-zinc-800">
                     <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={onAutoRemove}
-                        disabled={isProcessing}
-                        className={`text-purple-400 hover:bg-purple-500/10 hover:text-purple-300 ${isProcessing ? 'animate-pulse' : ''}`}
+                        className="w-full h-12 bg-white text-black hover:bg-zinc-200 font-bold text-lg rounded-xl shadow-lg shadow-white/5"
+                        onClick={onNext}
                     >
-                        {isProcessing ? <Loader2 className="animate-spin" size={22}/> : <Wand2 size={22}/>}
+                        Next Step <ChevronRight size={20} className="ml-1" />
                     </Button>
                 </div>
             </div>
@@ -388,18 +394,19 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
 
 MaskEditor.displayName = "MaskEditor";
 
-// Вспомогательный компонент кнопки
-function ToolButton({ active, onClick, icon }: { active: boolean, onClick: () => void, icon: React.ReactNode }) {
+function ToolButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
     return (
         <button
             onClick={onClick}
-            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+            className={cn(
+                "flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all duration-200",
                 active 
-                ? 'bg-zinc-700 text-white shadow-sm' 
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-            }`}
+                ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20 scale-[1.02]" 
+                : "bg-zinc-950 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white hover:border-zinc-700"
+            )}
         >
             {icon}
+            <span className="text-xs font-medium">{label}</span>
         </button>
     )
 }
