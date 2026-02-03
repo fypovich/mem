@@ -205,7 +205,8 @@ export default function StickerMakerPage() {
 
   if (step === "upload") {
     return (
-        <div className="flex h-screen items-center justify-center bg-zinc-950 p-4">
+        // Используем fixed позиционирование и здесь, чтобы перекрыть стандартный лейаут
+        <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex h-[calc(100vh-3.5rem)] items-center justify-center bg-zinc-950 p-4">
             <div className="text-center animate-in zoom-in-95">
                 <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full bg-zinc-900 border border-zinc-800 shadow-xl">
                     <ImageIcon className="h-12 w-12 text-zinc-500" />
@@ -223,7 +224,7 @@ export default function StickerMakerPage() {
 
   if (step === "result" && finalResult) {
       return (
-          <div className="flex h-screen flex-col items-center justify-center bg-zinc-950 p-4">
+          <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex h-[calc(100vh-3.5rem)] flex-col items-center justify-center bg-zinc-950 p-4">
                <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl text-center max-w-md w-full animate-in zoom-in-95">
                    <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20">
                        <Check className="text-green-500" size={32}/>
@@ -246,7 +247,11 @@ export default function StickerMakerPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-950 overflow-hidden text-white">
+    // ГЛАВНЫЙ КОНТЕЙНЕР
+    // fixed: Вырываем из потока layout.tsx
+    // top-14: Отступаем высоту хедера (3.5rem)
+    // left-0 md:left-64: Отступаем ширину сайдбара на десктопе
+    <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex flex-col bg-zinc-950 overflow-hidden text-white">
       
       {/* HEADER (Top Bar) */}
       <div className="flex h-16 items-center justify-between px-6 border-b border-zinc-900 bg-zinc-950 shrink-0 z-30">

@@ -3,7 +3,7 @@
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label"; // <-- Fixed: Added Import
 import { Eraser, RotateCcw, Scissors, Wand2, Undo, Redo, ZoomIn, ChevronRight, MousePointer2, Move } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
