@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Upload, ChevronLeft, Download, Check, Film } from "lucide-react";
 import { toast } from "sonner";
 import { uploadVideo, processVideo, VideoProcessOptions } from "@/lib/api/editor";
-import { checkStatus, getFullUrl } from "@/lib/api/editor"; // Используем существующие хелперы
-import { VideoEditor } from "@/components/editor/video-editor";
+import { checkStatus, getFullUrl } from "@/lib/api/editor"; 
+// --- ИСПРАВЛЕНИЕ: Импорт по умолчанию ---
+import VideoEditor from "@/components/editor/video-editor"; 
 import { useRouter } from "next/navigation";
 
 export default function VideoEditorPage() {
@@ -27,7 +28,6 @@ export default function VideoEditorPage() {
     
     try {
         const data = await uploadVideo(file);
-        // data = { file_path: "...", url: "/static/..." }
         setServerPath(data.file_path);
         setVideoUrl(getFullUrl(data.url)); 
         setStep("editor");
@@ -39,14 +39,14 @@ export default function VideoEditorPage() {
   };
 
   // 2. PROCESS
-  const handleProcessVideo = async (options: VideoProcessOptions, audioFile?: File) => {
+  const handleProcessVideo = async (options: VideoProcessOptions) => {
     if (!serverPath) return;
     
     setIsProcessing(true);
     const toastId = toast.loading("Processing video... This may take a while.");
     
     try {
-        const { task_id } = await processVideo(serverPath, options, audioFile);
+        const { task_id } = await processVideo(serverPath, options);
         
         // Polling status
         const interval = setInterval(async () => {
@@ -68,7 +68,7 @@ export default function VideoEditorPage() {
             } catch (e) {
                 // ignore polling errors
             }
-        }, 2000); // Polling every 2s for video
+        }, 2000); 
         
     } catch (e) {
         setIsProcessing(false);

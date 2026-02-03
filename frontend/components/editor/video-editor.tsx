@@ -7,10 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, Crop, Type, Video, Wand2, Download, Upload, Play, Pause, Trash2 } from "lucide-react"
-import { processVideoEditor } from "@/lib/api/editor" // Убедитесь, что этот импорт правильный
+import { Loader2, Crop, Type, Video, Wand2, Play, Pause } from "lucide-react"
 import { toast } from "sonner"
 import type { VideoProcessOptions, CropOptions, TextOptions } from "@/types/editor"
 
@@ -21,22 +18,25 @@ const FILTER_STYLES: Record<string, string> = {
   "Sepia": "sepia(100%)",
   "Vintage": "sepia(50%) contrast(120%) brightness(90%)",
   "Blur": "blur(2px)",
-  "Rainbow": "saturate(250%)", // approximate
+  "Rainbow": "saturate(250%)", 
   "VHS": "contrast(150%) brightness(110%) hue-rotate(-10deg)",
   "Groovy": "invert(100%)"
 }
 
-export default function VideoEditor() {
+interface VideoEditorProps {
+  videoUrl: string;
+  isProcessing: boolean;
+  onProcess: (options: VideoProcessOptions) => void;
+}
+
+export default function VideoEditor({ videoUrl, isProcessing, onProcess }: VideoEditorProps) {
   // --- State ---
-  const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   
   // Editor State
   const [activeTab, setActiveTab] = useState("edit")
-  const [isProcessing, setIsProcessing] = useState(false)
   
   // Options
   const [trimRange, setTrimRange] = useState<[number, number]>([0, 100]) // Percent
@@ -53,31 +53,16 @@ export default function VideoEditor() {
   
   const [filter, setFilter] = useState("No Filter")
   const [removeAudio, setRemoveAudio] = useState(false)
-  const [resultUrl, setResultUrl] = useState<string | null>(null)
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Dragging State
   const dragStartRef = useRef<{x: number, y: number} | null>(null)
-  const cropStartRef = useRef<{x: number, y: number, w: number, h: number} | null>(null)
   const [interactionMode, setInteractionMode] = useState<'none' | 'text-drag' | 'crop-drag' | 'crop-resize'>('none')
 
   // --- Handlers ---
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setVideoFile(file)
-      setVideoUrl(URL.createObjectURL(file))
-      setResultUrl(null)
-      // Reset state
-      setCrop(null)
-      setTrimRange([0, 100])
-    }
-  }
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
@@ -102,7 +87,7 @@ export default function VideoEditor() {
   // --- Interaction Logic (Crop & Text) ---
 
   const getRelativeCoords = (e: React.MouseEvent) => {
-    if (!containerRef.current) return { x: 0, y: 0 }
+    if (!containerRef.current) return { x: 0, y: 0, width: 0, height: 0 }
     const rect = containerRef.current.getBoundingClientRect()
     return {
       x: e.clientX - rect.left,
@@ -118,10 +103,10 @@ export default function VideoEditor() {
     const relY = coords.y / coords.height
 
     // 1. Text Dragging Logic
-    // Simple hit detection for text center (approximate)
     if (textConfig.text && !isCropping) {
+        // Simple radius check
         const dist = Math.sqrt(Math.pow(relX - textConfig.x, 2) + Math.pow(relY - textConfig.y, 2))
-        if (dist < 0.1) { // Hit radius
+        if (dist < 0.15) { 
             setInteractionMode('text-drag')
             return
         }
@@ -129,10 +114,6 @@ export default function VideoEditor() {
 
     // 2. Crop Logic
     if (isCropping) {
-        // If clicking inside existing crop -> Move
-        // For simplicity, let's just implement "Draw new crop" on click-drag if clicking outside,
-        // or just start resizing if we had handles. 
-        // Let's implement: Click anywhere starts a new selection from that point
         setInteractionMode('crop-drag')
         dragStartRef.current = { x: coords.x, y: coords.y }
         setCrop({ x: coords.x, y: coords.y, width: 0, height: 0 })
@@ -144,7 +125,6 @@ export default function VideoEditor() {
     const coords = getRelativeCoords(e)
 
     if (interactionMode === 'text-drag') {
-        // Clamp to 0-1
         const x = Math.max(0, Math.min(1, coords.x / coords.width))
         const y = Math.max(0, Math.min(1, coords.y / coords.height))
         setTextConfig(prev => ({ ...prev, x, y }))
@@ -156,7 +136,6 @@ export default function VideoEditor() {
         const startX = dragStartRef.current.x
         const startY = dragStartRef.current.y
 
-        // Calculate Box
         const minX = Math.min(startX, currentX)
         const minY = Math.min(startY, currentY)
         const width = Math.abs(currentX - startX)
@@ -171,20 +150,27 @@ export default function VideoEditor() {
     dragStartRef.current = null
   }
 
-  // --- Processing ---
+  // --- Processing Preparation ---
 
-  const handleProcess = async () => {
-    if (!videoFile || !videoRef.current) return
-    setIsProcessing(true)
-    
+  const prepareAndProcess = () => {
+    if (!videoRef.current) return;
+
     // Calculate actual crop values relative to original video size
-    // The visual crop is in CSS pixels of the container. 
-    // We need to map it to the video intrinsic resolution.
     let finalCrop = undefined
     if (crop && containerRef.current && videoRef.current) {
         const videoRect = containerRef.current.getBoundingClientRect()
-        const scaleX = videoRef.current.videoWidth / videoRect.width
-        const scaleY = videoRef.current.videoHeight / videoRect.height
+        // Video intrinsic size
+        const naturalWidth = videoRef.current.videoWidth
+        const naturalHeight = videoRef.current.videoHeight
+        
+        // Scale factors (how much the displayed video is scaled vs original)
+        // Since object-contain fits the video, we need to be careful.
+        // For simplicity assuming the container aspect ratio matches or we use the container size as the "canvas"
+        // A robust implementation would calculate the actual rendered video rect inside the container.
+        // Let's approximate by using simple scaling ratio of container:
+        
+        const scaleX = naturalWidth / videoRect.width
+        const scaleY = naturalHeight / videoRect.height
         
         finalCrop = {
             x: Math.round(crop.x * scaleX),
@@ -194,7 +180,6 @@ export default function VideoEditor() {
         }
     }
 
-    // Calculate Trim Time
     const start = (trimRange[0] / 100) * duration
     const end = (trimRange[1] / 100) * duration
 
@@ -206,38 +191,8 @@ export default function VideoEditor() {
       text_config: textConfig.text ? textConfig : undefined,
       crop: finalCrop
     }
-
-    try {
-      const formData = new FormData()
-      formData.append("video_path", "") // In a real app we might upload first, but here we assume direct upload logic 
-      // NOTE: Our API expects direct file upload OR path. 
-      // Let's use the endpoint /video/process which accepts 'video_path' (string) if already uploaded, 
-      // OR we can change the API to accept file + options.
-      // Assuming we use the method that handles file upload + processing:
-      
-      // Let's use the API helper
-      const res = await processVideoEditor(videoFile, null, options)
-      
-      // Polling or waiting (Simulated here if sync, or task based)
-      // If async task:
-      if (res.task_id) {
-         toast.success("Processing started...")
-         // Here you would implement polling checkStatus(res.task_id)
-         // For demo, let's pretend it's fast or user has to wait.
-         // Wait loop implementation skipped for brevity
-      } 
-      // If sync result (from previous iteration):
-      if (res.url) {
-          setResultUrl(res.url)
-          toast.success("Video processed!")
-      }
-
-    } catch (e) {
-      toast.error("Failed to process video")
-      console.error(e)
-    } finally {
-      setIsProcessing(false)
-    }
+    
+    onProcess(options)
   }
 
   // --- Render ---
@@ -260,7 +215,7 @@ export default function VideoEditor() {
               <video
                 ref={videoRef}
                 src={videoUrl}
-                className="w-full h-full object-contain pointer-events-none" // Disable native video pointer events to handle drag
+                className="w-full h-full object-contain pointer-events-none" 
                 style={{ filter: FILTER_STYLES[filter] || 'none' }}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
@@ -269,7 +224,7 @@ export default function VideoEditor() {
               {/* Text Overlay Layer */}
               {textConfig.text && !isCropping && (
                  <div
-                    className="absolute cursor-move border-2 border-transparent hover:border-white/50 p-1 rounded"
+                    className="absolute cursor-move border-2 border-transparent hover:border-white/50 p-1 rounded select-none"
                     style={{
                         left: `${textConfig.x * 100}%`,
                         top: `${textConfig.y * 100}%`,
@@ -297,7 +252,7 @@ export default function VideoEditor() {
                                 height: crop.height
                             }}
                           >
-                             {/* Resize handles could go here */}
+                             {/* Corner handles (visual only for now) */}
                              <div className="absolute top-0 left-0 w-2 h-2 bg-white -translate-x-1/2 -translate-y-1/2" />
                              <div className="absolute bottom-0 right-0 w-2 h-2 bg-white translate-x-1/2 translate-y-1/2" />
                           </div>
@@ -305,7 +260,7 @@ export default function VideoEditor() {
                   </div>
               )}
 
-              {/* Controls Overlay (Play/Pause) */}
+              {/* Controls Overlay */}
               <div className="absolute bottom-4 left-0 right-0 px-4 flex gap-2 items-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button size="icon" variant="ghost" className="text-white hover:bg-white/20" onClick={togglePlay}>
                       {isPlaying ? <Pause size={20}/> : <Play size={20}/>}
@@ -330,14 +285,10 @@ export default function VideoEditor() {
           ) : (
             <div className="text-muted-foreground flex flex-col items-center">
                 <Video size={48} className="mb-4 opacity-50" />
-                <p>Upload a video to start editing</p>
-                <Button variant="outline" className="mt-4" onClick={() => fileInputRef.current?.click()}>
-                   <Upload className="mr-2 h-4 w-4" /> Select File
-                </Button>
+                <p>No video loaded</p>
             </div>
           )}
         </div>
-        <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileSelect} />
       </div>
 
       {/* RIGHT: Tools Panel */}
@@ -347,7 +298,7 @@ export default function VideoEditor() {
                 <TabsTrigger value="edit"><Crop size={16}/></TabsTrigger>
                 <TabsTrigger value="filter"><Wand2 size={16}/></TabsTrigger>
                 <TabsTrigger value="text"><Type size={16}/></TabsTrigger>
-                <TabsTrigger value="export"><Download size={16}/></TabsTrigger>
+                {/* Export is usually a final action, but can be a tab */}
             </TabsList>
             
             <div className="flex-1 overflow-y-auto p-4 border rounded-b-md">
@@ -367,9 +318,6 @@ export default function VideoEditor() {
                                 }
                             }} />
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                           {isCropping ? "Draw on the video preview to select area." : "Toggle to enable manual cropping."}
-                        </p>
                     </div>
 
                     <div className="space-y-4">
@@ -408,7 +356,6 @@ export default function VideoEditor() {
                                 onClick={() => setFilter(f)}
                             >
                                 <span className="z-10">{f}</span>
-                                {/* Mini Preview Background - optional optimization */}
                                 <div 
                                     className="absolute inset-0 opacity-20 bg-gradient-to-br from-gray-500 to-black"
                                     style={{ filter: FILTER_STYLES[f] }}
@@ -451,46 +398,25 @@ export default function VideoEditor() {
                                     ))}
                                 </div>
                             </div>
-                            <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
-                                Tip: Drag the text on the preview video to position it!
-                            </div>
                         </>
                     )}
                 </TabsContent>
-
-                {/* 4. EXPORT TAB */}
-                <TabsContent value="export" className="space-y-6 mt-0">
-                    <div className="text-sm text-muted-foreground">
-                        Ready to process? This will create a new video file with your edits.
-                    </div>
-                    <Button 
-                        className="w-full" 
-                        size="lg" 
-                        onClick={handleProcess} 
-                        disabled={!videoFile || isProcessing}
-                    >
-                        {isProcessing ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Processing...</>
-                        ) : (
-                            <><Wand2 className="mr-2 h-4 w-4"/> Process Video</>
-                        )}
-                    </Button>
-
-                    {resultUrl && (
-                        <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg space-y-3">
-                            <p className="text-green-600 font-medium flex items-center gap-2">
-                                <span className="bg-green-500 rounded-full p-1"><Play size={10} className="text-white"/></span>
-                                Success!
-                            </p>
-                            <video src={resultUrl} controls className="w-full rounded bg-black max-h-40" />
-                            <div className="flex gap-2">
-                                <Button variant="outline" className="flex-1" onClick={() => window.open(resultUrl, '_blank')}>
-                                    <Download className="mr-2 h-4 w-4"/> Download
-                                </Button>
-                            </div>
-                        </div>
+            </div>
+            
+            {/* Main Action Button */}
+            <div className="p-4 border-t">
+                <Button 
+                    className="w-full" 
+                    size="lg" 
+                    onClick={prepareAndProcess} 
+                    disabled={isProcessing}
+                >
+                    {isProcessing ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Processing...</>
+                    ) : (
+                        <><Wand2 className="mr-2 h-4 w-4"/> Process Video</>
                     )}
-                </TabsContent>
+                </Button>
             </div>
          </Tabs>
       </div>
