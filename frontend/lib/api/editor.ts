@@ -81,3 +81,52 @@ export const uploadTempFile = async (file: File) => {
     // remove_bg на прозрачном фоне (маске) безопасен
     return processImage(file, 'remove_bg');
 };
+
+export async function uploadVideo(file: File): Promise<{ file_path: string; url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_URL}/editor/video/upload`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) throw new Error("Video upload failed");
+  return res.json();
+}
+
+export interface VideoProcessOptions {
+  trim_start?: number;
+  trim_end?: number;
+  crop?: { x: number; y: number; width: number; height: number };
+  remove_audio?: boolean;
+  text_config?: { text: string; size: number; color: string; x: number; y: number };
+  filter_name?: string;
+}
+
+export async function processVideo(
+  videoPath: string,
+  options: VideoProcessOptions,
+  audioFile?: File
+): Promise<{ task_id: string }> {
+  const formData = new FormData();
+  formData.append("video_path", videoPath);
+  formData.append("options", JSON.stringify(options));
+  if (audioFile) {
+    formData.append("audio_file", audioFile);
+  }
+
+  const res = await fetch(`${API_URL}/editor/video/process`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) throw new Error("Video processing failed");
+  return res.json();
+}
