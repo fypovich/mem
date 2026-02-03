@@ -8,6 +8,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from celery import shared_task
 
+# --- ВАЖНО: Импортируем celery_app, чтобы воркер его видел при старте ---
+from app.core.celery_app import celery_app 
+# -----------------------------------------------------------------------
+
 from app.core.config import settings
 from app.models.models import Meme, Notification, NotificationType, SearchTerm
 # Импортируем MediaProcessor для мемов
@@ -239,12 +243,16 @@ def animate_sticker_task(self, image_path: str, animation: str,
         print(f"Worker Error: {e}")
         raise e
     
-@celery_app.task(name="app.worker.process_video_editor_task", bind=True)
+# --- ИСПРАВЛЕНИЕ: Используем shared_task и redis_client внутри ---
+@shared_task(bind=True, name="app.worker.process_video_editor_task")
 def process_video_editor_task(self, video_path: str, options: dict, audio_path: str = None):
     """
     Обработка видео с использованием нового VideoEditorService (MoviePy + NumPy)
     """
     task_id = self.request.id
+    
+    # Создаем соединение внутри задачи, чтобы не зависеть от глобального контекста
+    redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
     
     # Обновляем статус: STARTED
     redis_client.set(f"task:{task_id}", json.dumps({"status": "PROCESSING", "progress": 0}))
@@ -270,15 +278,11 @@ def process_video_editor_task(self, video_path: str, options: dict, audio_path: 
         )
 
         # Формируем URL результата
-        # Предполагаем, что UPLOAD_DIR раздается как static или через nginx
         result_url = f"/static/{output_filename}"
 
         # Обновляем статус: SUCCESS
         result_data = {"status": "SUCCESS", "url": result_url}
         redis_client.set(f"task:{task_id}", json.dumps(result_data))
-        
-        # Опционально: Удаляем исходники, если они временные
-        # if os.path.exists(video_path): os.remove(video_path)
         
         return result_data
 
@@ -286,7 +290,10 @@ def process_video_editor_task(self, video_path: str, options: dict, audio_path: 
         print(f"Error processing video: {e}")
         error_data = {"status": "FAILURE", "error": str(e)}
         redis_client.set(f"task:{task_id}", json.dumps(error_data))
-        raise e
+        # Возвращаем ошибку как результат (но не рейзим, чтобы Celery не перезапускал задачу бесконечно)
+        return error_data
+    finally:
+        redis_client.close()
 
 # ==========================================
 # 3. ФОНОВЫЕ ЗАДАЧИ (Index, Views, Search)
