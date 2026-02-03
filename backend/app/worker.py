@@ -16,6 +16,7 @@ from app.services.search import get_search_service
 # Импортируем новые сервисы для стикеров
 from app.services.ai import AIService
 from app.services.sticker import StickerService
+from app.services.video_editor import VideoEditorService
 
 # Настройка БД (синхронная для воркера)
 engine = create_engine(settings.DATABASE_URL.replace("+asyncpg", ""))
@@ -236,6 +237,41 @@ def animate_sticker_task(self, image_path: str, animation: str,
         return {"url": f"/static/{output_filename}"}
     except Exception as e:
         print(f"Worker Error: {e}")
+        raise e
+    
+@shared_task(bind=True, name="app.worker.process_video_editor_task")
+def process_video_editor_task(self, video_path: str, options: dict, audio_path: str = None):
+    """
+    Фоновая задача обработки видео редактора.
+    """
+    try:
+        output_filename = f"edited_video_{uuid.uuid4()}.mp4"
+        service = VideoEditorService(output_dir="uploads")
+        
+        final_path = service.process_video(
+            input_path=video_path,
+            output_filename=output_filename,
+            trim_start=options.get('trim_start'),
+            trim_end=options.get('trim_end'),
+            crop=options.get('crop'),
+            remove_audio=options.get('remove_audio', False),
+            new_audio_path=audio_path,
+            text_config=options.get('text_config'),
+            filter_name=options.get('filter_name')
+        )
+        
+        # Удаляем временные файлы после успешной обработки
+        if os.path.exists(video_path):
+            os.remove(video_path)
+        if audio_path and os.path.exists(audio_path):
+            os.remove(audio_path)
+            
+        return {"url": f"/static/{output_filename}"}
+        
+    except Exception as e:
+        print(f"Video Editor Task Error: {e}")
+        # Не удаляем файлы сразу в случае ошибки, чтобы можно было дебажить, 
+        # или можно удалять в finally
         raise e
 
 # ==========================================
