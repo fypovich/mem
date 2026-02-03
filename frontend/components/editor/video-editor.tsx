@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect, useCallback } from "react"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Wand2, Play, Pause, RotateCcw, Type, MonitorPlay } from "lucide-react"
 import type { VideoProcessOptions, CropOptions, TextOptions } from "@/types/editor"
 
-// --- CSS Filters Mapping ---
 const FILTER_STYLES: Record<string, string> = {
   "No Filter": "none",
   "Black & White": "grayscale(100%)",
@@ -28,7 +27,6 @@ interface VideoEditorProps {
   onProcess: (options: VideoProcessOptions) => void;
 }
 
-// Типы взаимодействия
 type InteractionMode = 'none' | 'crop-move' | 'crop-resize' | 'text-move';
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e';
 
@@ -38,9 +36,13 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [thumbnails, setThumbnails] = useState<string[]>([])
+  const [videoDimensions, setVideoDimensions] = useState({ w: 0, h: 0 }) // Intrinsic dimensions
   
+  // --- Layout State (Visual dimensions) ---
+  const [layout, setLayout] = useState({ width: 0, height: 0 })
+
   // --- Editor Options ---
-  const [trimRange, setTrimRange] = useState<[number, number]>([0, 100]) // %
+  const [trimRange, setTrimRange] = useState<[number, number]>([0, 100])
   const [crop, setCrop] = useState<CropOptions>({ x: 0, y: 0, width: 0, height: 0 }) 
   const [textConfig, setTextConfig] = useState<TextOptions>({
     text: "",
@@ -54,24 +56,64 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
 
   // --- Refs ---
   const videoRef = useRef<HTMLVideoElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null) // Outer flex container
+  const containerRef = useRef<HTMLDivElement>(null) // Inner fitted container
   
-  // --- Dragging Internal State ---
   const dragStartRef = useRef<{ x: number, y: number } | null>(null)
   const cropStartRef = useRef<CropOptions | null>(null)
   const activeHandleRef = useRef<ResizeHandle | null>(null)
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('none')
 
-  // --- Initialization & Thumbnail Generation ---
+  // --- Layout Calculation ---
+  // Эта функция пересчитывает размеры внутреннего контейнера, чтобы он в точности совпадал с видео
+  const calculateLayout = useCallback(() => {
+      if (!wrapperRef.current || videoDimensions.w === 0) return;
+
+      const wrapper = wrapperRef.current.getBoundingClientRect();
+      const videoRatio = videoDimensions.w / videoDimensions.h;
+      const wrapperRatio = wrapper.width / wrapper.height;
+
+      let newWidth, newHeight;
+
+      if (wrapperRatio > videoRatio) {
+          // Wrapper is wider than video -> constrained by height
+          newHeight = wrapper.height;
+          newWidth = newHeight * videoRatio;
+      } else {
+          // Wrapper is taller than video -> constrained by width
+          newWidth = wrapper.width;
+          newHeight = newWidth / videoRatio;
+      }
+
+      setLayout({ width: newWidth, height: newHeight });
+      
+      // Reset crop to full size immediately upon calculation
+      // (Optional: can be smarter about preserving relative crop, but full reset prevents bugs)
+      setCrop({ x: 0, y: 0, width: newWidth, height: newHeight });
+
+  }, [videoDimensions]);
+
+  // Recalculate on window resize
+  useEffect(() => {
+      window.addEventListener('resize', calculateLayout);
+      return () => window.removeEventListener('resize', calculateLayout);
+  }, [calculateLayout]);
+
+  // Recalculate when video dimensions are known
+  useEffect(() => {
+      calculateLayout();
+  }, [calculateLayout]);
+
+
+  // --- Initialization ---
   useEffect(() => {
     const generateThumbnails = async () => {
         if (!videoRef.current) return;
-        // Create detached video element to scan frames
         const vid = document.createElement('video');
         vid.src = videoUrl;
         vid.crossOrigin = "anonymous";
         vid.muted = true;
-        vid.preload = "auto";
+        vid.preload = "auto"; // Important for seeking
         
         await new Promise((resolve) => {
             vid.onloadedmetadata = () => resolve(true);
@@ -97,20 +139,22 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
         setThumbnails(thumbs);
     };
 
-    // Small delay to ensure render
-    setTimeout(generateThumbnails, 1000);
+    setTimeout(generateThumbnails, 500);
   }, [videoUrl]);
 
   const handleLoadedMetadata = () => {
-    if (videoRef.current && containerRef.current) {
-      setDuration(videoRef.current.duration)
-      const { width, height } = containerRef.current.getBoundingClientRect()
-      // Init crop to full size
-      setCrop({ x: 0, y: 0, width: width, height: height })
+    if (videoRef.current) {
+      const dur = videoRef.current.duration;
+      const vw = videoRef.current.videoWidth;
+      const vh = videoRef.current.videoHeight;
+      
+      setDuration(dur);
+      setVideoDimensions({ w: vw, h: vh });
+      // calculateLayout will be triggered by useEffect dependent on videoDimensions
     }
   }
 
-  // --- Playback Controls ---
+  // --- Handlers ---
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) videoRef.current.pause()
@@ -121,20 +165,19 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
-      const time = videoRef.current.currentTime;
-      setCurrentTime(time);
+      setCurrentTime(videoRef.current.currentTime);
       
       const endSecond = (trimRange[1] / 100) * duration;
       const startSecond = (trimRange[0] / 100) * duration;
       
-      if (time >= endSecond) {
+      if (videoRef.current.currentTime >= endSecond) {
           videoRef.current.currentTime = startSecond;
           if(!isPlaying) togglePlay(); 
       }
     }
   }
 
-  // --- Interaction Helpers ---
+  // Helper to get coordinates relative to the INNER container
   const getMousePos = (e: React.MouseEvent) => {
       if (!containerRef.current) return { x: 0, y: 0, containerW: 0, containerH: 0 };
       const rect = containerRef.current.getBoundingClientRect();
@@ -146,7 +189,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       }
   }
 
-  // --- Mouse Handlers ---
   const handleMouseDown = (e: React.MouseEvent, mode: InteractionMode, handle?: ResizeHandle) => {
       e.stopPropagation();
       e.preventDefault(); 
@@ -172,7 +214,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       const deltaX = pos.x - dragStartRef.current.x;
       const deltaY = pos.y - dragStartRef.current.y;
 
-      // 1. MOVE TEXT
       if (interactionMode === 'text-move') {
           const x = Math.max(0, Math.min(1, pos.x / pos.containerW));
           const y = Math.max(0, Math.min(1, pos.y / pos.containerH));
@@ -180,7 +221,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           return;
       }
 
-      // 2. MOVE CROP
       if (interactionMode === 'crop-move' && cropStartRef.current) {
           let newX = cropStartRef.current.x + deltaX;
           let newY = cropStartRef.current.y + deltaY;
@@ -191,7 +231,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           setCrop({ ...crop, x: newX, y: newY });
       }
 
-      // 3. RESIZE CROP
       if (interactionMode === 'crop-resize' && cropStartRef.current && activeHandleRef.current) {
           const start = cropStartRef.current;
           let { x, y, width, height } = start; 
@@ -202,7 +241,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
               width = start.width - deltaX;
               x = start.x + deltaX;
           }
-
           if (handle.includes('s')) height = start.height + deltaY;
           if (handle.includes('n')) {
               height = start.height - deltaY;
@@ -214,6 +252,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
 
           if (x < 0) { width += x; x = 0; }
           if (y < 0) { height += y; y = 0; }
+          
           if (x + width > pos.containerW) width = pos.containerW - x;
           if (y + height > pos.containerH) height = pos.containerH - y;
 
@@ -228,15 +267,15 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       cropStartRef.current = null;
   }
 
-  // --- Final Process ---
   const prepareAndProcess = () => {
     if (!videoRef.current || !containerRef.current) return;
 
-    const videoRect = containerRef.current.getBoundingClientRect();
-    const naturalWidth = videoRef.current.videoWidth;
-    const naturalHeight = videoRef.current.videoHeight;
-    const scaleX = naturalWidth / videoRect.width;
-    const scaleY = naturalHeight / videoRect.height;
+    // Use containerRef (visual size) and videoDimensions (intrinsic size) for scaling
+    // Since containerRef IS now the video visual size, we don't need bounding client rect of container
+    // We just use layout state which drives containerRef size
+    
+    const scaleX = videoDimensions.w / layout.width;
+    const scaleY = videoDimensions.h / layout.height;
 
     const finalCrop = {
         x: Math.round(crop.x * scaleX),
@@ -260,107 +299,99 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
     onProcess(options);
   }
 
-  // --- RENDER ---
   return (
-    // ГЛАВНЫЙ КОНТЕЙНЕР:
-    // h-[calc(100vh-140px)] - это ключевая правка. Мы вычитаем место под навбар и отступы страницы.
-    // overflow-hidden - чтобы ничего не вылезало.
     <div className="flex flex-col lg:flex-row h-[calc(100vh-140px)] bg-zinc-950 text-white overflow-hidden border border-zinc-800 rounded-lg" 
          onMouseUp={handleMouseUp} 
          onMouseLeave={handleMouseUp}
          onMouseMove={handleMouseMove}>
       
-      {/* --- ЛЕВАЯ КОЛОНКА: ПРЕВЬЮ + ТАЙМЛАЙН --- */}
+      {/* --- LEFT: VIDEO AREA --- */}
       <div className="flex-1 flex flex-col min-w-0 p-3 gap-3 h-full">
         
-        {/* 1. БЛОК ВИДЕО */}
-        {/* flex-1: занимает всё свободное место */}
-        {/* min-h-0: КРИТИЧНО! Позволяет блоку сжиматься, если места мало, не выталкивая Timeline */}
-        <div className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-900/50 rounded-lg overflow-hidden select-none border border-zinc-800/50">
-            <div ref={containerRef} className="relative h-full w-full flex items-center justify-center">
-                {videoUrl ? (
-                    <>
-                        {/* Видео само подстраивается под размер родителя (h-full w-full object-contain) */}
-                        <video
-                            ref={videoRef}
-                            src={videoUrl}
-                            className="h-full w-full object-contain pointer-events-none block"
-                            style={{ filter: FILTER_STYLES[filter] || 'none' }}
-                            onTimeUpdate={handleTimeUpdate}
-                            onLoadedMetadata={handleLoadedMetadata}
-                        />
+        {/* WRAPPER: Занимает все место, но внутри мы центрируем жесткий контейнер */}
+        <div ref={wrapperRef} className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-900/50 rounded-lg overflow-hidden select-none border border-zinc-800/50">
+            
+            {/* INNER CONTAINER: Жестко заданные размеры (shrink-wrapped around video) */}
+            {/* Это исправляет проблему с кропом в черных полосах */}
+            {videoUrl ? (
+                <div 
+                    ref={containerRef}
+                    style={{ width: layout.width, height: layout.height }}
+                    className="relative shadow-2xl bg-black"
+                >
+                    <video
+                        ref={videoRef}
+                        src={videoUrl}
+                        className="w-full h-full object-contain pointer-events-none block"
+                        style={{ filter: FILTER_STYLES[filter] || 'none' }}
+                        onTimeUpdate={handleTimeUpdate}
+                        onLoadedMetadata={handleLoadedMetadata}
+                    />
 
-                        {/* CROP OVERLAY */}
-                        {/* Позиционирование должно быть корректным. Сейчас оно работает от containerRef */}
-                        {/* Важно: containerRef должен совпадать с реальным размером видео для точности, 
-                            но для простоты UI мы пока оставляем его на wrapper'е.
-                            При object-contain кроп может визуально вылезать за видео, если соотношение сторон разное.
-                            Это допустимый компромисс для простого UI. */}
-                        <div 
-                            className="absolute border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] cursor-move group"
-                            style={{
-                                left: crop.x,
-                                top: crop.y,
-                                width: crop.width,
-                                height: crop.height,
-                            }}
-                            onMouseDown={(e) => handleMouseDown(e, 'crop-move')}
-                        >
-                            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-0 group-hover:opacity-30 transition-opacity">
-                                <div className="border-r border-white/50 col-span-1 row-span-3"></div>
-                                <div className="border-r border-white/50 col-span-1 row-span-3"></div>
-                                <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-1/3"></div>
-                                <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-2/3"></div>
-                            </div>
-
-                            {(['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'] as ResizeHandle[]).map((h) => (
-                                <div
-                                    key={h}
-                                    className={`absolute w-3 h-3 bg-blue-500 rounded-full border border-white z-10
-                                        ${h === 'nw' ? '-top-1.5 -left-1.5 cursor-nw-resize' : ''}
-                                        ${h === 'ne' ? '-top-1.5 -right-1.5 cursor-ne-resize' : ''}
-                                        ${h === 'sw' ? '-bottom-1.5 -left-1.5 cursor-sw-resize' : ''}
-                                        ${h === 'se' ? '-bottom-1.5 -right-1.5 cursor-se-resize' : ''}
-                                        ${h === 'n' ? '-top-1.5 left-1/2 -translate-x-1/2 cursor-n-resize' : ''}
-                                        ${h === 's' ? '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-s-resize' : ''}
-                                        ${h === 'w' ? 'left-[-6px] top-1/2 -translate-y-1/2 cursor-w-resize' : ''}
-                                        ${h === 'e' ? 'right-[-6px] top-1/2 -translate-y-1/2 cursor-e-resize' : ''}
-                                    `}
-                                    onMouseDown={(e) => handleMouseDown(e, 'crop-resize', h)}
-                                />
-                            ))}
+                    {/* CROP OVERLAY (Внутри контейнера с размерами видео) */}
+                    <div 
+                        className="absolute border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] cursor-move group z-10"
+                        style={{
+                            left: crop.x,
+                            top: crop.y,
+                            width: crop.width,
+                            height: crop.height,
+                        }}
+                        onMouseDown={(e) => handleMouseDown(e, 'crop-move')}
+                    >
+                        <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-0 group-hover:opacity-30 transition-opacity">
+                            <div className="border-r border-white/50 col-span-1 row-span-3"></div>
+                            <div className="border-r border-white/50 col-span-1 row-span-3"></div>
+                            <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-1/3"></div>
+                            <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-2/3"></div>
                         </div>
 
-                        {/* TEXT OVERLAY */}
-                        {textConfig.text && (
+                        {(['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'] as ResizeHandle[]).map((h) => (
                             <div
-                                className="absolute cursor-grab active:cursor-grabbing border border-transparent hover:border-white/50 p-2 rounded z-20"
-                                style={{
-                                    left: `${textConfig.x * 100}%`,
-                                    top: `${textConfig.y * 100}%`,
-                                    transform: 'translate(-50%, -50%)',
-                                    fontSize: `${textConfig.size}px`,
-                                    color: textConfig.color,
-                                    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-                                    whiteSpace: 'nowrap'
-                                }}
-                                onMouseDown={(e) => handleMouseDown(e, 'text-move')}
-                            >
-                                {textConfig.text}
-                            </div>
-                        )}
-                    </>
-                ) : (
-                    <div className="flex flex-col items-center justify-center text-zinc-500 gap-2">
-                        <Loader2 className="animate-spin h-8 w-8 text-blue-500"/> 
-                        <span className="text-sm">Loading Video...</span>
+                                key={h}
+                                className={`absolute w-3 h-3 bg-blue-500 rounded-full border border-white z-20
+                                    ${h === 'nw' ? '-top-1.5 -left-1.5 cursor-nw-resize' : ''}
+                                    ${h === 'ne' ? '-top-1.5 -right-1.5 cursor-ne-resize' : ''}
+                                    ${h === 'sw' ? '-bottom-1.5 -left-1.5 cursor-sw-resize' : ''}
+                                    ${h === 'se' ? '-bottom-1.5 -right-1.5 cursor-se-resize' : ''}
+                                    ${h === 'n' ? '-top-1.5 left-1/2 -translate-x-1/2 cursor-n-resize' : ''}
+                                    ${h === 's' ? '-bottom-1.5 left-1/2 -translate-x-1/2 cursor-s-resize' : ''}
+                                    ${h === 'w' ? 'left-[-6px] top-1/2 -translate-y-1/2 cursor-w-resize' : ''}
+                                    ${h === 'e' ? 'right-[-6px] top-1/2 -translate-y-1/2 cursor-e-resize' : ''}
+                                `}
+                                onMouseDown={(e) => handleMouseDown(e, 'crop-resize', h)}
+                            />
+                        ))}
                     </div>
-                )}
-            </div>
+
+                    {/* TEXT OVERLAY */}
+                    {textConfig.text && (
+                        <div
+                            className="absolute cursor-grab active:cursor-grabbing border border-transparent hover:border-white/50 p-2 rounded z-20"
+                            style={{
+                                left: `${textConfig.x * 100}%`,
+                                top: `${textConfig.y * 100}%`,
+                                transform: 'translate(-50%, -50%)',
+                                fontSize: `${textConfig.size}px`,
+                                color: textConfig.color,
+                                textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                                whiteSpace: 'nowrap'
+                            }}
+                            onMouseDown={(e) => handleMouseDown(e, 'text-move')}
+                        >
+                            {textConfig.text}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="flex flex-col items-center justify-center text-zinc-500 gap-2">
+                    <Loader2 className="animate-spin h-8 w-8 text-blue-500"/> 
+                    <span className="text-sm">Loading Video...</span>
+                </div>
+            )}
         </div>
 
-        {/* 2. БЛОК TIMELINE */}
-        {/* shrink-0: Запрещаем сжимать этот блок. Он всегда будет виден. */}
+        {/* TIMELINE */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 shrink-0 h-[100px] flex flex-col justify-center">
             <div className="flex items-center justify-between mb-2">
                 <div className="flex gap-2 items-center">
@@ -382,7 +413,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                 </Button>
             </div>
 
-            {/* Слайдер и кадры */}
             <div className="relative h-10 w-full rounded-md overflow-hidden bg-black/50 group select-none">
                 <div className="absolute inset-0 flex opacity-40 grayscale group-hover:grayscale-0 transition-all duration-300">
                     {thumbnails.map((src, i) => (
@@ -399,7 +429,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                         onValueChange={(val) => {
                             setTrimRange(val as [number, number]);
                             if (videoRef.current) {
-                                // Pause while scrubbing for better performance
                                 if (isPlaying) videoRef.current.pause();
                                 setIsPlaying(false);
                                 videoRef.current.currentTime = (val[0] / 100) * duration;
@@ -409,7 +438,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                     />
                 </div>
                 
-                {/* Индикатор текущего времени (Playhead) */}
                 <div 
                     className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-0 pointer-events-none shadow-[0_0_8px_rgba(239,68,68,0.6)]"
                     style={{ left: `${(currentTime / duration) * 100}%` }}
@@ -418,7 +446,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
         </div>
       </div>
 
-      {/* --- ПРАВАЯ КОЛОНКА: НАСТРОЙКИ --- */}
+      {/* --- RIGHT: TOOLS --- */}
       <div className="w-full lg:w-72 border-l border-zinc-800 bg-zinc-900/30 flex flex-col h-full">
           <div className="p-4 border-b border-zinc-800 font-medium text-sm flex items-center gap-2 text-zinc-200">
               <Wand2 size={16} className="text-blue-500"/> Editing Tools
@@ -426,8 +454,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           
           <ScrollArea className="flex-1">
               <div className="p-4 space-y-6">
-                  
-                  {/* Filters */}
                   <div className="space-y-2">
                       <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Filters</Label>
                       <div className="grid grid-cols-3 gap-2">
@@ -441,9 +467,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                                       className="absolute inset-0 bg-zinc-800"
                                       style={{ filter: FILTER_STYLES[f] }}
                                   />
-                                  {/* Filter Preview Mockup Color */}
                                   <div className={`absolute inset-0 opacity-50 bg-gradient-to-br from-purple-500/20 to-blue-500/20 mix-blend-overlay`} style={{ filter: FILTER_STYLES[f] }}></div>
-                                  
                                   <span className="absolute bottom-0 w-full bg-black/60 text-[8px] py-0.5 text-center truncate px-1 backdrop-blur-sm">
                                       {f}
                                   </span>
@@ -452,7 +476,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                       </div>
                   </div>
 
-                  {/* Text */}
                   <div className="space-y-2">
                       <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Text</Label>
                       <div className="space-y-3 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
@@ -491,7 +514,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                       </div>
                   </div>
 
-                  {/* Audio */}
                   <div className="space-y-2">
                       <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Audio</Label>
                       <div className="flex items-center justify-between bg-zinc-900/50 p-2 px-3 rounded-lg border border-zinc-800">
@@ -503,11 +525,9 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                           />
                       </div>
                   </div>
-
               </div>
           </ScrollArea>
 
-          {/* Action Footer */}
           <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
               <Button 
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-lg shadow-blue-900/20" 
