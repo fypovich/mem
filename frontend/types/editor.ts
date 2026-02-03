@@ -43,3 +43,35 @@ export interface ProjectData {
   format?: 'original' | '9:16'; 
   layers: Layer[];
 }
+
+export interface CropOptions {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface TextOptions {
+  text: string;
+  size: number;
+  color: string;
+  x: number;
+  y: number;
+}
+
+export interface VideoProcessOptions {
+  trim_start?: number;
+  trim_end?: number;
+  crop?: CropOptions;
+  remove_audio: boolean;
+  text_config?: TextOptions;
+  filter_name?: string;
+}
+
+export interface ProcessingStatus {
+  taskId?: string;
+  status: 'idle' | 'uploading' | 'processing' | 'completed' | 'failed';
+  progress?: number;
+  resultUrl?: string;
+  error?: string;
+}
