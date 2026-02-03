@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks
 from app.core.celery_app import celery_app
 from app.api.deps import get_current_user
@@ -6,16 +7,44 @@ from app.services.video import process_video_task
 import uuid
 import os
 import json
+import shutil  # <--- Добавлено
 import aiofiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Json  # <--- Добавлено Json
 from celery.result import AsyncResult
 
 router = APIRouter()
 UPLOAD_DIR = "uploads"
 
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+# --- MODELS ---
 class AnimationRequest(BaseModel):
     image_path: str
     animation: str
+
+class CropOptions(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+class TextOptions(BaseModel):
+    text: str
+    size: int = 50
+    color: str = 'white'
+    x: float = 0.5
+    y: float = 0.8
+
+class VideoProcessOptions(BaseModel):
+    trim_start: Optional[float] = None
+    trim_end: Optional[float] = None
+    crop: Optional[CropOptions] = None
+    remove_audio: bool = False
+    text_config: Optional[TextOptions] = None
+    filter_name: Optional[str] = None
+
+# --- ENDPOINTS ---
 
 @router.post("/process-image")
 async def process_image(
@@ -36,12 +65,16 @@ async def process_image(
     )
     return {"task_id": task.id}
 
-@router.post("/video/process")
-async def process_video_endpoint(
+# Переименовали старый метод, чтобы избежать конфликта путей
+@router.post("/video/process-sync")
+async def process_video_sync(
     video: UploadFile = File(...),
     audio: UploadFile = File(None),
-    options: str = Form(...) # JSON string с настройками (crop, trim, text, etc)
+    options: str = Form(...) # JSON string с настройками
 ):
+    """
+    Устаревший синхронный метод. Рекомендуется использовать асинхронный вариант ниже.
+    """
     # 1. Сохраняем исходник
     video_ext = video.filename.split('.')[-1]
     video_filename = f"{uuid.uuid4()}.{video_ext}"
@@ -64,13 +97,11 @@ async def process_video_endpoint(
     except:
         raise HTTPException(status_code=400, detail="Invalid options JSON")
 
-    # 4. Обрабатываем (в реальном продакшене лучше через Celery/RabbitMQ)
+    # 4. Обрабатываем
     output_filename = f"processed_{uuid.uuid4()}.mp4"
     output_path = f"uploads/{output_filename}"
 
     try:
-        # Вызываем сервис напрямую (блокирующе), чтобы сразу вернуть результат 
-        # В идеале переделать на BackgroundTasks или Celery
         await process_video_task(
             file_path=video_path,
             output_path=output_path,
@@ -85,13 +116,10 @@ async def process_video_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Чистим исходники (опционально)
         if os.path.exists(video_path): os.remove(video_path)
         if audio_path and os.path.exists(audio_path): os.remove(audio_path)
 
-    # Возвращаем URL на обработанный файл
-    # Убедись, что папка uploads раздается через StaticFiles в main.py
-    return {"url": f"/uploads/{output_filename}"}
+    return {"url": f"/static/{output_filename}"} # Убедитесь, что /static раздается правильно
 
 @router.post("/video/upload")
 async def upload_video_for_editor(
@@ -101,7 +129,6 @@ async def upload_video_for_editor(
     """Загрузка исходного видео для редактирования"""
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1]
-    # Используем префикс editor_video_ чтобы отличать
     filename = f"editor_video_{file_id}.{ext}"
     file_path = os.path.join(UPLOAD_DIR, filename)
     
@@ -110,14 +137,15 @@ async def upload_video_for_editor(
         
     return {"file_path": file_path, "url": f"/static/{filename}"}
 
+# Это основной метод для редактора (через Celery)
 @router.post("/video/process")
 async def process_video_editor(
     video_path: str = Form(...),
     audio_file: UploadFile = File(None),
-    options: Json[VideoProcessOptions] = Form(...), # JSON строка с настройками
+    options: Json[VideoProcessOptions] = Form(...), # Теперь VideoProcessOptions определен
     current_user: User = Depends(get_current_user)
 ):
-    """Запуск обработки видео"""
+    """Запуск обработки видео (асинхронно)"""
     
     # Если есть новый аудиофайл, сохраняем его
     audio_path = None
