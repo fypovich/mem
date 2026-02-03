@@ -240,3 +240,69 @@
   75% { transform: translate(-20px, 10px) rotate(-5deg); }
   100% { transform: translate(0, 0) rotate(0deg); }
 }
+
+/* --- VIDEO EDITOR EFFECTS --- */
+
+/* 1. RAINBOW */
+@keyframes rainbow-cycle {
+  0% { filter: hue-rotate(0deg) saturate(1.5); }
+  50% { filter: hue-rotate(180deg) saturate(1.5); }
+  100% { filter: hue-rotate(360deg) saturate(1.5); }
+}
+.effect-rainbow {
+  animation: rainbow-cycle 3s linear infinite;
+}
+
+/* 2. RUMBLE */
+@keyframes rumble-shake {
+  0% { transform: translate(0, 0) scale(1.1); }
+  10% { transform: translate(-2px, -2px) scale(1.1); }
+  20% { transform: translate(2px, 2px) scale(1.1); }
+  30% { transform: translate(-2px, 2px) scale(1.1); }
+  40% { transform: translate(2px, -2px) scale(1.1); }
+  50% { transform: translate(-2px, 1px) scale(1.1); }
+  60% { transform: translate(2px, 1px) scale(1.1); }
+  70% { transform: translate(-1px, -2px) scale(1.1); }
+  80% { transform: translate(2px, -1px) scale(1.1); }
+  90% { transform: translate(-1px, 2px) scale(1.1); }
+  100% { transform: translate(0, 0) scale(1.1); }
+}
+.effect-rumble {
+  animation: rumble-shake 0.3s linear infinite;
+}
+
+/* 3. GROOVY */
+@keyframes groovy-move {
+  0% { transform: scale(1.1) rotate(0deg) translate(0, 0); filter: hue-rotate(0deg); }
+  25% { transform: scale(1.15) rotate(2deg) translate(10px, 10px); }
+  50% { transform: scale(1.1) rotate(0deg) translate(0, 20px); filter: hue-rotate(30deg); }
+  75% { transform: scale(1.15) rotate(-2deg) translate(-10px, 10px); }
+  100% { transform: scale(1.1) rotate(0deg) translate(0, 0); filter: hue-rotate(0deg); }
+}
+.effect-groovy {
+  animation: groovy-move 4s ease-in-out infinite;
+  opacity: 0.9; /* Slight ghosting simulation */
+}
+
+/* 4. VHS */
+.effect-vhs {
+  filter: contrast(1.4) brightness(1.1) sepia(0.3) saturate(1.2);
+}
+/* VHS Scanlines Overlay */
+.vhs-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  background-size: 100% 4px, 6px 100%;
+  z-index: 10;
+  opacity: 0.6;
+}
+
+/* 5. BLACK & WHITE */
+.effect-bw {
+  filter: grayscale(100%) contrast(1.2) brightness(0.9);
+}

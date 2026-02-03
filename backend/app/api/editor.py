@@ -84,12 +84,12 @@ async def upload_video_for_editor(
 async def process_video_editor(
     video_path: str = Form(...),
     audio_file: UploadFile = File(None),
-    options: Json[VideoProcessOptions] = Form(...),
+    options: str = Form(...), # <--- ИЗМЕНЕНИЕ: Принимаем как строку (str)
     current_user: User = Depends(get_current_user)
 ):
     """Запуск обработки видео (асинхронно)"""
     
-    # Если есть новый аудиофайл, сохраняем его
+    # 1. Сохраняем аудио (если есть)
     audio_path = None
     if audio_file:
         file_id = str(uuid.uuid4())
@@ -98,12 +98,23 @@ async def process_video_editor(
         async with aiofiles.open(audio_path, 'wb') as f:
             await f.write(await audio_file.read())
 
-    # Преобразуем Pydantic модель в dict для передачи в Celery
-    options_dict = options.model_dump()
+    # 2. Парсим JSON опции вручную (это решает 422 ошибку)
+    try:
+        # Pydantic v2: model_validate_json или parse_raw
+        # Но чтобы не зависеть от версии, сделаем через dict:
+        options_dict = json.loads(options)
+        # Валидируем через модель (опционально, для проверки типов)
+        validated_options = VideoProcessOptions(**options_dict)
+        # Превращаем обратно в чистый dict для Celery (чтобы не было конфликтов версий Pydantic в воркере)
+        final_options_dict = validated_options.model_dump()
+    except Exception as e:
+        print(f"JSON Parse Error: {e}")
+        raise HTTPException(status_code=422, detail=f"Invalid JSON options: {str(e)}")
 
+    # 3. Отправляем в Celery
     task = celery_app.send_task(
         "app.worker.process_video_editor_task",
-        args=[video_path, options_dict, audio_path]
+        args=[video_path, final_options_dict, audio_path]
     )
     
     return {"task_id": task.id}
