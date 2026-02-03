@@ -3,7 +3,8 @@
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { Eraser, RotateCcw, Scissors, Wand2, Undo, Redo, ZoomIn, ChevronRight, MousePointer2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Eraser, RotateCcw, Scissors, Wand2, Undo, Redo, ZoomIn, ChevronRight, MousePointer2, Move } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -61,11 +62,12 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
       img.onload = () => {
         setOriginalImg(img);
         
+        // Initial setup
         canvas.width = img.width;
         canvas.height = img.height;
-
         ctx.drawImage(img, 0, 0);
 
+        // Apply initial mask if exists
         if (initialMaskedUrl) {
           const mask = new Image();
           mask.crossOrigin = "anonymous";
@@ -73,22 +75,35 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
           mask.onload = () => {
              ctx.clearRect(0, 0, canvas.width, canvas.height);
              ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
-             saveState();
-             centerImage(img.width, img.height);
+             saveState(); // Initial state with mask
+             fitImageToContainer(img.width, img.height);
           };
         } else {
-            saveState();
-            centerImage(img.width, img.height);
+            saveState(); // Initial state original
+            fitImageToContainer(img.width, img.height);
         }
       };
     }, [originalUrl, initialMaskedUrl]);
 
-    const centerImage = (imgW: number, imgH: number) => {
+    // Resize observer to handle window resize
+    useEffect(() => {
+        if (!originalImg || !containerRef.current) return;
+        const handleResize = () => fitImageToContainer(originalImg.width, originalImg.height);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [originalImg]);
+
+    const fitImageToContainer = (imgW: number, imgH: number) => {
         if (!containerRef.current) return;
         const { clientWidth, clientHeight } = containerRef.current;
-        const scaleX = clientWidth / imgW;
-        const scaleY = clientHeight / imgH;
-        const newScale = Math.min(scaleX, scaleY) * 0.9;
+        
+        // Add some padding (e.g. 40px)
+        const availableW = clientWidth - 40;
+        const availableH = clientHeight - 40;
+
+        const scaleX = availableW / imgW;
+        const scaleY = availableH / imgH;
+        const newScale = Math.min(scaleX, scaleY, 1); // Don't zoom in more than 100% initially
         
         setScale(newScale);
         setOffset({
@@ -97,7 +112,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         });
     };
 
-    // 2. History
+    // 2. History Logic
     const saveState = () => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
@@ -107,7 +122,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         const newHistory = history.slice(0, historyIndex + 1);
         newHistory.push(imageData);
         
-        if (newHistory.length > 20) newHistory.shift();
+        if (newHistory.length > 15) newHistory.shift(); // Limit history
         
         setHistory(newHistory);
         setHistoryIndex(newHistory.length - 1);
@@ -141,7 +156,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         redo: handleRedo
     }));
 
-    // 3. Interaction
+    // 3. Drawing & Interaction
     const getPointerPos = (e: React.PointerEvent) => {
         if (!containerRef.current) return { x: 0, y: 0 };
         const rect = containerRef.current.getBoundingClientRect();
@@ -162,6 +177,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         const { x, y } = getPointerPos(e);
         setLastPointerPos({ x, y });
         
+        // Middle mouse or Spacebar (simulated) or Move tool triggers pan
         if (tool === 'move' || e.button === 1) {
             setIsDraggingCanvas(true);
             return;
@@ -249,7 +265,6 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
         lassoPoints.forEach(p => ctx.lineTo(p.x, p.y));
         ctx.closePath();
         ctx.fill();
-        
         ctx.globalCompositeOperation = 'source-over';
         
         setLassoPoints([]);
@@ -258,133 +273,181 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
     };
 
     return (
-        <div className="flex h-full w-full bg-zinc-950 p-4 gap-4">
+        <div className="flex h-full w-full gap-6 p-6 box-border overflow-hidden bg-zinc-950">
             {/* Left Column: Canvas & History */}
-            <div className="flex-1 flex flex-col gap-4 min-w-0">
-                {/* Header Actions (Undo/Redo) */}
-                <div className="flex items-center gap-2">
-                    <Button 
-                        variant="outline" 
-                        size="icon" 
-                        onClick={handleUndo} 
-                        disabled={historyIndex <= 0} 
-                        className="bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800 w-10 h-10"
-                    >
-                        <Undo size={18} />
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        size="icon" 
-                        onClick={handleRedo} 
-                        disabled={historyIndex >= history.length - 1} 
-                        className="bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800 w-10 h-10"
-                    >
-                        <Redo size={18} />
-                    </Button>
+            <div className="flex-1 flex flex-col gap-4 min-w-0 min-h-0 h-full">
+                {/* Header Actions (Undo/Redo) - над картинкой */}
+                <div className="flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2">
+                        <Button 
+                            variant="secondary" 
+                            size="icon" 
+                            onClick={handleUndo} 
+                            disabled={historyIndex <= 0} 
+                            className="bg-zinc-800 text-white hover:bg-zinc-700 w-10 h-10 rounded-full"
+                            title="Undo"
+                        >
+                            <Undo size={18} />
+                        </Button>
+                        <Button 
+                            variant="secondary" 
+                            size="icon" 
+                            onClick={handleRedo} 
+                            disabled={historyIndex >= history.length - 1} 
+                            className="bg-zinc-800 text-white hover:bg-zinc-700 w-10 h-10 rounded-full"
+                            title="Redo"
+                        >
+                            <Redo size={18} />
+                        </Button>
+                    </div>
                     
-                    <div className="ml-auto flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
+                    <div className="flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800/50">
                         <MousePointer2 size={12}/> Scroll to zoom • Drag to pan
                     </div>
                 </div>
 
-                {/* Canvas Area */}
-                <div 
-                    ref={containerRef}
-                    className="flex-1 relative overflow-hidden rounded-xl border border-zinc-800 bg-[url('/transparent-grid.png')] touch-none shadow-inner"
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    onPointerLeave={handlePointerUp}
-                    onWheel={(e) => {
-                        const newScale = Math.max(0.1, Math.min(5, scale - e.deltaY * 0.001));
-                        setScale(newScale);
-                    }}
-                >
-                    <canvas 
-                        ref={canvasRef}
-                        className="absolute origin-top-left"
-                        style={{
-                            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-                            cursor: tool === 'move' ? 'grab' : 'none'
+                {/* Canvas Area Container - занимает всю оставшуюся высоту */}
+                <div className="flex-1 relative overflow-hidden rounded-xl border border-zinc-800 bg-[#121212] shadow-2xl flex items-center justify-center">
+                    <div 
+                        ref={containerRef}
+                        className="w-full h-full relative overflow-hidden touch-none cursor-crosshair bg-[url('/transparent-grid.png')] bg-repeat"
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onPointerLeave={handlePointerUp}
+                        onWheel={(e) => {
+                            const newScale = Math.max(0.1, Math.min(5, scale - e.deltaY * 0.001));
+                            setScale(newScale);
                         }}
-                    />
+                        style={{ cursor: tool === 'move' ? 'grab' : 'crosshair' }}
+                    >
+                        <canvas 
+                            ref={canvasRef}
+                            className="absolute origin-top-left shadow-lg"
+                            style={{
+                                transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+                            }}
+                        />
 
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                        {tool === 'lasso' && lassoPoints.length > 0 && (
-                            <path 
-                                d={`M ${lassoPoints.map(p => `${p.x * scale + offset.x},${p.y * scale + offset.y}`).join(' L ')}`}
-                                fill="rgba(59, 130, 246, 0.2)"
-                                stroke="#3b82f6"
-                                strokeWidth="2"
-                            />
-                        )}
-                        {currentPointer && tool !== 'lasso' && tool !== 'move' && (
-                            <circle 
-                                cx={currentPointer.x * scale + offset.x}
-                                cy={currentPointer.y * scale + offset.y}
-                                r={(brushSize * scale) / 2}
-                                fill="none"
-                                stroke={tool === 'restore' ? '#22c55e' : 'white'}
-                                strokeWidth="2"
-                                className="drop-shadow-md"
-                            />
-                        )}
-                    </svg>
+                        {/* Overlay SVG for UI elements (Cursor, Lasso) */}
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                            {tool === 'lasso' && lassoPoints.length > 0 && (
+                                <path 
+                                    d={`M ${lassoPoints.map(p => `${p.x * scale + offset.x},${p.y * scale + offset.y}`).join(' L ')}`}
+                                    fill="rgba(147, 51, 255, 0.2)"
+                                    stroke="#9333ea"
+                                    strokeWidth="2"
+                                />
+                            )}
+                            {currentPointer && tool !== 'lasso' && tool !== 'move' && (
+                                <circle 
+                                    cx={currentPointer.x * scale + offset.x}
+                                    cy={currentPointer.y * scale + offset.y}
+                                    r={(brushSize * scale) / 2}
+                                    fill="rgba(255,255,255,0.1)"
+                                    stroke={tool === 'restore' ? '#22c55e' : 'white'}
+                                    strokeWidth="1"
+                                    className="drop-shadow-md"
+                                />
+                            )}
+                        </svg>
+                    </div>
                 </div>
             </div>
 
-            {/* Right Column: Tools */}
-            <div className="w-80 flex flex-col gap-6 bg-zinc-900 rounded-xl p-6 border border-zinc-800 shadow-xl h-full flex-shrink-0">
-                <div>
-                    <h3 className="text-lg font-bold text-white mb-1">Tools</h3>
-                    <p className="text-xs text-zinc-500">Remove background and clean up</p>
+            {/* Right Column: Tools Panel - фиксированная ширина, внутренний скролл */}
+            <div className="w-80 flex flex-col bg-[#18181b] rounded-xl border border-zinc-800 shadow-xl h-full flex-shrink-0 overflow-hidden">
+                {/* Panel Header */}
+                <div className="p-6 border-b border-zinc-800 shrink-0">
+                    <h3 className="text-xl font-bold text-white mb-1">Cut it Out</h3>
+                    <p className="text-sm text-zinc-400 leading-snug">Use tools to remove background.</p>
                 </div>
 
-                {/* Auto Remove */}
-                <Button 
-                    variant="outline"
-                    onClick={onAutoRemove}
-                    disabled={isProcessing}
-                    className="w-full justify-start gap-3 h-14 bg-zinc-950 border-zinc-800 hover:bg-zinc-800 hover:border-purple-500/50 text-left group transition-all"
-                >
-                    <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center group-hover:bg-purple-500/20">
-                        {isProcessing ? <Loader2 className="animate-spin text-purple-500" size={18}/> : <Wand2 className="text-purple-500" size={18}/>}
-                    </div>
-                    <div className="flex flex-col items-start">
-                        <span className="text-sm font-bold text-white">Auto Remove</span>
-                        <span className="text-[10px] text-zinc-500">AI Background Removal</span>
-                    </div>
-                </Button>
-
-                <div className="space-y-4 flex-1">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Manual Tools</span>
-                    </div>
+                {/* Panel Content (Scrollable) */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
                     
-                    <div className="grid grid-cols-2 gap-3">
-                        <ToolButton active={tool === 'eraser'} onClick={() => setTool('eraser')} icon={<Eraser size={20} />} label="Eraser" />
-                        <ToolButton active={tool === 'restore'} onClick={() => setTool('restore')} icon={<RotateCcw size={20} />} label="Restore" />
-                        <ToolButton active={tool === 'lasso'} onClick={() => setTool('lasso')} icon={<Scissors size={20} />} label="Lasso" />
-                        <ToolButton active={tool === 'move'} onClick={() => setTool('move')} icon={<ZoomIn size={20} />} label="Move" />
+                    {/* Auto Magic */}
+                    <div className="space-y-3">
+                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">AI Magic</Label>
+                        <Button 
+                            variant="outline"
+                            onClick={onAutoRemove}
+                            disabled={isProcessing}
+                            className="w-full justify-start gap-4 h-16 bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800 hover:border-purple-500/50 text-left group transition-all relative overflow-hidden"
+                        >
+                            <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"/>
+                            <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0 border border-purple-500/30 group-hover:scale-110 transition-transform">
+                                {isProcessing ? <Loader2 className="animate-spin text-purple-400" size={20}/> : <Wand2 className="text-purple-400" size={20}/>}
+                            </div>
+                            <div className="flex flex-col items-start z-10">
+                                <span className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">Auto Remove</span>
+                                <span className="text-[11px] text-zinc-500">Detect & remove bg</span>
+                            </div>
+                        </Button>
                     </div>
 
+                    {/* Manual Tools Grid */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Manual Tools</Label>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                            <ToolButton 
+                                active={tool === 'lasso'} 
+                                onClick={() => setTool('lasso')} 
+                                icon={<Scissors size={24} />} 
+                                label="Lasso" 
+                                color="text-blue-400"
+                            />
+                            <ToolButton 
+                                active={tool === 'eraser'} 
+                                onClick={() => setTool('eraser')} 
+                                icon={<Eraser size={24} />} 
+                                label="Eraser" 
+                                color="text-pink-400"
+                            />
+                            <ToolButton 
+                                active={tool === 'restore'} 
+                                onClick={() => setTool('restore')} 
+                                icon={<RotateCcw size={24} />} 
+                                label="Restore" 
+                                color="text-green-400"
+                            />
+                            <ToolButton 
+                                active={tool === 'move'} 
+                                onClick={() => setTool('move')} 
+                                icon={<Move size={24} />} 
+                                label="Move" 
+                                color="text-yellow-400"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Tool Settings (Contextual) */}
                     {(tool === 'eraser' || tool === 'restore') && (
-                        <div className="space-y-3 p-4 bg-zinc-950 rounded-xl border border-zinc-800 mt-4 animate-in fade-in slide-in-from-top-2">
-                            <div className="flex justify-between text-xs font-medium text-zinc-400">
+                        <div className="space-y-4 p-4 bg-zinc-900 rounded-xl border border-zinc-800 animate-in fade-in slide-in-from-top-2">
+                            <div className="flex justify-between items-center text-xs font-medium text-zinc-400">
                                 <span>Brush Size</span>
-                                <span className="text-white">{brushSize}px</span>
+                                <span className="text-white bg-zinc-800 px-2 py-1 rounded">{brushSize}px</span>
                             </div>
-                            <Slider value={[brushSize]} onValueChange={v => setBrushSize(v[0])} min={5} max={100} step={1} className="py-2" />
+                            <Slider 
+                                value={[brushSize]} 
+                                onValueChange={v => setBrushSize(v[0])} 
+                                min={5} max={150} step={1} 
+                                className="py-2 cursor-pointer" 
+                            />
                         </div>
                     )}
                 </div>
 
-                <div className="mt-auto pt-6 border-t border-zinc-800">
+                {/* Footer Action */}
+                <div className="p-6 border-t border-zinc-800 bg-zinc-900 shrink-0">
                     <Button 
-                        className="w-full h-12 bg-white text-black hover:bg-zinc-200 font-bold text-lg rounded-xl shadow-lg shadow-white/5"
+                        className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-lg rounded-xl shadow-lg shadow-purple-900/20 transition-all hover:scale-[1.02]"
                         onClick={onNext}
                     >
-                        Next Step <ChevronRight size={20} className="ml-1" />
+                        Continue to Design <ChevronRight size={20} className="ml-2" />
                     </Button>
                 </div>
             </div>
@@ -394,19 +457,21 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
 
 MaskEditor.displayName = "MaskEditor";
 
-function ToolButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
+function ToolButton({ active, onClick, icon, label, color }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string, color?: string }) {
     return (
         <button
             onClick={onClick}
             className={cn(
-                "flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all duration-200",
+                "flex flex-col items-center justify-center gap-3 p-4 rounded-xl border-2 transition-all duration-200 h-28",
                 active 
-                ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20 scale-[1.02]" 
-                : "bg-zinc-950 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white hover:border-zinc-700"
+                ? "bg-zinc-800 border-white/20 text-white shadow-lg scale-[1.02]" 
+                : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-800 hover:text-white hover:border-zinc-700"
             )}
         >
-            {icon}
-            <span className="text-xs font-medium">{label}</span>
+            <div className={cn("p-2 rounded-full bg-zinc-950", active ? color : "text-current")}>
+                {icon}
+            </div>
+            <span className="text-xs font-bold">{label}</span>
         </button>
     )
 }

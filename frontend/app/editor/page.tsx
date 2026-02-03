@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, ChevronLeft, Download, Layers, Type, Sparkles, Image as ImageIcon, Check, ChevronRight } from "lucide-react";
+import { Loader2, Upload, ChevronLeft, Download, Sparkles, Image as ImageIcon, Check } from "lucide-react";
 import { toast } from "sonner";
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
 import { MaskEditor, MaskEditorRef } from "@/components/editor/mask-editor";
@@ -162,7 +161,7 @@ export default function StickerMakerPage() {
       <div className="relative inline-block select-none pointer-events-none">
           <img 
               src={maskedSrc!} 
-              className="max-h-[50vh] max-w-full w-auto object-contain"
+              className="max-h-[60vh] max-w-full w-auto object-contain drop-shadow-2xl"
           />
           {text && (
               <div 
@@ -175,7 +174,7 @@ export default function StickerMakerPage() {
                       color: textColor,
                       WebkitTextStroke: '2px black',
                       fontFamily: 'Impact, sans-serif',
-                      textShadow: '2px 2px 0 #000'
+                      textShadow: '3px 3px 0 #000'
                   }}
                   onPointerDown={(e) => { e.stopPropagation(); setIsDraggingText(true); }}
               >
@@ -247,10 +246,26 @@ export default function StickerMakerPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-950 overflow-hidden">
+    <div className="flex h-screen flex-col bg-zinc-950 overflow-hidden text-white">
       
+      {/* HEADER (Top Bar) */}
+      <div className="flex h-16 items-center justify-between px-6 border-b border-zinc-900 bg-zinc-950 shrink-0 z-30">
+        <Button variant="ghost" size="icon" onClick={() => step === "design" ? setStep("cutout") : setStep("upload")} className="text-zinc-400 hover:text-white">
+          <ChevronLeft className="h-6 w-6" />
+        </Button>
+        <span className="font-bold text-lg tracking-tight text-white">{step === 'cutout' ? 'Cut Out' : 'Design'}</span>
+        <Button 
+            variant="ghost" 
+            className="text-blue-500 hover:text-blue-400 font-semibold"
+            onClick={step === 'cutout' ? handleCutoutFinish : handleGenerate}
+            disabled={isProcessing}
+        >
+          {isProcessing ? <Loader2 className="animate-spin h-5 w-5"/> : (step === 'cutout' ? 'Next' : 'Save')}
+        </Button>
+      </div>
+
       {/* Editor Workspace */}
-      <div className="flex-1 relative bg-zinc-950 overflow-hidden">
+      <div className="flex-1 min-h-0 relative bg-zinc-950">
         {step === "cutout" && originalSrc && (
             <MaskEditor
                 key={maskedSrc || "original"} 
@@ -264,22 +279,22 @@ export default function StickerMakerPage() {
         )}
 
         {step === "design" && maskedSrc && (
-            <div className="flex h-full w-full bg-zinc-950 p-4 gap-4">
+            <div className="flex h-full w-full gap-6 p-6 box-border overflow-hidden">
                 {/* Left: Preview Area */}
-                <div className="flex-1 flex flex-col gap-4 min-w-0">
-                    <div className="flex items-center gap-2">
+                <div className="flex-1 flex flex-col gap-4 min-w-0 min-h-0 h-full">
+                    <div className="flex items-center gap-2 shrink-0">
                         <Button 
                             variant="outline" 
                             onClick={() => setStep('cutout')} 
-                            className="bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800"
+                            className="bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800 h-9 px-4 text-sm"
                         >
-                            <ChevronLeft size={18} className="mr-1" /> Back
+                            <ChevronLeft size={16} className="mr-2" /> Back to Cutout
                         </Button>
                     </div>
 
                     <div 
                         ref={previewRef}
-                        className="flex-1 relative overflow-hidden rounded-xl border border-zinc-800 bg-[url('/transparent-grid.png')] flex items-center justify-center touch-none shadow-inner"
+                        className="flex-1 relative overflow-hidden rounded-xl border border-zinc-800 bg-[#121212] flex items-center justify-center touch-none shadow-2xl"
                         onMouseMove={handleTextDrag}
                         onMouseUp={() => setIsDraggingText(false)}
                         onMouseLeave={() => setIsDraggingText(false)}
@@ -317,89 +332,113 @@ export default function StickerMakerPage() {
                     </div>
                 </div>
 
-                {/* Right: Design Controls */}
-                <div className="w-80 flex flex-col bg-zinc-900 rounded-xl border border-zinc-800 shadow-xl h-full overflow-hidden flex-shrink-0">
-                     <Tabs defaultValue="outline" className="flex-1 flex flex-col">
-                         
-                         <div className="p-4 border-b border-zinc-800">
-                            <h3 className="text-lg font-bold text-white mb-4">Design</h3>
-                            <TabsList className="w-full grid grid-cols-3 bg-zinc-950">
-                                <TabsTrigger value="outline">Outline</TabsTrigger>
-                                <TabsTrigger value="text">Text</TabsTrigger>
-                                <TabsTrigger value="effects">Effect</TabsTrigger>
-                            </TabsList>
-                         </div>
+                {/* Right: Design Controls Sidebar */}
+                <div className="w-80 flex flex-col bg-[#18181b] rounded-xl border border-zinc-800 shadow-xl h-full flex-shrink-0 overflow-hidden">
+                     <div className="p-6 border-b border-zinc-800 shrink-0">
+                        <h3 className="text-xl font-bold text-white mb-1">Design</h3>
+                        <p className="text-sm text-zinc-400">Style your sticker</p>
+                     </div>
 
-                         <div className="flex-1 p-6 overflow-y-auto">
-                            <TabsContent value="outline" className="mt-0 space-y-6 animate-in fade-in slide-in-from-right-4">
-                                <div className="space-y-4">
-                                    <Label className="text-white">Color</Label>
-                                    <div className="grid grid-cols-5 gap-2">
-                                        <button onClick={() => setOutlineColor(null)} className="aspect-square rounded-full border border-zinc-700 flex items-center justify-center hover:bg-zinc-800 text-zinc-400">✕</button>
-                                        {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#ec4899', '#8b5cf6', '#f97316'].map(c => (
-                                            <button 
-                                                key={c}
-                                                className={`aspect-square rounded-full border-2 transition-all ${outlineColor === c ? 'border-white scale-110' : 'border-transparent'}`}
-                                                style={{ backgroundColor: c }}
-                                                onClick={() => setOutlineColor(c)}
-                                            />
-                                        ))}
+                     <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                        {/* Section: Outline */}
+                        <div className="space-y-4">
+                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                                1. Outline
+                            </Label>
+                            <div className="grid grid-cols-6 gap-2">
+                                <button 
+                                    onClick={() => setOutlineColor(null)} 
+                                    className={`aspect-square rounded-full border-2 flex items-center justify-center hover:bg-zinc-800 text-zinc-400 transition-all ${!outlineColor ? 'border-white bg-zinc-800' : 'border-zinc-700'}`}
+                                    title="No Outline"
+                                >
+                                    ✕
+                                </button>
+                                {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#ec4899', '#8b5cf6', '#f97316', '#06b6d4', '#8b5cf6'].slice(0, 11).map(c => (
+                                    <button 
+                                        key={c}
+                                        className={`aspect-square rounded-full border-2 transition-all hover:scale-110 ${outlineColor === c ? 'border-white scale-110 ring-2 ring-white/20' : 'border-transparent'}`}
+                                        style={{ backgroundColor: c }}
+                                        onClick={() => setOutlineColor(c)}
+                                    />
+                                ))}
+                            </div>
+                            
+                            {outlineColor && (
+                                <div className="space-y-3 pt-2 animate-in fade-in slide-in-from-top-1">
+                                    <div className="flex justify-between text-xs font-medium text-zinc-400">
+                                        <span>Thickness</span>
+                                        <span className="text-white">{outlineWidth}px</span>
                                     </div>
+                                    <Slider value={[outlineWidth]} onValueChange={v => setOutlineWidth(v[0])} max={20} step={1} className="py-1" />
                                 </div>
-                                <div className="space-y-4">
-                                    <div className="flex justify-between text-sm text-zinc-400"><span>Width</span><span>{outlineWidth}px</span></div>
-                                    <Slider value={[outlineWidth]} onValueChange={v => setOutlineWidth(v[0])} max={20} step={1} />
-                                </div>
-                            </TabsContent>
+                            )}
+                        </div>
 
-                            <TabsContent value="text" className="mt-0 space-y-6 animate-in fade-in slide-in-from-right-4">
-                                <div className="space-y-3">
-                                    <Label className="text-white">Content</Label>
-                                    <div className="flex gap-2">
-                                        <Input 
-                                            placeholder="Top text..." 
-                                            value={text}
-                                            onChange={(e) => setText(e.target.value)}
-                                            className="bg-zinc-950 border-zinc-800 text-white focus:ring-purple-500"
-                                        />
-                                        <div className="w-10 h-10 rounded-md border border-zinc-700 overflow-hidden relative flex-shrink-0 cursor-pointer">
-                                             <input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"/>
-                                             <div className="w-full h-full" style={{backgroundColor: textColor}}/>
-                                        </div>
+                        <div className="h-px bg-zinc-800/50 w-full" />
+
+                        {/* Section: Text */}
+                        <div className="space-y-4">
+                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                                2. Text
+                            </Label>
+                            <div className="flex gap-2">
+                                <Input 
+                                    placeholder="Add caption..." 
+                                    value={text}
+                                    onChange={(e) => setText(e.target.value)}
+                                    className="bg-zinc-900 border-zinc-700 text-white focus:ring-indigo-500 focus:border-indigo-500 h-10"
+                                />
+                                <div className="w-10 h-10 rounded-lg border border-zinc-700 overflow-hidden relative flex-shrink-0 cursor-pointer hover:border-zinc-500 transition-colors shadow-sm">
+                                        <input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"/>
+                                        <div className="w-full h-full" style={{backgroundColor: textColor}}/>
+                                </div>
+                            </div>
+                            {text && (
+                                <div className="space-y-3 pt-2 animate-in fade-in slide-in-from-top-1">
+                                    <div className="flex justify-between text-xs font-medium text-zinc-400">
+                                        <span>Size</span>
+                                        <span className="text-white">{textSize}</span>
                                     </div>
+                                    <Slider value={[textSize]} onValueChange={v => setTextSize(v[0])} min={10} max={80} step={1} className="py-1" />
+                                    <p className="text-[10px] text-indigo-400 italic text-center pt-1">
+                                        ✨ Drag text on image to move
+                                    </p>
                                 </div>
-                                <div className="space-y-4">
-                                    <div className="flex justify-between text-sm text-zinc-400"><span>Size</span><span>{textSize}</span></div>
-                                    <Slider value={[textSize]} onValueChange={v => setTextSize(v[0])} min={10} max={60} step={1} />
-                                </div>
-                                <div className="text-xs text-zinc-500 p-3 bg-zinc-950 rounded-lg border border-zinc-800">
-                                    Tip: Drag text on the image to position it.
-                                </div>
-                            </TabsContent>
+                            )}
+                        </div>
 
-                            <TabsContent value="effects" className="mt-0 space-y-4 animate-in fade-in slide-in-from-right-4">
-                                <div className="grid grid-cols-3 gap-3">
-                                    {ANIMATIONS.map(a => (
-                                        <button 
-                                            key={a.id} 
-                                            onClick={() => setAnim(a.id)}
-                                            className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${anim === a.id ? 'bg-purple-600 border-purple-500 text-white shadow-lg' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
-                                        >
-                                            <span className="text-2xl">{a.icon}</span>
-                                            <span className="text-[10px] font-medium">{a.label}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </TabsContent>
-                         </div>
+                        <div className="h-px bg-zinc-800/50 w-full" />
 
-                         <div className="p-6 border-t border-zinc-800 bg-zinc-900 mt-auto">
-                            <Button onClick={handleGenerate} disabled={isProcessing} className="w-full h-12 bg-white text-black hover:bg-zinc-200 font-bold text-lg rounded-xl shadow-lg">
-                                {isProcessing ? <Loader2 className="animate-spin mr-2"/> : <Sparkles className="mr-2" size={18}/>}
-                                Create Sticker
-                            </Button>
-                         </div>
-                    </Tabs>
+                        {/* Section: Effects */}
+                        <div className="space-y-4">
+                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                                3. Animation
+                            </Label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {ANIMATIONS.map(a => (
+                                    <button 
+                                        key={a.id} 
+                                        onClick={() => setAnim(a.id)}
+                                        className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all duration-200 ${anim === a.id ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg scale-[1.02]' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white hover:border-zinc-700'}`}
+                                    >
+                                        <span className="text-2xl">{a.icon}</span>
+                                        <span className="text-[10px] font-bold">{a.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                     </div>
+
+                     <div className="p-6 border-t border-zinc-800 bg-zinc-900 shrink-0">
+                        <Button 
+                            onClick={handleGenerate} 
+                            disabled={isProcessing} 
+                            className="w-full h-14 bg-white text-black hover:bg-zinc-200 font-bold text-lg rounded-xl shadow-lg shadow-white/5 transition-all hover:scale-[1.02]"
+                        >
+                            {isProcessing ? <Loader2 className="animate-spin mr-2"/> : <Sparkles className="mr-2" size={20}/>}
+                            Create Sticker
+                        </Button>
+                     </div>
                 </div>
             </div>
         )}
