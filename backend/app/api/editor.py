@@ -1,15 +1,14 @@
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from app.core.celery_app import celery_app
 from app.api.deps import get_current_user
 from app.models.models import User
-from app.services.video import process_video_task
 import uuid
 import os
 import json
-import shutil  # <--- Добавлено
+import shutil
 import aiofiles
-from pydantic import BaseModel, Json  # <--- Добавлено Json
+from pydantic import BaseModel, Json
 from celery.result import AsyncResult
 
 router = APIRouter()
@@ -65,62 +64,6 @@ async def process_image(
     )
     return {"task_id": task.id}
 
-# Переименовали старый метод, чтобы избежать конфликта путей
-@router.post("/video/process-sync")
-async def process_video_sync(
-    video: UploadFile = File(...),
-    audio: UploadFile = File(None),
-    options: str = Form(...) # JSON string с настройками
-):
-    """
-    Устаревший синхронный метод. Рекомендуется использовать асинхронный вариант ниже.
-    """
-    # 1. Сохраняем исходник
-    video_ext = video.filename.split('.')[-1]
-    video_filename = f"{uuid.uuid4()}.{video_ext}"
-    video_path = f"uploads/{video_filename}"
-    
-    with open(video_path, "wb") as buffer:
-        shutil.copyfileobj(video.file, buffer)
-
-    # 2. Сохраняем аудио если есть
-    audio_path = None
-    if audio:
-        audio_filename = f"{uuid.uuid4()}.mp3"
-        audio_path = f"uploads/{audio_filename}"
-        with open(audio_path, "wb") as buffer:
-            shutil.copyfileobj(audio.file, buffer)
-
-    # 3. Парсим опции
-    try:
-        opts = json.loads(options)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid options JSON")
-
-    # 4. Обрабатываем
-    output_filename = f"processed_{uuid.uuid4()}.mp4"
-    output_path = f"uploads/{output_filename}"
-
-    try:
-        await process_video_task(
-            file_path=video_path,
-            output_path=output_path,
-            trim_start=opts.get('trim_start'),
-            trim_end=opts.get('trim_end'),
-            crop=opts.get('crop'),
-            remove_audio=opts.get('remove_audio', False),
-            new_audio_path=audio_path,
-            text_overlay=opts.get('text'),
-            filter_name=opts.get('filter')
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if os.path.exists(video_path): os.remove(video_path)
-        if audio_path and os.path.exists(audio_path): os.remove(audio_path)
-
-    return {"url": f"/static/{output_filename}"} # Убедитесь, что /static раздается правильно
-
 @router.post("/video/upload")
 async def upload_video_for_editor(
     file: UploadFile = File(...),
@@ -137,12 +80,11 @@ async def upload_video_for_editor(
         
     return {"file_path": file_path, "url": f"/static/{filename}"}
 
-# Это основной метод для редактора (через Celery)
 @router.post("/video/process")
 async def process_video_editor(
     video_path: str = Form(...),
     audio_file: UploadFile = File(None),
-    options: Json[VideoProcessOptions] = Form(...), # Теперь VideoProcessOptions определен
+    options: Json[VideoProcessOptions] = Form(...),
     current_user: User = Depends(get_current_user)
 ):
     """Запуск обработки видео (асинхронно)"""
