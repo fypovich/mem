@@ -327,7 +327,8 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                             min={0}
                             max={100}
                             step={1}
-                            onValueChange={setTrimRange}
+                            // --- ИЗМЕНЕНИЕ: явное приведение типов ---
+                            onValueChange={(value) => setTrimRange(value as [number, number])}
                             className="py-4"
                         />
                         <div className="flex justify-between text-xs text-muted-foreground font-mono">
