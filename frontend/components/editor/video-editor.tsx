@@ -280,17 +280,18 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
          onMouseMove={handleMouseMove}>
       
       {/* --- LEFT COLUMN: PREVIEW & TIMELINE --- */}
-      <div className="flex-1 flex flex-col min-w-0 p-4 gap-4">
+      <div className="flex-1 flex flex-col min-w-0 p-4 gap-2"> {/* gap-4 -> gap-2 */}
         
         {/* Video Container */}
-        <div className="flex-1 relative flex items-center justify-center bg-zinc-900/50 rounded-xl border border-zinc-800 overflow-hidden select-none">
+        {/* Added min-h-0 to allow proper flex shrinking */}
+        <div className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-900/50 rounded-xl border border-zinc-800 overflow-hidden select-none">
             <div ref={containerRef} className="relative shadow-2xl">
                 {videoUrl ? (
                     <>
                         <video
                             ref={videoRef}
                             src={videoUrl}
-                            className="max-h-[60vh] max-w-full pointer-events-none block"
+                            className="max-h-[50vh] max-w-full pointer-events-none block" // Reduced to 50vh
                             style={{ filter: FILTER_STYLES[filter] || 'none' }}
                             onTimeUpdate={handleTimeUpdate}
                             onLoadedMetadata={handleLoadedMetadata}
@@ -509,7 +510,8 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           </ScrollArea>
 
           {/* Action Footer */}
-          <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
+          {/* Increased padding to lift the button visually */}
+          <div className="p-6 border-t border-zinc-800 bg-zinc-900/50">
               <Button 
                   className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-900/20" 
                   onClick={prepareAndProcess} 
