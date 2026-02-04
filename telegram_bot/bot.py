@@ -40,9 +40,9 @@ API_INTERNAL_URL = os.getenv("API_INTERNAL_URL", "http://backend:8000/api/v1")
 API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", WEB_APP_URL)
 
 # Данные для системного пользователя-бота
-BOT_USERNAME = "bot_uploader"
+BOT_USERNAME = "bot"
 BOT_PASSWORD = os.getenv("BOT_USER_PASSWORD", "super_secret_bot_password_123")
-BOT_EMAIL = "bot@memehub.local"
+BOT_EMAIL = "bot@tg.ru"
 
 # Глобальная переменная для хранения JWT токена
 API_ACCESS_TOKEN = None
@@ -59,22 +59,24 @@ if not TOKEN:
 def ensure_bot_user_exists():
     """
     Регистрирует или логинит пользователя 'bot', чтобы получить токен для API.
-    Выполняется синхронно при старте.
     """
     global API_ACCESS_TOKEN
     
-    # 1. Пробуем войти
-    login_url = f"{API_INTERNAL_URL}/auth/login"
+    # 1. Пробуем войти (URL исправлен на /auth/token)
+    login_url = f"{API_INTERNAL_URL}/auth/token"
     try:
+        # OAuth2 требует поля username и password в form-data
         resp = requests.post(login_url, data={"username": BOT_USERNAME, "password": BOT_PASSWORD})
         if resp.status_code == 200:
             API_ACCESS_TOKEN = resp.json().get("access_token")
             logger.info(f"✅ Bot authorized as '{BOT_USERNAME}'")
             return
+        else:
+            logger.warning(f"⚠️ Login failed: {resp.status_code} {resp.text}")
     except Exception as e:
-        logger.warning(f"Login failed (server might be down yet): {e}")
+        logger.warning(f"Login connection failed: {e}")
 
-    # 2. Если не вышло (401/404), пробуем зарегистрировать
+    # 2. Если не вышло, пробуем зарегистрировать
     register_url = f"{API_INTERNAL_URL}/auth/register"
     try:
         payload = {
@@ -84,13 +86,17 @@ def ensure_bot_user_exists():
             "full_name": "Telegram Bot"
         }
         resp = requests.post(register_url, json=payload)
+        
         if resp.status_code in [200, 201]:
             logger.info(f"✅ Created user '{BOT_USERNAME}'")
-            # Сразу логинимся
+            # Сразу логинимся после создания
             login_resp = requests.post(login_url, data={"username": BOT_USERNAME, "password": BOT_PASSWORD})
             if login_resp.status_code == 200:
                 API_ACCESS_TOKEN = login_resp.json().get("access_token")
                 return
+        else:
+            logger.error(f"❌ Registration failed: {resp.status_code} {resp.text}")
+            
     except Exception as e:
         logger.error(f"Failed to create bot user: {e}")
 
