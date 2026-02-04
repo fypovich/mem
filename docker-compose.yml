@@ -106,11 +106,7 @@ services:
     depends_on:
       - backend
 
-volumes:
-  postgres_data:
-  meili_data:
-
-telegram_bot:
+  telegram_bot:
     build: ./telegram_bot
     container_name: memegiphy_bot
     restart: always
@@ -126,3 +122,7 @@ telegram_bot:
       - WEB_APP_URL=${WEB_APP_URL}
     depends_on:
       - backend
+
+volumes:
+  postgres_data:
+  meili_data:
