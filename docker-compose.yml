@@ -118,6 +118,7 @@ services:
       - API_INTERNAL_URL=http://backend:8000/api/v1
       # API_PUBLIC_URL и WEB_APP_URL бот возьмет сам из .env файла,
       # если мы их здесь НЕ укажем.
+      - BOT_USER_PASSWORD=${BOT_USER_PASSWORD:-12345678}
     depends_on:
       - backend
 
