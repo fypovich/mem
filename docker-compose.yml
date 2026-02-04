@@ -110,16 +110,14 @@ services:
     build: ./telegram_bot
     container_name: memegiphy_bot
     restart: always
+    # 1. Указываем путь к твоему файлу (он внутри папки backend)
     env_file:
       - ./backend/.env
     environment:
-      # Бот внутри докера стучится к бэкенду по имени сервиса "backend"
+      # 2. Переопределяем только то, чего нет в .env или что нужно изменить
       - API_INTERNAL_URL=http://backend:8000/api/v1
-      # Для ссылок на видео используем твой ngrok (берем из WEB_APP_URL в .env)
-      # Важно: WEB_APP_URL в твоем .env это "https://...ngrok-free.dev"
-      - API_PUBLIC_URL=${WEB_APP_URL}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - WEB_APP_URL=${WEB_APP_URL}
+      # API_PUBLIC_URL и WEB_APP_URL бот возьмет сам из .env файла,
+      # если мы их здесь НЕ укажем.
     depends_on:
       - backend
 

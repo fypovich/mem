@@ -171,7 +171,8 @@ async def upload_meme(
             "description": new_meme.description,
             "thumbnail_url": new_meme.thumbnail_url,
             "media_url": new_meme.media_url,
-            "views_count": new_meme.views_count
+            "views_count": new_meme.views_count,
+            "tags": tags_list
         }])
         
         # Уведомления для картинок
@@ -296,6 +297,26 @@ async def read_memes(
         
     return memes_with_stats
 
+
+@router.get("/random", response_model=MemeResponse)
+async def get_random_meme(db: AsyncSession = Depends(get_db)):
+    # Получаем общее количество одобренных мемов
+    count = await db.scalar(select(func.count()).select_from(Meme).where(Meme.status == "approved"))
+    if count == 0:
+        raise HTTPException(status_code=404, detail="No memes found")
+    
+    # Берем случайный сдвиг (offset)
+    random_offset = random.randint(0, count - 1)
+    
+    query = (
+        select(Meme)
+        .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
+        .where(Meme.status == "approved")
+        .offset(random_offset)
+        .limit(1)
+    )
+    res = await db.execute(query)
+    return res.scalars().first()
 
 @router.get("/{meme_id}", response_model=MemeResponse)
 async def read_meme(
@@ -694,23 +715,3 @@ async def report_meme(
     await db.commit()
     
     return {"message": "Report submitted"}
-
-@router.get("/random", response_model=MemeResponse)
-async def get_random_meme(db: AsyncSession = Depends(get_db)):
-    # Получаем общее количество одобренных мемов
-    count = await db.scalar(select(func.count()).select_from(Meme).where(Meme.status == "approved"))
-    if count == 0:
-        raise HTTPException(status_code=404, detail="No memes found")
-    
-    # Берем случайный сдвиг (offset)
-    random_offset = random.randint(0, count - 1)
-    
-    query = (
-        select(Meme)
-        .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
-        .where(Meme.status == "approved")
-        .offset(random_offset)
-        .limit(1)
-    )
-    res = await db.execute(query)
-    return res.scalars().first()
