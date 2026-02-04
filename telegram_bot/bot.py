@@ -76,21 +76,29 @@ async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Ошибка при поиске.")
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка инлайн-запросов (Поиск)"""
-    query = update.inline_query.query.strip()
+    """Обработка инлайн-запросов (Поиск + Режимы)"""
+    raw_query = update.inline_query.query.strip()
     
-    # ПАРАМЕТРЫ ПОИСКА
-    params = {"limit": 20}
+    # 1. ОПРЕДЕЛЯЕМ РЕЖИМ (Видео по умолчанию или Картинки #img)
+    force_images = False
+    clean_query = raw_query
     
-    if not query:
-        # Если запрос пустой, запрашиваем "свежие" мемы (пустой q + сортировка)
-        # Убедись, что твой Search API нормально реагирует на пустой q (возвращает placeholder search)
-        # Если Search API требует q, можно передать "*", если MeiliSearch настроен так
-        params["q"] = "" 
+    if raw_query.endswith("#img"):
+        force_images = True
+        clean_query = raw_query.replace("#img", "").strip()
+    
+    # Параметры поиска для бэкенда
+    params = {"limit": 60} # Берем побольше
+    
+    if not clean_query:
+        params["q"] = ""
+        params["sort"] = "new" 
     else:
-        params["q"] = query
+        params["q"] = clean_query
 
-    results = []
+    video_results = []
+    image_results = []
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{API_INTERNAL_URL}/search/", params=params) as resp:
@@ -98,66 +106,114 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     data = await resp.json()
                     memes = data.get("memes", [])
                     
+                    # 2. РАЗДЕЛЯЕМ РЕЗУЛЬТАТЫ
+                    temp_videos = []
+                    temp_images = []
+
                     for meme in memes:
-                        meme_id = str(meme.get("id"))
-                        base_title = meme.get("title", "Meme")
-                        shares = meme.get("shares_count", 0) 
-                        
                         media_path = meme.get('media_url', '')
-                        thumb_path = meme.get('thumbnail_url', '')
-                        
-                        # Метаданные
-                        duration = int(meme.get("duration", 0) or 0)
-                        width = meme.get("width")
-                        height = meme.get("height")
-
-                        media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
-                        thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
-                        
-                        # --- ТЕГИ ---
-                        raw_tags = meme.get('tags', [])
-                        tag_str = ""
-                        if raw_tags:
-                            if isinstance(raw_tags[0], dict):
-                                tag_list = [t['name'] for t in raw_tags]
-                            else:
-                                tag_list = raw_tags
-                            tag_str = " ".join([f"#{t}" for t in tag_list[:3]])
-
-                        # --- ОПИСАНИЕ (для Видео и Фото) ---
-                        list_description = f"🔥 Отправлено: {shares} раз\n{tag_str}"
-
                         ext = media_path.split('.')[-1].lower()
-                        
-                        if ext in ['jpg', 'jpeg', 'png', 'webp']:
-                            results.append(
-                                InlineQueryResultPhoto(
-                                    id=meme_id,
-                                    photo_url=media_url,
-                                    thumbnail_url=thumb_url,
-                                    photo_width=width,
-                                    photo_height=height,
-                                    title=f"🖼 {base_title}", 
-                                    description=list_description, 
-                                    caption=""
-                                )
-                            )
-                        elif ext in ['gif']:
-                            # ДЛЯ GIF: Статистику пишем в TITLE, т.к. description нет
-                            gif_title = f"🎞 {base_title} (🔥 {shares})"
-                            results.append(
-                                InlineQueryResultGif(
-                                    id=meme_id,
-                                    gif_url=media_url,
-                                    thumbnail_url=thumb_url,
-                                    gif_width=width,
-                                    gif_height=height,
-                                    title=gif_title, # <--- Сюда статистику
-                                    caption=""
-                                )
-                            )
+                        if ext in ['jpg', 'jpeg', 'png', 'webp', 'gif']:
+                            temp_images.append(meme)
                         else:
-                            results.append(
+                            temp_videos.append(meme)
+
+                    # Подсчитываем количество для кнопок
+                    img_count = len(temp_images)
+                    vid_count = len(temp_videos)
+
+                    # 3. ФОРМИРУЕМ ОТВЕТ В ЗАВИСИМОСТИ ОТ РЕЖИМА
+                    
+                    # --- РЕЖИМ: КАРТИНКИ (Если запросили #img ИЛИ если видео вообще нет) ---
+                    if force_images or (not temp_videos and temp_images):
+                        
+                        # Кнопка "Назад к видео" (если видео вообще существуют по этому запросу)
+                        back_btn = None
+                        if vid_count > 0:
+                            # switch_inline_query_current_chat вставляет текст в поле ввода
+                            back_btn = InlineKeyboardMarkup([[
+                                InlineKeyboardButton(f"📹 К видео ({vid_count})", switch_inline_query_current_chat=clean_query)
+                            ]])
+
+                        for meme in temp_images:
+                            meme_id = str(meme.get("id"))
+                            title = meme.get("title", "Meme")
+                            shares = meme.get("shares_count", 0)
+                            
+                            media_path = meme.get('media_url', '')
+                            thumb_path = meme.get('thumbnail_url', '')
+                            width = meme.get("width")
+                            height = meme.get("height")
+                            
+                            media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
+                            thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
+                            
+                            # Для GIF показываем стату в заголовке
+                            ext = media_path.split('.')[-1].lower()
+                            display_title = title if ext not in ['gif'] else f"🎞 {title} (🔥 {shares})"
+
+                            if ext in ['gif']:
+                                image_results.append(
+                                    InlineQueryResultGif(
+                                        id=meme_id,
+                                        gif_url=media_url,
+                                        thumbnail_url=thumb_url,
+                                        gif_width=width,
+                                        gif_height=height,
+                                        title=display_title,
+                                        reply_markup=back_btn # Кнопка возврата
+                                    )
+                                )
+                            else:
+                                image_results.append(
+                                    InlineQueryResultPhoto(
+                                        id=meme_id,
+                                        photo_url=media_url,
+                                        thumbnail_url=thumb_url,
+                                        photo_width=width,
+                                        photo_height=height,
+                                        title=f"🖼 {display_title}",
+                                        reply_markup=back_btn # Кнопка возврата
+                                    )
+                                )
+                        
+                        await update.inline_query.answer(image_results, cache_time=1)
+
+                    # --- РЕЖИМ: ВИДЕО (По умолчанию) ---
+                    else:
+                        # Кнопка "Перейти к фото" (если фото есть)
+                        switch_btn = None
+                        if img_count > 0:
+                            # Добавляем #img к текущему запросу
+                            new_query = f"{clean_query} #img".strip()
+                            switch_btn = InlineKeyboardMarkup([[
+                                InlineKeyboardButton(f"📸 Фото/GIF ({img_count})", switch_inline_query_current_chat=new_query)
+                            ]])
+
+                        for meme in temp_videos:
+                            meme_id = str(meme.get("id"))
+                            title = meme.get("title", "Meme")
+                            shares = meme.get("shares_count", 0)
+                            
+                            media_path = meme.get('media_url', '')
+                            thumb_path = meme.get('thumbnail_url', '')
+                            
+                            duration = int(meme.get("duration", 0) or 0)
+                            width = meme.get("width")
+                            height = meme.get("height")
+
+                            media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
+                            thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
+                            
+                            tags = meme.get('tags', [])
+                            tag_str = ""
+                            if tags:
+                                t_list = [t['name'] for t in tags] if isinstance(tags[0], dict) else tags
+                                tag_str = " ".join([f"#{t}" for t in t_list[:3]])
+
+                            list_description = f"🔥 Отправлено: {shares} раз\n{tag_str}"
+
+                            video_results.append(
                                 InlineQueryResultVideo(
                                     id=meme_id,
                                     video_url=media_url,
@@ -166,14 +222,18 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     video_width=width,
                                     video_height=height,
                                     video_duration=duration,
-                                    title=f"📹 {base_title}",
-                                    description=list_description, 
-                                    caption=""
+                                    title=f"📹 {title}",
+                                    description=list_description,
+                                    reply_markup=switch_btn # 👈 Кнопка переключения на фото
                                 )
                             )
-
-        # cache_time=0 или 1, чтобы новые загруженные мемы появлялись сразу
-        await update.inline_query.answer(results, cache_time=1)
+                        
+                        # Если видео нет, но есть фото - логика выше (force_images) сработает, 
+                        # но здесь на всякий случай страховка
+                        if not video_results and image_results:
+                             await update.inline_query.answer(image_results, cache_time=1)
+                        else:
+                             await update.inline_query.answer(video_results, cache_time=1)
 
     except Exception as e:
         logger.error(f"Inline error: {e}")
@@ -192,9 +252,12 @@ async def on_chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("random", random_meme_command))
+    
     app.add_handler(InlineQueryHandler(inline_query))
     app.add_handler(ChosenInlineResultHandler(on_chosen_result))
+    
     print(f"🤖 Бот запущен! API: {API_INTERNAL_URL}")
     app.run_polling()
