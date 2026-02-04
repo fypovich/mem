@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, exists, desc, and_, or_, extract, case
+from sqlalchemy import select, func, exists, desc, and_, or_, extract, case, update
 from sqlalchemy.orm import selectinload, aliased
 
 from app.core.database import get_db
@@ -118,6 +118,8 @@ async def upload_meme(
         if os.path.exists(raw_path): os.remove(raw_path)
 
     db_tags = []
+    tag_list = [] 
+
     if tags:
         tag_list = [t.strip().lower().replace("#", "") for t in tags.split(",") if t.strip()]
         for t_name in tag_list:
@@ -172,7 +174,7 @@ async def upload_meme(
             "thumbnail_url": new_meme.thumbnail_url,
             "media_url": new_meme.media_url,
             "views_count": new_meme.views_count,
-            "tags": tags_list
+            "tags": tag_list  # <--- ИСПРАВЛЕНО: используем tag_list вместо tags_list
         }])
         
         # Уведомления для картинок
@@ -675,6 +677,8 @@ async def update_meme(
     await db.commit()
     
     # ОПТИМИЗАЦИЯ: Обновление индекса через Celery
+    current_tags_list = [t.name for t in meme.tags]
+
     try:
         celery_app.send_task("app.worker.index_meme_task", args=[{
             "id": str(meme.id),
@@ -683,7 +687,7 @@ async def update_meme(
             "thumbnail_url": meme.thumbnail_url,
             "media_url": meme.media_url,
             "views_count": meme.views_count,
-            "tags": tags_list
+            "tags": current_tags_list # <--- ИСПРАВЛЕНО (было tags_list)
         }])
     except Exception as e:
         print(f"Meili update schedule error: {e}")
