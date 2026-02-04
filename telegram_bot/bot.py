@@ -86,7 +86,6 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка инлайн-запросов"""
     query = update.inline_query.query.strip()
     
-    # Если запрос пустой, можно не возвращать ничего
     if not query:
         return
 
@@ -105,10 +104,16 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         media_path = meme.get('media_url', '')
                         thumb_path = meme.get('thumbnail_url', '')
                         
+                        # Метаданные (ВАЖНО ДЛЯ МОБИЛОК)
+                        # duration приходит в секундах (float), приводим к int
+                        duration = int(meme.get("duration", 0) or 0) 
+                        width = meme.get("width")
+                        height = meme.get("height")
+                        
                         media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
                         thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
                         
-                        # --- ОБРАБОТКА ТЕГОВ ---
+                        # ТЕГИ
                         raw_tags = meme.get('tags', [])
                         tag_str = ""
                         if raw_tags:
@@ -117,13 +122,9 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             else:
                                  tag_str = " ".join([f"#{t}" for t in raw_tags])
                         
-                        # --- ВНЕШНИЙ ВИД В СПИСКЕ (LIST) ---
-                        # description - это серая строка под заголовком в списке поиска
-                        # Сюда кладем теги, чтобы их было видно ПЕРЕД отправкой
                         list_description = f"{tag_str} | {meme.get('description', '')}"[:100]
-
-                        # --- ЧТО ОТПРАВИТСЯ (CAPTION) ---
-                        # Ты просил убрать всё - оставляем пустую строку
+                        
+                        # Пустая подпись при отправке
                         sent_caption = ""
 
                         ext = media_path.split('.')[-1].lower()
@@ -134,9 +135,11 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     id=meme_id,
                                     photo_url=media_url,
                                     thumbnail_url=thumb_url,
-                                    title=f"[📸 ФОТО] {base_title}", # Явный тип
-                                    description=list_description,    # Теги здесь
-                                    caption=sent_caption             # Чистое сообщение
+                                    photo_width=width,   # <-- Добавили
+                                    photo_height=height, # <-- Добавили
+                                    title=f"[📸] {base_title}",
+                                    description=list_description,
+                                    caption=sent_caption
                                 )
                             )
                         elif ext in ['gif']:
@@ -145,18 +148,25 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     id=meme_id,
                                     gif_url=media_url,
                                     thumbnail_url=thumb_url,
-                                    title=f"[🎞 GIF] {base_title}",
+                                    gif_width=width,     # <-- Добавили
+                                    gif_height=height,   # <-- Добавили
+                                    gif_duration=duration, # <-- Добавили (Telegram может показать GIF значок)
+                                    title=f"[🎞] {base_title}",
                                     caption=sent_caption
                                 )
                             )
                         else:
+                            # ВИДЕО
                             results.append(
                                 InlineQueryResultVideo(
                                     id=meme_id,
                                     video_url=media_url,
                                     mime_type="video/mp4",
                                     thumbnail_url=thumb_url,
-                                    title=f"[📹 ВИДЕО] {base_title}",
+                                    video_width=width,    # <-- Добавили
+                                    video_height=height,  # <-- Добавили
+                                    video_duration=duration, # <-- ГЛАВНОЕ: покажет "0:15" на превью
+                                    title=f"[📹] {base_title}",
                                     description=list_description,
                                     caption=sent_caption
                                 )
