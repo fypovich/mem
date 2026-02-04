@@ -109,3 +109,20 @@ services:
 volumes:
   postgres_data:
   meili_data:
+
+telegram_bot:
+    build: ./telegram_bot
+    container_name: memegiphy_bot
+    restart: always
+    env_file:
+      - ./backend/.env
+    environment:
+      # Бот внутри докера стучится к бэкенду по имени сервиса "backend"
+      - API_INTERNAL_URL=http://backend:8000/api/v1
+      # Для ссылок на видео используем твой ngrok (берем из WEB_APP_URL в .env)
+      # Важно: WEB_APP_URL в твоем .env это "https://...ngrok-free.dev"
+      - API_PUBLIC_URL=${WEB_APP_URL}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - WEB_APP_URL=${WEB_APP_URL}
+    depends_on:
+      - backend
