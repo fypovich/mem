@@ -99,7 +99,8 @@ class Meme(Base):
     has_audio = Column(Boolean, default=False)
     
     views_count = Column(Integer, default=0)
-    status = Column(String, default="pending") # pending, approved, rejected
+    status = Column(String, default="pending")
+    shares_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Связи

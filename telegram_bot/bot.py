@@ -14,7 +14,8 @@ from telegram.ext import (
     ApplicationBuilder, 
     CommandHandler, 
     ContextTypes, 
-    InlineQueryHandler
+    InlineQueryHandler,
+    ChosenInlineResultHandler
 )
 
 # Настройка логирования
@@ -83,7 +84,7 @@ async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Ошибка при поиске.")
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка инлайн-запросов"""
+    """Поиск мемов"""
     query = update.inline_query.query.strip()
     
     if not query:
@@ -100,32 +101,30 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     for meme in memes:
                         meme_id = str(meme.get("id"))
                         base_title = meme.get("title", "Meme")
+                        shares = meme.get("shares_count", 0) # Получаем количество отправок
                         
                         media_path = meme.get('media_url', '')
                         thumb_path = meme.get('thumbnail_url', '')
                         
-                        # Метаданные (ВАЖНО ДЛЯ МОБИЛОК)
-                        # duration приходит в секундах (float), приводим к int
-                        duration = int(meme.get("duration", 0) or 0) 
-                        width = meme.get("width")
-                        height = meme.get("height")
-                        
                         media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
                         thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
                         
-                        # ТЕГИ
-                        raw_tags = meme.get('tags', [])
+                        # --- ФОРМИРОВАНИЕ ОПИСАНИЯ ---
+                        # Чтобы на ПК это выглядело как список, нужно всегда заполнять description
+                        tags = meme.get('tags', [])
+                        # Упрощаем вывод тегов
                         tag_str = ""
-                        if raw_tags:
-                            if isinstance(raw_tags[0], dict):
-                                 tag_str = " ".join([f"#{t['name']}" for t in raw_tags])
-                            else:
-                                 tag_str = " ".join([f"#{t}" for t in raw_tags])
-                        
-                        list_description = f"{tag_str} | {meme.get('description', '')}"[:100]
-                        
-                        # Пустая подпись при отправке
-                        sent_caption = ""
+                        if tags:
+                             tag_names = [t['name'] for t in tags] if isinstance(tags[0], dict) else tags
+                             tag_str = " ".join([f"#{t}" for t in tag_names[:3]]) # Берем первые 3 тега
+
+                        # 👇 ВОТ ЗДЕСЬ МАГИЯ СПИСКА
+                        # Первая строка описания - статистика. Вторая - теги/описание.
+                        clean_description = meme.get('description', '') or ""
+                        list_description = f"🔥 Отправлено: {shares} раз\n{tag_str} {clean_description}"[:100]
+
+                        # Заголовок делаем жирным и понятным
+                        display_title = base_title
 
                         ext = media_path.split('.')[-1].lower()
                         
@@ -135,11 +134,9 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     id=meme_id,
                                     photo_url=media_url,
                                     thumbnail_url=thumb_url,
-                                    photo_width=width,   # <-- Добавили
-                                    photo_height=height, # <-- Добавили
-                                    title=f"[📸] {base_title}",
-                                    description=list_description,
-                                    caption=sent_caption
+                                    title=f"🖼 {display_title}", 
+                                    description=list_description, # Описание выведется под заголовком
+                                    caption="" 
                                 )
                             )
                         elif ext in ['gif']:
@@ -148,39 +145,60 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     id=meme_id,
                                     gif_url=media_url,
                                     thumbnail_url=thumb_url,
-                                    gif_width=width,     # <-- Добавили
-                                    gif_height=height,   # <-- Добавили
-                                    gif_duration=duration, # <-- Добавили (Telegram может показать GIF значок)
-                                    title=f"[🎞] {base_title}",
-                                    caption=sent_caption
+                                    title=f"🎞 {display_title}",
+                                    caption=""
                                 )
                             )
                         else:
-                            # ВИДЕО
+                            # Для видео на ПК Telegram показывает список, если есть title/description
                             results.append(
                                 InlineQueryResultVideo(
                                     id=meme_id,
                                     video_url=media_url,
                                     mime_type="video/mp4",
                                     thumbnail_url=thumb_url,
-                                    video_width=width,    # <-- Добавили
-                                    video_height=height,  # <-- Добавили
-                                    video_duration=duration, # <-- ГЛАВНОЕ: покажет "0:15" на превью
-                                    title=f"[📹] {base_title}",
+                                    title=f"📹 {display_title}",
                                     description=list_description,
-                                    caption=sent_caption
+                                    caption=""
                                 )
                             )
 
-        await update.inline_query.answer(results, cache_time=5)
+        await update.inline_query.answer(results, cache_time=5) # Кэш поменьше, чтобы цифры обновлялись
 
     except Exception as e:
         logger.error(f"Inline error: {e}")
 
+async def on_chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Срабатывает, когда пользователь нажал на мем в списке"""
+    result = update.chosen_inline_result
+    meme_id = result.result_id
+    user_id = result.from_user.id
+    
+    # query = result.query # Текст поиска, который ввел юзер (можно сохранить для аналитики)
+    
+    logger.info(f"User {user_id} shared meme {meme_id}")
+
+    try:
+        # Отправляем запрос на Backend, чтобы увеличить счетчик
+        async with aiohttp.ClientSession() as session:
+            url = f"{API_INTERNAL_URL}/memes/{meme_id}/share"
+            async with session.post(url) as resp:
+                if resp.status != 200:
+                    logger.error(f"Failed to track share for {meme_id}: {resp.status}")
+    except Exception as e:
+        logger.error(f"Error tracking share: {e}")
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("random", random_meme_command))
+    
+    # Обработчик поиска
     app.add_handler(InlineQueryHandler(inline_query))
-    print(f"🤖 Бот запущен!")
+    
+    # 👇 ВАЖНО: Обработчик клика (Feedback)
+    app.add_handler(ChosenInlineResultHandler(on_chosen_result))
+    
+    print(f"🤖 Бот запущен! API: {API_INTERNAL_URL}")
     app.run_polling()

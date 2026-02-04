@@ -716,3 +716,23 @@ async def report_meme(
     await db.commit()
     
     return {"message": "Report submitted"}
+
+#  ДОБАВЛЯЕМ НОВЫЙ ЭНДПОИНТ (можно в конец файла)
+@router.post("/{meme_id}/share")
+async def share_meme_counter(
+    meme_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """Инкрементирует счетчик шеров (вызывается ботом)"""
+    # 1. Атомарное обновление в БД (безопасно при высокой нагрузке)
+    stmt = (
+        update(Meme)
+        .where(Meme.id == meme_id)
+        .values(shares_count=Meme.shares_count + 1)
+        .execution_options(synchronize_session=False)
+    )
+    await db.execute(stmt)
+    await db.commit()
+    
+    # 2. (Опционально) Можно также инкрементировать в Redis/MeiliSearch для мгновенного обновления топов
+    return {"status": "ok"}

@@ -117,8 +117,9 @@ class MemeResponse(MemeBase):
     duration: float
     width: int
     height: int
-    
+    shares_count: int
     has_audio: bool = False
+
 
     @validator('has_audio', pre=True)
     def parse_has_audio(cls, v):
