@@ -682,7 +682,8 @@ async def update_meme(
             "description": meme.description,
             "thumbnail_url": meme.thumbnail_url,
             "media_url": meme.media_url,
-            "views_count": meme.views_count
+            "views_count": meme.views_count,
+            "tags": tags_list
         }])
     except Exception as e:
         print(f"Meili update schedule error: {e}")

@@ -52,6 +52,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /random"""
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{API_INTERNAL_URL}/memes/random") as resp:
@@ -59,17 +60,14 @@ async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE
                     meme = await resp.json()
                     
                     media_path = meme.get('media_url', '')
-                    # Формируем полный URL
                     if media_path.startswith("http"):
                         media_url = media_path
                     else:
                         media_url = f"{API_PUBLIC_URL}{media_path}"
 
-                    title = meme.get('title', 'Meme')
-                    tags = " ".join([f"#{t['name']}" for t in meme.get('tags', [])])
-                    caption = f"{title}\n{tags}\n\nVia MemeHUB"
+                    # ПУСТАЯ ПОДПИСЬ (как ты просил)
+                    caption = "" 
                     
-                    # Определяем тип для отправки
                     ext = media_path.split('.')[-1].lower()
                     
                     if ext in ['jpg', 'jpeg', 'png', 'webp']:
@@ -82,17 +80,19 @@ async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await update.message.reply_text("Не удалось найти мемы 😔")
     except Exception as e:
         logger.error(f"Error fetching random meme: {e}")
-        await update.message.reply_text("Произошла ошибка при поиске мема.")
+        await update.message.reply_text("Ошибка при поиске.")
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка инлайн-запросов"""
     query = update.inline_query.query.strip()
+    
+    # Если запрос пустой, можно не возвращать ничего
     if not query:
         return
 
     results = []
     try:
         async with aiohttp.ClientSession() as session:
-            # Запрашиваем поиск
             async with session.get(f"{API_INTERNAL_URL}/search/", params={"q": query, "limit": 20}) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -100,63 +100,65 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     for meme in memes:
                         meme_id = str(meme.get("id"))
-                        title = meme.get("title", "Meme")
+                        base_title = meme.get("title", "Meme")
                         
                         media_path = meme.get('media_url', '')
                         thumb_path = meme.get('thumbnail_url', '')
                         
-                        # Формируем полные ссылки
                         media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
                         thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
                         
-                        # Обработка тегов
-                        # Meilisearch может возвращать теги просто списком строк или объектами
+                        # --- ОБРАБОТКА ТЕГОВ ---
                         raw_tags = meme.get('tags', [])
-                        if raw_tags and isinstance(raw_tags[0], dict):
-                             tag_str = " ".join([f"#{t['name']}" for t in raw_tags])
-                        else:
-                             tag_str = " ".join([f"#{t}" for t in raw_tags])
+                        tag_str = ""
+                        if raw_tags:
+                            if isinstance(raw_tags[0], dict):
+                                 tag_str = " ".join([f"#{t['name']}" for t in raw_tags])
+                            else:
+                                 tag_str = " ".join([f"#{t}" for t in raw_tags])
                         
-                        description = f"{tag_str}\n{meme.get('description', '')}"
-                        caption = f"{title}\n{tag_str}\nVia @{context.bot.username}"
+                        # --- ВНЕШНИЙ ВИД В СПИСКЕ (LIST) ---
+                        # description - это серая строка под заголовком в списке поиска
+                        # Сюда кладем теги, чтобы их было видно ПЕРЕД отправкой
+                        list_description = f"{tag_str} | {meme.get('description', '')}"[:100]
 
-                        # Определяем тип контента для Telegram Inline
+                        # --- ЧТО ОТПРАВИТСЯ (CAPTION) ---
+                        # Ты просил убрать всё - оставляем пустую строку
+                        sent_caption = ""
+
                         ext = media_path.split('.')[-1].lower()
                         
                         if ext in ['jpg', 'jpeg', 'png', 'webp']:
-                            # КАРТИНКА 🖼️
                             results.append(
                                 InlineQueryResultPhoto(
                                     id=meme_id,
                                     photo_url=media_url,
                                     thumbnail_url=thumb_url,
-                                    title=f"🖼 {title}",
-                                    caption=caption,
-                                    description=description
+                                    title=f"[📸 ФОТО] {base_title}", # Явный тип
+                                    description=list_description,    # Теги здесь
+                                    caption=sent_caption             # Чистое сообщение
                                 )
                             )
                         elif ext in ['gif']:
-                            # GIF 🎞️
                             results.append(
                                 InlineQueryResultGif(
                                     id=meme_id,
                                     gif_url=media_url,
                                     thumbnail_url=thumb_url,
-                                    title=f"🎞 {title}",
-                                    caption=caption
+                                    title=f"[🎞 GIF] {base_title}",
+                                    caption=sent_caption
                                 )
                             )
                         else:
-                            # ВИДЕО 🎥
                             results.append(
                                 InlineQueryResultVideo(
                                     id=meme_id,
                                     video_url=media_url,
                                     mime_type="video/mp4",
                                     thumbnail_url=thumb_url,
-                                    title=f"🎥 {title}",
-                                    caption=caption,
-                                    description=description
+                                    title=f"[📹 ВИДЕО] {base_title}",
+                                    description=list_description,
+                                    caption=sent_caption
                                 )
                             )
 
