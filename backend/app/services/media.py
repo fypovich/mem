@@ -30,7 +30,7 @@ class MediaProcessor:
             if duration == 0.0:
                 duration = float(probe['format'].get('duration', 0.0))
             
-            # Fallback для GIF/WebP, если метаданные неточные
+            # Fallback для GIF/WebP
             if duration == 0.0:
                 nb_frames = int(video_stream.get('nb_frames', 0))
                 if nb_frames > 1:
@@ -73,7 +73,6 @@ class MediaProcessor:
                     acodec='aac', 
                     movflags='faststart',
                     pix_fmt='yuv420p',
-                    # Округляем размеры до четных (требование H.264)
                     vf='scale=trunc(iw/2)*2:trunc(ih/2)*2'
                 )
                 .overwrite_output()
@@ -85,21 +84,23 @@ class MediaProcessor:
     def process_video_with_audio(self, audio_path: str, output_path: str):
         """Склеивает Картинку/Видео с Аудио, игнорируя лишние потоки."""
         try:
-            # loop=1 зацикливает картинку. Обязательно нужен shortest=True ниже!
+            # 1. Узнаем точную длительность аудио
+            audio_probe = ffmpeg.probe(audio_path)
+            format_duration = float(audio_probe['format']['duration'])
+            
+            # 2. Собираем команду
             input_video = ffmpeg.input(self.path, loop=1) 
             input_audio = ffmpeg.input(audio_path)
             
             (
                 ffmpeg
                 .output(
-                    input_video['v'], # БЕРЕМ ТОЛЬКО ВИДЕОПОТОК (игнорируем обложки из mp3)
-                    input_audio['a'], # БЕРЕМ ТОЛЬКО АУДИОПОТОК
+                    input_video['v'], # Только видеопоток
+                    input_audio['a'], # Только аудиопоток
                     output_path, 
                     vcodec='libx264', 
                     acodec='aac', 
-                    # 🔥 ВАЖНО: shortest=True добавляет флаг -shortest. 
-                    # Это остановит запись, когда закончится аудио.
-                    shortest=True, 
+                    t=format_duration, # 🔥 ЖЕЛЕЗНОЕ РЕШЕНИЕ: явно указываем время
                     tune='stillimage', 
                     pix_fmt='yuv420p', 
                     movflags='faststart',
@@ -110,3 +111,5 @@ class MediaProcessor:
             )
         except ffmpeg.Error as e:
             raise RuntimeError(f"FFmpeg merge error: {e.stderr.decode() if e.stderr else str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"General processing error: {str(e)}")

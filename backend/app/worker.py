@@ -8,16 +8,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from celery import shared_task
 
-# --- ВАЖНО: Импортируем celery_app ---
+# --- Импорты ---
 from app.core.celery_app import celery_app 
-# -------------------------------------
-
 from app.core.config import settings
 from app.models.models import Meme, Notification, NotificationType, SearchTerm
 from app.services.media import MediaProcessor 
 from app.services.search import get_search_service
 
-# Настройка БД (синхронная для воркера)
+# Настройка БД
 engine = create_engine(settings.DATABASE_URL.replace("+asyncpg", ""))
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
