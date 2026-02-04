@@ -8,19 +8,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from celery import shared_task
 
-# --- ВАЖНО: Импортируем celery_app, чтобы воркер его видел при старте ---
+# --- ВАЖНО: Импортируем celery_app ---
 from app.core.celery_app import celery_app 
-# -----------------------------------------------------------------------
+# -------------------------------------
 
 from app.core.config import settings
 from app.models.models import Meme, Notification, NotificationType, SearchTerm
-# Импортируем MediaProcessor для мемов
 from app.services.media import MediaProcessor 
 from app.services.search import get_search_service
-# Импортируем новые сервисы для стикеров
-from app.services.ai import AIService
-from app.services.sticker import StickerService
-from app.services.video_editor import VideoEditorService
 
 # Настройка БД (синхронная для воркера)
 engine = create_engine(settings.DATABASE_URL.replace("+asyncpg", ""))
@@ -44,6 +39,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
     
     redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
     db = SessionLocal()
+    meme = None
     
     try:
         meme_id = meme_id_str 
@@ -52,21 +48,30 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
             print(f"❌ Meme {meme_id} not found in DB")
             return
 
+        # Используем обновленный MediaProcessor
         processor = MediaProcessor(file_path)
-        final_filename = f"{meme_id}.mp4"
-        final_path = os.path.join("uploads", final_filename)
-        thumbnail_path = os.path.join("uploads", f"{meme_id}_thumb.jpg")
+        
+        final_filename = f"{meme_id_str}.mp4"
+        upload_dir = os.path.dirname(file_path)
+        final_path = os.path.join(upload_dir, final_filename)
+        thumbnail_path = os.path.join(upload_dir, f"{meme_id_str}_thumb.jpg")
 
         # --- ОБРАБОТКА ---
         if audio_path:
+            # Склеиваем (MediaProcessor теперь сам исправляет размеры и потоки)
             processor.process_video_with_audio(audio_path, final_path)
+            
             if os.path.exists(audio_path): os.remove(audio_path)
             processor = MediaProcessor(final_path)
         else:
+            # Конвертируем
             processor.convert_to_mp4(final_path)
             processor = MediaProcessor(final_path)
 
+        # Генерируем превью
         processor.generate_thumbnail(thumbnail_path)
+        
+        # Получаем метаданные
         duration, width, height = processor.get_metadata()
         has_audio = processor.has_audio_stream()
 
@@ -77,19 +82,23 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         meme.has_audio = has_audio
         meme.status = "approved"
         meme.media_url = f"/static/{final_filename}"
-        meme.thumbnail_url = f"/static/{meme_id}_thumb.jpg"
+        meme.thumbnail_url = f"/static/{meme_id_str}_thumb.jpg"
         
         db.commit()
 
         # --- ИНДЕКСАЦИЯ ---
         try:
+            tags_list = [t.name for t in meme.tags] if meme.tags else []
+            
+            # Вызываем задачу, определенную ниже в этом же файле
             index_meme_task.delay({
                 "id": str(meme.id),
                 "title": meme.title,
                 "description": meme.description,
                 "thumbnail_url": meme.thumbnail_url,
                 "media_url": meme.media_url,
-                "views_count": meme.views_count
+                "views_count": meme.views_count,
+                "tags": tags_list
             })
         except Exception as e:
             print(f"Search index trigger error: {e}")
@@ -147,7 +156,8 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         except Exception as e:
              print(f"Notification error: {e}")
 
-        if os.path.exists(file_path) and file_path != final_path:
+        # Удаляем исходник
+        if os.path.exists(file_path) and os.path.abspath(file_path) != os.path.abspath(final_path):
             os.remove(file_path)
 
         print(f"✅ Meme {meme_id} ready!")
