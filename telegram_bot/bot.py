@@ -10,8 +10,6 @@ from telegram import (
     InlineQueryResultVideo,
     InlineQueryResultPhoto,
     InlineQueryResultGif,
-    InlineQueryResultArticle,
-    InputTextMessageContent,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove
 )
@@ -41,13 +39,13 @@ API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", WEB_APP_URL)
 
 # Данные для системного пользователя-бота
 BOT_USERNAME = "bot"
-BOT_PASSWORD = os.getenv("BOT_USER_PASSWORD", "super_secret_bot_password_123")
+BOT_PASSWORD = os.getenv("BOT_USER_PASSWORD", "SuperSecretBotPass123!")
 BOT_EMAIL = "bot@tg.ru"
 
 # Глобальная переменная для хранения JWT токена
 API_ACCESS_TOKEN = None
 
-# --- СОСТОЯНИЯ ДИАЛОГА (Conversation) ---
+# --- СОСТОЯНИЯ ДИАЛОГА ---
 UPLOAD_MEDIA, UPLOAD_TITLE, UPLOAD_TAGS, UPLOAD_AUDIO = range(4)
 
 if not TOKEN:
@@ -62,10 +60,8 @@ def ensure_bot_user_exists():
     """
     global API_ACCESS_TOKEN
     
-    # 1. Пробуем войти (URL исправлен на /auth/token)
     login_url = f"{API_INTERNAL_URL}/auth/token"
     try:
-        # OAuth2 требует поля username и password в form-data
         resp = requests.post(login_url, data={"username": BOT_USERNAME, "password": BOT_PASSWORD})
         if resp.status_code == 200:
             API_ACCESS_TOKEN = resp.json().get("access_token")
@@ -76,7 +72,6 @@ def ensure_bot_user_exists():
     except Exception as e:
         logger.warning(f"Login connection failed: {e}")
 
-    # 2. Если не вышло, пробуем зарегистрировать
     register_url = f"{API_INTERNAL_URL}/auth/register"
     try:
         payload = {
@@ -89,7 +84,6 @@ def ensure_bot_user_exists():
         
         if resp.status_code in [200, 201]:
             logger.info(f"✅ Created user '{BOT_USERNAME}'")
-            # Сразу логинимся после создания
             login_resp = requests.post(login_url, data={"username": BOT_USERNAME, "password": BOT_PASSWORD})
             if login_resp.status_code == 200:
                 API_ACCESS_TOKEN = login_resp.json().get("access_token")
@@ -100,7 +94,7 @@ def ensure_bot_user_exists():
     except Exception as e:
         logger.error(f"Failed to create bot user: {e}")
 
-# --- ОБРАБОТЧИКИ КОМАНД ---
+# --- ОБРАБОТЧИКИ ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -120,100 +114,84 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# --- WIZARD ЗАГРУЗКИ (CONVERSATION) ---
+# --- ЗАГРУЗКА (WIZARD) ---
 
 async def upload_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало загрузки: просим медиа"""
-    # Очищаем контекст пользователя
     context.user_data.clear()
-    
     await update.message.reply_text(
         "📤 **Загрузка нового мема**\n\n"
         "Отправь мне:\n"
         "• Картинку 📸\n"
         "• Видео 📹\n"
         "• Или GIF 🎞\n\n"
-        "Или напиши /cancel для отмены.",
+        "Или /cancel для отмены.",
         parse_mode="Markdown"
     )
     return UPLOAD_MEDIA
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Шаг 1: Получаем файл"""
     message = update.message
-    
-    # Определяем тип и берем самый качественный файл
     file_obj = None
     is_video = False
     
     if message.video:
         file_obj = await message.video.get_file()
         is_video = True
-    elif message.animation: # GIF
+    elif message.animation:
         file_obj = await message.animation.get_file()
-        # GIF в телеге это часто mp4 без звука
         is_video = False 
     elif message.photo:
-        file_obj = await message.photo[-1].get_file() # Берем хайрез
+        file_obj = await message.photo[-1].get_file()
         is_video = False
     else:
-        await message.reply_text("❌ Это не похоже на медиа-файл. Попробуй еще раз.")
+        await message.reply_text("❌ Это не медиа-файл. Попробуй еще раз.")
         return UPLOAD_MEDIA
 
-    # Сохраняем file_id и тип
     context.user_data['file_id'] = file_obj.file_id
-    context.user_data['file_unique_id'] = file_obj.file_unique_id
     context.user_data['is_video'] = is_video
     
-    await message.reply_text("✅ Файл принят!\n\nТеперь напиши **заголовок** для мема:", parse_mode="Markdown")
+    await message.reply_text("✅ Файл принят!\n\nТеперь напиши **заголовок**:", parse_mode="Markdown")
     return UPLOAD_TITLE
 
 async def handle_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Шаг 2: Заголовок"""
     title = update.message.text.strip()
     if len(title) < 2:
-        await update.message.reply_text("Слишком короткий заголовок. Давай подлиннее.")
+        await update.message.reply_text("Слишком короткий заголовок.")
         return UPLOAD_TITLE
         
     context.user_data['title'] = title
     
-    # 🔥 ИСПРАВЛЕНА ОШИБКА ЗДЕСЬ (Убрано присваивание к await)
     await update.message.reply_text(
-        "📝 Заголовок сохранен.\n\n"
-        "Теперь напиши **теги** через запятую (например: `кот, смешно, мем`):",
+        "📝 Заголовок есть.\n\n"
+        "Теперь напиши **теги** через запятую (например: `кот, смешно`):",
         parse_mode="Markdown"
     )
     return UPLOAD_TAGS
 
 async def handle_tags(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Шаг 3: Теги и развилка (Аудио или Финиш)"""
     tags = update.message.text.strip()
     context.user_data['tags'] = tags
     
     is_video = context.user_data.get('is_video', False)
     
-    # Если это Видео, сразу грузим (пока без аудио-монтажа для видео)
     if is_video:
-        await update.message.reply_text("⏳ Обрабатываю видео и загружаю на сервер...")
+        await update.message.reply_text("⏳ Загружаю видео на сервер...")
         return await perform_upload(update, context)
     else:
-        # Предлагаем наложить аудио на картинку/гиф
         keyboard = [['/skip Пропустить']]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         
         await update.message.reply_text(
-            "🎤 **Хочешь добавить звук?**\n\n"
-            "Отправь мне **Голосовое сообщение** или **Аудиофайл**, и я наложу его на мем.\n"
-            "Если не хочешь — нажми /skip.",
+            "🎤 **Добавить звук?**\n\n"
+            "Отправь **Голосовое** или **Аудиофайл**.\n"
+            "Или нажми /skip.",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
         return UPLOAD_AUDIO
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Шаг 4: Получение аудио"""
     message = update.message
-    
     if message.voice:
         file_obj = await message.voice.get_file()
         context.user_data['audio_file_id'] = file_obj.file_id
@@ -221,30 +199,26 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_obj = await message.audio.get_file()
         context.user_data['audio_file_id'] = file_obj.file_id
     else:
-        await message.reply_text("Это не аудио. Отправь голосовое или нажми /skip.")
+        await message.reply_text("Это не аудио. Отправь файл или /skip.")
         return UPLOAD_AUDIO
         
-    await message.reply_text("🎵 Аудио получено! Начинаю магию монтажа...", reply_markup=ReplyKeyboardRemove())
+    await message.reply_text("🎵 Аудио принято! Обрабатываю...", reply_markup=ReplyKeyboardRemove())
     return await perform_upload(update, context)
 
 async def skip_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пропуск аудио"""
-    await update.message.reply_text("Ок, загружаем без звука...", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("Ок, без звука...", reply_markup=ReplyKeyboardRemove())
     return await perform_upload(update, context)
 
-# --- ФИНАЛЬНАЯ ЗАГРУЗКА НА API ---
-
 async def perform_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправка данных на Backend"""
     global API_ACCESS_TOKEN
+    
     if not API_ACCESS_TOKEN:
         ensure_bot_user_exists()
         if not API_ACCESS_TOKEN:
-            await update.message.reply_text("❌ Ошибка авторизации бота на сервере.")
+            await update.message.reply_text("❌ Ошибка: Бот не смог авторизоваться на сервере.")
             return ConversationHandler.END
 
     try:
-        # 1. Скачиваем основной файл
         main_file = await context.bot.get_file(context.user_data['file_id'])
         main_buffer = await main_file.download_as_bytearray()
         
@@ -252,26 +226,18 @@ async def perform_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ext = file_path.split('.')[-1]
         filename = f"upload.{ext}"
 
-        # 2. Скачиваем аудио (если есть)
-        audio_buffer = None
-        audio_filename = None
-        if 'audio_file_id' in context.user_data:
-            audio_file = await context.bot.get_file(context.user_data['audio_file_id'])
-            audio_buffer = await audio_file.download_as_bytearray()
-            audio_filename = "voice.ogg"
-
-        # 3. Формируем запрос
         form = aiohttp.FormData()
         form.add_field('title', context.user_data['title'])
         form.add_field('tags', context.user_data['tags'])
         form.add_field('file', main_buffer, filename=filename)
         
-        if audio_buffer:
-            form.add_field('audio_file', audio_buffer, filename=audio_filename)
+        if 'audio_file_id' in context.user_data:
+            audio_file = await context.bot.get_file(context.user_data['audio_file_id'])
+            audio_buffer = await audio_file.download_as_bytearray()
+            form.add_field('audio_file', audio_buffer, filename="voice.ogg")
 
         headers = {"Authorization": f"Bearer {API_ACCESS_TOKEN}"}
 
-        # 4. Отправляем
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{API_INTERNAL_URL}/memes/upload", data=form, headers=headers) as resp:
                 if resp.status in [200, 201]:
@@ -279,25 +245,24 @@ async def perform_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     share_link = f"@{context.bot.username} {meme.get('title')}"
                     
                     await update.message.reply_text(
-                        f"🎉 **Мем успешно опубликован!**\n\n"
-                        f"🆔 ID: `{meme['id']}`\n"
-                        f"Попробуй найти его в поиске: `{share_link}`",
+                        f"🎉 **Готово!** Мем опубликован.\n"
+                        f"Ищи его в поиске: `{share_link}`",
                         parse_mode="Markdown"
                     )
                 else:
-                    err_text = await resp.text()
-                    logger.error(f"Upload failed: {resp.status} - {err_text}")
+                    err = await resp.text()
+                    logger.error(f"Upload error: {resp.status} {err}")
                     await update.message.reply_text(f"😔 Ошибка сервера: {resp.status}")
 
     except Exception as e:
-        logger.error(f"Bot upload exception: {e}")
-        await update.message.reply_text("Произошла ошибка при загрузке.")
+        logger.error(f"Upload exception: {e}")
+        await update.message.reply_text("Ошибка при отправке.")
 
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("❌ Загрузка отменена.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -322,6 +287,8 @@ async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.error(f"Error fetching random meme: {e}")
         await update.message.reply_text("Ошибка при поиске.")
+
+# --- INLINE LOGIC ---
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка инлайн-запросов (Поиск + Режимы)"""
@@ -394,7 +361,6 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=back_btn
                                 ))
                             else:
-                                # Можно использовать Article для списка или Photo для сетки. Оставим Photo.
                                 image_results.append(InlineQueryResultPhoto(
                                     id=meme_id, photo_url=media_url, thumbnail_url=thumb_url,
                                     photo_width=width, photo_height=height, title=f"🖼 {display_title}",
@@ -424,8 +390,19 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
                             thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
                             
+                            # 🔥 ЗАЩИЩЕННАЯ ОБРАБОТКА ТЕГОВ 🔥
                             tags = meme.get('tags', [])
-                            tag_str = " ".join([f"#{t['name']}" for t in tags[:3]]) if tags else ""
+                            tag_names = []
+                            # Безопасно извлекаем имена тегов
+                            if tags:
+                                for t in tags:
+                                    if isinstance(t, dict):
+                                        tag_names.append(t.get('name', ''))
+                                    elif isinstance(t, str):
+                                        tag_names.append(t)
+                                    # Если int или что-то другое - игнорируем
+
+                            tag_str = " ".join([f"#{t}" for t in tag_names[:3] if t])
                             list_description = f"🔥 Отправлено: {shares} раз\n{tag_str}"
 
                             video_results.append(InlineQueryResultVideo(
@@ -456,12 +433,10 @@ async def on_chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error tracking share: {e}")
 
 if __name__ == '__main__':
-    # 1. Авторизация бота
     ensure_bot_user_exists()
     
     app = ApplicationBuilder().token(TOKEN).build()
     
-    # 2. Настраиваем загрузку
     upload_handler = ConversationHandler(
         entry_points=[CommandHandler("upload", upload_start)],
         states={
@@ -480,8 +455,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("random", random_meme_command))
     
-    # 3. Инлайн
-    app.add_handler(InlineQueryHandler(inline_query)) # 🔥 Имя функции исправлено!
+    app.add_handler(InlineQueryHandler(inline_query))
     app.add_handler(ChosenInlineResultHandler(on_chosen_result))
     
     print(f"🤖 Бот запущен! Пользователь бота: {BOT_USERNAME}")
