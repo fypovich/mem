@@ -46,48 +46,69 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
             print(f"❌ Meme {meme_id} not found in DB")
             return
 
-        # Используем обновленный MediaProcessor
+        # 1. Анализируем исходный файл
         processor = MediaProcessor(file_path)
+        has_audio_stream = processor.has_audio_stream()
         
-        final_filename = f"{meme_id_str}.mp4"
+        # 2. Определяем формат вывода
+        # Если есть оригинальный звук ИЛИ добавили новый звук -> MP4
+        # Иначе -> GIF
+        if has_audio_stream or audio_path:
+            output_ext = "mp4"
+            is_gif = False
+        else:
+            output_ext = "gif"
+            is_gif = True
+
+        final_filename = f"{meme_id_str}.{output_ext}"
         upload_dir = os.path.dirname(file_path)
         final_path = os.path.join(upload_dir, final_filename)
         thumbnail_path = os.path.join(upload_dir, f"{meme_id_str}_thumb.jpg")
 
+        print(f"ℹ️ Detected format: {output_ext} (Audio: {has_audio_stream}, New Audio: {bool(audio_path)})")
+
         # --- ОБРАБОТКА ---
         if audio_path:
-            # Склеиваем
+            # Если есть новое аудио, это точно MP4
             processor.process_video_with_audio(audio_path, final_path)
             if os.path.exists(audio_path): os.remove(audio_path)
+            # Пересоздаем процессор на готовом файле для метаданных
             processor = MediaProcessor(final_path)
+            
+        elif is_gif:
+            # Конвертируем в GIF
+            processor.convert_to_gif(final_path)
+            processor = MediaProcessor(final_path)
+            
         else:
-            # Конвертируем
+            # Конвертируем в MP4 (стандартизация)
             processor.convert_to_mp4(final_path)
             processor = MediaProcessor(final_path)
 
-        # Генерируем превью
+        # Генерируем превью (работает и для GIF, и для MP4)
         processor.generate_thumbnail(thumbnail_path)
         
-        # Получаем метаданные
+        # Получаем метаданные финального файла
         duration, width, height = processor.get_metadata()
-        has_audio = processor.has_audio_stream()
+        
+        # Для GIF длительность часто определяется криво, но has_audio точно False
+        final_has_audio = True if output_ext == "mp4" else False
 
         # --- СОХРАНЕНИЕ В БД ---
         meme.duration = duration
         meme.width = width
         meme.height = height
-        meme.has_audio = has_audio
+        meme.has_audio = final_has_audio
         meme.status = "approved"
-        meme.media_url = f"/static/{final_filename}"
+        meme.media_url = f"/static/{final_filename}" # Теперь может быть .gif
         meme.thumbnail_url = f"/static/{meme_id_str}_thumb.jpg"
         
         db.commit()
 
-        # --- ИНДЕКСАЦИЯ (ИСПРАВЛЕНО) ---
+        # --- ИНДЕКСАЦИЯ ---
         try:
             tags_list = [t.name for t in meme.tags] if meme.tags else []
             
-            # 🔥 ДОБАВЛЕНЫ ПОЛЯ status, shares_count, width, height 🔥
             index_meme_task.delay({
                 "id": str(meme.id),
                 "title": meme.title,
@@ -95,17 +116,17 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
                 "thumbnail_url": meme.thumbnail_url,
                 "media_url": meme.media_url,
                 "views_count": meme.views_count,
-                "shares_count": meme.shares_count, # <-- ВАЖНО
-                "width": meme.width,               # <-- ВАЖНО
-                "height": meme.height,             # <-- ВАЖНО
-                "duration": meme.duration,         # <-- ВАЖНО
-                "status": meme.status,             # <-- КРИТИЧНО для поиска
+                "shares_count": meme.shares_count,
+                "width": meme.width,
+                "height": meme.height,
+                "duration": meme.duration,
+                "status": meme.status,
                 "tags": tags_list
             })
         except Exception as e:
             print(f"Search index trigger error: {e}")
 
-        # --- УВЕДОМЛЕНИЯ ---
+        # --- УВЕДОМЛЕНИЯ (Без изменений) ---
         try:
             sender_info = db.execute(
                 text("SELECT username, avatar_url FROM users WHERE id = :uid"), 
@@ -162,7 +183,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         if os.path.exists(file_path) and os.path.abspath(file_path) != os.path.abspath(final_path):
             os.remove(file_path)
 
-        print(f"✅ Meme {meme_id} ready!")
+        print(f"✅ Meme {meme_id} ready as {output_ext.upper()}!")
 
     except Exception as e:
         print(f"❌ Worker Error: {e}")

@@ -73,7 +73,7 @@ class MediaProcessor:
                     acodec='aac', 
                     movflags='faststart',
                     pix_fmt='yuv420p',
-                    vf='scale=trunc(iw/2)*2:trunc(ih/2)*2'
+                    vf='scale=trunc(iw/2)*2:trunc(ih/2)*2' # Размеры должны быть четными для x264
                 )
                 .overwrite_output()
                 .run(capture_stdout=True, capture_stderr=True)
@@ -81,30 +81,81 @@ class MediaProcessor:
         except ffmpeg.Error as e:
             raise RuntimeError(f"FFmpeg convert error: {e.stderr.decode() if e.stderr else str(e)}")
 
+    def convert_to_gif(self, output_path: str):
+        """
+        Конвертирует видео в оптимизированный GIF.
+        Использует фильтры для уменьшения размера (fps 15, ширина 480px, палитра).
+        """
+        try:
+            # 1. Входной поток
+            inp = ffmpeg.input(self.path)
+            
+            # 2. Граф фильтров:
+            # - fps=15: уменьшаем кадры для легкости
+            # - scale=480:-1: уменьшаем ширину до 480px (сохраняя пропорции)
+            # - flags=lanczos: качественный алгоритм скейлинга
+            # - split: раздваиваем поток (один для палитры, другой для рендера)
+            split = inp.filter('fps', fps=15).filter('scale', 480, -1, flags='lanczos').split()
+            
+            # 3. Генерация палитры из первого потока (для 256 цветов)
+            palette = split[0].filter('palettegen')
+            
+            # 4. Применение палитры ко второму потоку
+            out = ffmpeg.filter([split[1], palette], 'paletteuse')
+            
+            out.output(output_path).overwrite_output().run(capture_stdout=True, capture_stderr=True)
+            
+        except ffmpeg.Error as e:
+            print(f"Convert GIF complex error: {e.stderr.decode() if e.stderr else str(e)}")
+            # Фолбэк: если сложный фильтр не сработал (например, старый ffmpeg),
+            # пробуем простую конвертацию
+            try:
+                (
+                    ffmpeg
+                    .input(self.path)
+                    .filter('fps', fps=15)
+                    .filter('scale', 480, -1)
+                    .output(output_path)
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True)
+                )
+            except Exception as ex:
+                raise RuntimeError(f"FFmpeg GIF fallback error: {str(ex)}")
+
     def process_video_with_audio(self, audio_path: str, output_path: str):
         """Склеивает Картинку/Видео с Аудио, игнорируя лишние потоки."""
         try:
             # 1. Узнаем точную длительность аудио
-            audio_probe = ffmpeg.probe(audio_path)
-            format_duration = float(audio_probe['format']['duration'])
-            
+            try:
+                audio_probe = ffmpeg.probe(audio_path)
+                format_duration = float(audio_probe['format']['duration'])
+            except:
+                # Если не удалось узнать длительность, берем дефолт или пробуем без 't'
+                format_duration = None
+
             # 2. Собираем команду
             input_video = ffmpeg.input(self.path, loop=1) 
             input_audio = ffmpeg.input(audio_path)
             
+            output_args = {
+                'vcodec': 'libx264',
+                'acodec': 'aac',
+                'tune': 'stillimage',
+                'pix_fmt': 'yuv420p',
+                'movflags': 'faststart',
+                'vf': 'scale=trunc(iw/2)*2:trunc(ih/2)*2'
+            }
+            
+            if format_duration:
+                output_args['t'] = format_duration # 🔥 ЖЕЛЕЗНОЕ РЕШЕНИЕ: явно указываем время
+
             (
                 ffmpeg
                 .output(
                     input_video['v'], # Только видеопоток
                     input_audio['a'], # Только аудиопоток
                     output_path, 
-                    vcodec='libx264', 
-                    acodec='aac', 
-                    t=format_duration, # 🔥 ЖЕЛЕЗНОЕ РЕШЕНИЕ: явно указываем время
-                    tune='stillimage', 
-                    pix_fmt='yuv420p', 
-                    movflags='faststart',
-                    vf='scale=trunc(iw/2)*2:trunc(ih/2)*2'
+                    **output_args
                 )
                 .overwrite_output()
                 .run(capture_stdout=True, capture_stderr=True)
