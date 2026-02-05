@@ -25,13 +25,18 @@ async def sync():
             # 1. МЕМЫ
             print("📦 Syncing Memes...")
             # Важно: используем selectinload для тегов, чтобы не получить ошибку или пустые теги
-            query = select(Meme).where(Meme.status == 'approved').options(selectinload(Meme.tags))
+            query = select(Meme).where(Meme.status == 'approved').options(
+                selectinload(Meme.tags),
+                selectinload(Meme.user) 
+            )
             memes = (await db.execute(query)).scalars().all()
             
             meme_docs = []
             for m in memes:
                 # Собираем список тегов
                 tag_list = [t.name for t in m.tags]
+
+                username = m.user.username if m.user else "unknown"
                 
                 meme_docs.append({
                     "id": str(m.id),
@@ -45,7 +50,8 @@ async def sync():
                     "height": m.height,
                     "duration": m.duration,
                     "status": m.status,     # <--- КРИТИЧНО для фильтрации
-                    "tags": tag_list        # <--- КРИТИЧНО для поиска по тегам
+                    "tags": tag_list,
+                    "author_username": username
                 })
 
             if meme_docs:

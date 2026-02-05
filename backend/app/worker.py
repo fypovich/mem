@@ -63,9 +63,18 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         final_filename = f"{meme_id_str}.{output_ext}"
         upload_dir = os.path.dirname(file_path)
         final_path = os.path.join(upload_dir, final_filename)
-        thumbnail_path = os.path.join(upload_dir, f"{meme_id_str}_thumb.jpg")
+        
+        # Определяем расширение для превью
+        # Если мем GIF -> превью GIF (анимированное)
+        # Если мем MP4 -> превью JPG (статичное)
+        if is_gif:
+            thumbnail_ext = "gif"
+        else:
+            thumbnail_ext = "jpg"
+            
+        thumbnail_path = os.path.join(upload_dir, f"{meme_id_str}_thumb.{thumbnail_ext}")
 
-        print(f"ℹ️ Detected format: {output_ext} (Audio: {has_audio_stream}, New Audio: {bool(audio_path)})")
+        print(f"ℹ️ Detected format: {output_ext}, Thumb: {thumbnail_ext} (Audio: {has_audio_stream}, New Audio: {bool(audio_path)})")
 
         # --- ОБРАБОТКА ---
         if audio_path:
@@ -76,7 +85,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
             processor = MediaProcessor(final_path)
             
         elif is_gif:
-            # Конвертируем в GIF
+            # Конвертируем в оптимизированный GIF
             processor.convert_to_gif(final_path)
             processor = MediaProcessor(final_path)
             
@@ -85,8 +94,14 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
             processor.convert_to_mp4(final_path)
             processor = MediaProcessor(final_path)
 
-        # Генерируем превью (работает и для GIF, и для MP4)
-        processor.generate_thumbnail(thumbnail_path)
+        # --- ГЕНЕРАЦИЯ ПРЕВЬЮ ---
+        if is_gif:
+            # 🔥 ВАЖНО: Копируем готовый GIF в превью, чтобы оно двигалось
+            if os.path.exists(final_path):
+                shutil.copy(final_path, thumbnail_path)
+        else:
+            # Для видео генерируем статичную картинку
+            processor.generate_thumbnail(thumbnail_path)
         
         # Получаем метаданные финального файла
         duration, width, height = processor.get_metadata()
@@ -100,14 +115,24 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         meme.height = height
         meme.has_audio = final_has_audio
         meme.status = "approved"
-        meme.media_url = f"/static/{final_filename}" # Теперь может быть .gif
-        meme.thumbnail_url = f"/static/{meme_id_str}_thumb.jpg"
+        meme.media_url = f"/static/{final_filename}"
+        meme.thumbnail_url = f"/static/{meme_id_str}_thumb.{thumbnail_ext}" # .gif или .jpg
         
         db.commit()
 
         # --- ИНДЕКСАЦИЯ ---
         try:
             tags_list = [t.name for t in meme.tags] if meme.tags else []
+            
+            # 👇 Получаем имя автора
+            author_username = "unknown"
+            # Мы уже делали запрос к базе выше (meme = db.query...), 
+            # но user может быть не подгружен. Лучше подгрузить или сделать запрос.
+            # Самый надежный вариант тут - простой SQL, так как sessionmaker синхронный
+            if meme.user_id:
+                user_res = db.execute(text("SELECT username FROM users WHERE id = :uid"), {"uid": meme.user_id}).fetchone()
+                if user_res:
+                    author_username = user_res.username
             
             index_meme_task.delay({
                 "id": str(meme.id),
@@ -121,12 +146,13 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
                 "height": meme.height,
                 "duration": meme.duration,
                 "status": meme.status,
-                "tags": tags_list
+                "tags": tags_list,
+                "author_username": author_username
             })
         except Exception as e:
             print(f"Search index trigger error: {e}")
 
-        # --- УВЕДОМЛЕНИЯ (Без изменений) ---
+        # --- УВЕДОМЛЕНИЯ ---
         try:
             sender_info = db.execute(
                 text("SELECT username, avatar_url FROM users WHERE id = :uid"), 

@@ -13,6 +13,9 @@ from telegram import (
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove
 )
+
+from telegram.request import HTTPXRequest
+from telegram.error import BadRequest
 from telegram.ext import (
     ApplicationBuilder, 
     CommandHandler, 
@@ -133,39 +136,53 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'force_ext' in context.user_data:
         del context.user_data['force_ext']
     
-    # 1. Проверяем ДОКУМЕНТ (Файл) - Самая частая проблема с GIF
-    if message.document:
-        file_obj = await message.document.get_file()
-        fname = message.document.file_name or ""
-        mime = message.document.mime_type or ""
+    try:
+        # 1. Проверяем ДОКУМЕНТ (Файл) - Самая частая проблема с GIF
+        if message.document:
+            file_obj = await message.document.get_file()
+            fname = message.document.file_name or ""
+            mime = message.document.mime_type or ""
+            
+            # Исправленная логика: проверяем, видео ли это. Если нет - считаем картинкой/гифкой.
+            if 'video' in mime and not 'gif' in mime and not fname.lower().endswith('.gif'):
+                 is_video = True
+            else:
+                 is_video = False
+                 # Если явно GIF, ставим флаг для сохранения расширения
+                 if fname.lower().endswith('.gif') or 'gif' in mime:
+                     context.user_data['force_ext'] = 'gif'
+
+        # 2. Проверяем ВИДЕО (сжатое телеграмом)
+        elif message.video:
+            file_obj = await message.video.get_file()
+            is_video = True
+
+        # 3. Проверяем АНИМАЦИЮ (Telegram сжал GIF в MP4 без звука)
+        elif message.animation:
+            file_obj = await message.animation.get_file()
+            is_video = False # Считаем контентом без звука
+
+        # 4. Проверяем ФОТО
+        elif message.photo:
+            file_obj = await message.photo[-1].get_file()
+            is_video = False
         
-        # Исправленная логика: проверяем, видео ли это. Если нет - считаем картинкой/гифкой.
-        if 'video' in mime and not 'gif' in mime and not fname.lower().endswith('.gif'):
-             is_video = True
         else:
-             is_video = False
-             # Если явно GIF, ставим флаг для сохранения расширения
-             if fname.lower().endswith('.gif') or 'gif' in mime:
-                 context.user_data['force_ext'] = 'gif'
+            await message.reply_text("❌ Формат не поддерживается. Пришли файл или медиа.")
+            return UPLOAD_MEDIA
 
-    # 2. Проверяем ВИДЕО (сжатое телеграмом)
-    elif message.video:
-        file_obj = await message.video.get_file()
-        is_video = True
-
-    # 3. Проверяем АНИМАЦИЮ (Telegram сжал GIF в MP4 без звука)
-    elif message.animation:
-        file_obj = await message.animation.get_file()
-        is_video = False # Считаем контентом без звука
-
-    # 4. Проверяем ФОТО
-    elif message.photo:
-        file_obj = await message.photo[-1].get_file()
-        is_video = False
-    
-    else:
-        await message.reply_text("❌ Формат не поддерживается. Пришли файл или медиа.")
-        return UPLOAD_MEDIA
+    except BadRequest as e:
+        if "file is too big" in str(e).lower():
+            await message.reply_text(
+                "❌ **Файл слишком большой!**\n\n"
+                "Telegram разрешает ботам скачивать файлы только до **20 МБ**.\n"
+                "Пожалуйста, сожми файл или пришли другой.",
+                parse_mode="Markdown"
+            )
+            return UPLOAD_MEDIA
+        else:
+            # Если другая ошибка, пробрасываем её дальше
+            raise e
 
     context.user_data['file_id'] = file_obj.file_id
     context.user_data['is_video'] = is_video
@@ -232,8 +249,15 @@ async def perform_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
 
     try:
-        main_file = await context.bot.get_file(context.user_data['file_id'])
-        main_buffer = await main_file.download_as_bytearray()
+        # 🔥 ДОБАВЛЕНА ПРОВЕРКА НА РАЗМЕР ПРИ СКАЧИВАНИИ
+        try:
+            main_file = await context.bot.get_file(context.user_data['file_id'])
+            main_buffer = await main_file.download_as_bytearray()
+        except BadRequest as e:
+            if "file is too big" in str(e).lower():
+                await update.message.reply_text("❌ Файл слишком большой (лимит 20МБ). Загрузка отменена.")
+                return ConversationHandler.END
+            raise e
         
         file_path = main_file.file_path
         
@@ -476,8 +500,9 @@ async def on_chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     ensure_bot_user_exists()
-    
-    app = ApplicationBuilder().token(TOKEN).build()
+
+    request = HTTPXRequest(connect_timeout=60, read_timeout=60)
+    app = ApplicationBuilder().token(TOKEN).request(request).build()
     
     upload_handler = ConversationHandler(
         entry_points=[CommandHandler("upload", upload_start)],
@@ -504,6 +529,5 @@ if __name__ == '__main__':
     
     print(f"🤖 Бот запущен! Пользователь бота: {BOT_USERNAME}")
     
-    # 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: Явно указываем типы обновлений
-    # Без этого chosen_inline_result может не приходить
+    # allowed_updates=Update.ALL_TYPES важен для работы inline feedback
     app.run_polling(allowed_updates=Update.ALL_TYPES)

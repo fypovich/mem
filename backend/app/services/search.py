@@ -1,4 +1,5 @@
 import meilisearch
+import re
 from app.core.config import settings
 
 class SearchService:
@@ -12,17 +13,27 @@ class SearchService:
         self.index_tags = self.client.index('tags')
         
         # --- НАСТРОЙКИ ИНДЕКСОВ ---
-        # (Эти команды выполняются при создании сервиса. Если Meili недоступен, тут будет ошибка)
-        
+        self._setup_indexes()
+
+    def _setup_indexes(self):
         # 1. Мемы: ищем по заголовку, описанию, тегам и персонажам
         self.index_memes.update_searchable_attributes([
             'title', 
             'description', 
             'tags', 
-            'subject'
+            'subject',
+            'author_username' # 🔥 ДОБАВЛЕНО: чтобы работал поиск по @username
         ])
-        # Фильтры: добавляем 'status', чтобы искать только одобренные
-        self.index_memes.update_filterable_attributes(['tags', 'subject', 'user_id', 'status'])
+        
+        # Фильтры: добавляем 'status' и 'author_username'
+        self.index_memes.update_filterable_attributes([
+            'tags', 
+            'subject', 
+            'user_id', 
+            'status',
+            'author_username' # 🔥 ДОБАВЛЕНО: для фильтрации where author_username = ...
+        ])
+        
         # Сортировка
         self.index_memes.update_sortable_attributes(['views_count', 'shares_count', 'created_at'])
 
@@ -48,38 +59,63 @@ class SearchService:
             print(f"Error deleting document from {index_name}: {e}")
 
     def search_multi(self, query: str, limit: int = 20):
-        """Параллельный поиск по всем индексам"""
+        """Параллельный поиск по всем индексам с поддержкой @username"""
         
-        # Если запрос пустой, возвращаем просто свежие мемы (если нужно)
-        if not query:
-             # Пример: вернуть последние одобренные мемы
-             try:
-                 memes = self.index_memes.search('', {
-                     'limit': limit, 
-                     'filter': 'status = approved',
-                     'sort': ['created_at:desc']
-                 })
-                 return {
-                    "memes": memes.get('hits', []),
-                    "users": [],
-                    "tags": []
-                }
-             except:
-                 return {"memes": [], "users": [], "tags": []}
+        filter_conditions = ["status = approved"]
+        clean_query = query if query else ""
 
-        # Основной поиск
-        memes = self.index_memes.search(query, {
-            'limit': limit,
-            'filter': 'status = approved' # 🔥 Ищем только одобренные
-        })
-        users = self.index_users.search(query, {'limit': limit})
-        tags = self.index_tags.search(query, {'limit': limit})
+        # --- 1. ПАРСИНГ @USERNAME ---
+        # Ищем паттерн @word (например @admin)
+        username_match = re.search(r'@([\w\d_]+)', clean_query)
         
-        return {
-            "memes": memes.get('hits', []),
-            "users": users.get('hits', []),
-            "tags": tags.get('hits', [])
+        if username_match:
+            target_username = username_match.group(1)
+            # Добавляем фильтр по автору
+            filter_conditions.append(f"author_username = '{target_username}'")
+            
+            # Удаляем @username из текстового запроса, чтобы не мешал искать по смыслу
+            clean_query = clean_query.replace(f"@{target_username}", "").strip()
+
+        # --- 2. ПАРАМЕТРЫ ПОИСКА ---
+        search_params = {
+            'limit': limit,
+            'filter': " AND ".join(filter_conditions),
+            'sort': ['created_at:desc'] # Сортируем по новизне (или shares_count:desc)
         }
+
+        # Если запрос пустой (например, был только @admin или вообще ""), MeiliSearch требует ''
+        # Если есть фильтр author_username, он вернет все мемы этого автора.
+        q = clean_query if clean_query else ""
+
+        try:
+            # Основной поиск по мемам
+            memes_results = self.index_memes.search(q, search_params)
+            memes_hits = memes_results.get('hits', [])
+            
+            # Если это был поиск только по мемам конкретного юзера,
+            # нет смысла искать юзеров и теги по пустому запросу.
+            if username_match and not clean_query:
+                users_hits = []
+                tags_hits = []
+            else:
+                # Поиск юзеров и тегов только если есть текстовый запрос
+                if q:
+                    users_hits = self.index_users.search(q, {'limit': limit}).get('hits', [])
+                    tags_hits = self.index_tags.search(q, {'limit': limit}).get('hits', [])
+                else:
+                    # Если вообще пустой запрос (меню бота), возвращаем просто свежие мемы
+                    users_hits = []
+                    tags_hits = []
+
+            return {
+                "memes": memes_hits,
+                "users": users_hits,
+                "tags": tags_hits
+            }
+
+        except Exception as e:
+            print(f"Search error: {e}")
+            return {"memes": [], "users": [], "tags": []}
 
 # Глобальный инстанс
 _search_service = None

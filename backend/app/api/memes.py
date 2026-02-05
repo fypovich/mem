@@ -179,7 +179,8 @@ async def upload_meme(
             "height": new_meme.height,             # <-- ДОБАВЛЕНО
             "duration": new_meme.duration,         # <-- ДОБАВЛЕНО
             "status": new_meme.status,             # <-- ВАЖНО: Добавлено поле status
-            "tags": tag_list 
+            "tags": tag_list,
+            "author_username": current_user.username 
         }])
         
         # Уведомления для картинок
@@ -697,7 +698,8 @@ async def update_meme(
             "height": meme.height,             # <-- ДОБАВЛЕНО
             "duration": meme.duration,         # <-- ДОБАВЛЕНО
             "status": meme.status,             # <-- ВАЖНО: Добавлено поле status
-            "tags": current_tags_list 
+            "tags": current_tags_list,
+        "author_username": meme.user.username if meme.user else "unknown" 
         }])
     except Exception as e:
         print(f"Meili update schedule error: {e}")
@@ -758,6 +760,7 @@ async def share_meme_counter(
     updated_meme = await db.scalar(
         select(Meme)
         .options(selectinload(Meme.tags))
+        .options(selectinload(Meme.user))
         .where(Meme.id == meme_id)
     )
     
@@ -778,7 +781,8 @@ async def share_meme_counter(
                 "height": updated_meme.height,
                 "duration": updated_meme.duration,
                 "status": updated_meme.status,
-                "tags": current_tags_list 
+                "tags": current_tags_list,
+                "author_username": updated_meme.user.username if updated_meme.user else "unknown" 
             }])
         except Exception as e:
             print(f"Error scheduling search update for share: {e}")
