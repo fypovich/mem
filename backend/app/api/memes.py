@@ -174,7 +174,12 @@ async def upload_meme(
             "thumbnail_url": new_meme.thumbnail_url,
             "media_url": new_meme.media_url,
             "views_count": new_meme.views_count,
-            "tags": tag_list  # <--- ИСПРАВЛЕНО: используем tag_list вместо tags_list
+            "shares_count": new_meme.shares_count, # <-- ДОБАВЛЕНО
+            "width": new_meme.width,               # <-- ДОБАВЛЕНО
+            "height": new_meme.height,             # <-- ДОБАВЛЕНО
+            "duration": new_meme.duration,         # <-- ДОБАВЛЕНО
+            "status": new_meme.status,             # <-- ВАЖНО: Добавлено поле status
+            "tags": tag_list 
         }])
         
         # Уведомления для картинок
@@ -687,7 +692,12 @@ async def update_meme(
             "thumbnail_url": meme.thumbnail_url,
             "media_url": meme.media_url,
             "views_count": meme.views_count,
-            "tags": current_tags_list # <--- ИСПРАВЛЕНО (было tags_list)
+            "shares_count": meme.shares_count, # <-- ДОБАВЛЕНО
+            "width": meme.width,               # <-- ДОБАВЛЕНО
+            "height": meme.height,             # <-- ДОБАВЛЕНО
+            "duration": meme.duration,         # <-- ДОБАВЛЕНО
+            "status": meme.status,             # <-- ВАЖНО: Добавлено поле status
+            "tags": current_tags_list 
         }])
     except Exception as e:
         print(f"Meili update schedule error: {e}")

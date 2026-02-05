@@ -14,16 +14,21 @@ class SearchResponse(BaseModel):
     subjects: List[Any] = []
 
 @router.get("/", response_model=SearchResponse)
-async def search_global(q: str, limit: int = 20):
-    if not q or len(q) < 1:
-        return SearchResponse()
+async def search_global(q: str = "", limit: int = 20): # <-- q теперь optional (по умолчанию "")
+    
+    # УБИРАЕМ или МЕНЯЕМ эту проверку:
+    # if not q or len(q) < 1:
+    #    return SearchResponse()
+    
+    # ПРАВИЛЬНЫЙ ВАРИАНТ:
+    # Если q None, делаем пустой строкой. Проверку длины убираем, 
+    # так как пустой q означает "дай мне просто новые мемы".
+    q = q if q else ""
 
     # --- ОПТИМИЗАЦИЯ: Сохраняем популярность запроса в Redis ---
-    # Эти данные потом заберет Celery (sync_search_stats_task) и сохранит в БД
     try:
         clean_q = q.strip().lower()
-        if len(clean_q) > 2: # Игнорируем слишком короткие запросы
-            # zincrby увеличивает счетчик в Sorted Set
+        if len(clean_q) > 2: # Статистику пишем только для реальных слов
             await redis_client.zincrby("stats:search_terms", 1, clean_q)
     except Exception as e:
         print(f"Redis search stats error: {e}")
@@ -31,7 +36,6 @@ async def search_global(q: str, limit: int = 20):
 
     search = get_search_service()
     if not search:
-        # Fallback если MeiliSearch недоступен
         return SearchResponse()
 
     results = search.search_multi(q, limit)
