@@ -56,9 +56,8 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
 
         # --- ОБРАБОТКА ---
         if audio_path:
-            # Склеиваем (MediaProcessor теперь сам исправляет размеры и потоки)
+            # Склеиваем
             processor.process_video_with_audio(audio_path, final_path)
-            
             if os.path.exists(audio_path): os.remove(audio_path)
             processor = MediaProcessor(final_path)
         else:
@@ -84,11 +83,11 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         
         db.commit()
 
-        # --- ИНДЕКСАЦИЯ ---
+        # --- ИНДЕКСАЦИЯ (ИСПРАВЛЕНО) ---
         try:
             tags_list = [t.name for t in meme.tags] if meme.tags else []
             
-            # Вызываем задачу, определенную ниже в этом же файле
+            # 🔥 ДОБАВЛЕНЫ ПОЛЯ status, shares_count, width, height 🔥
             index_meme_task.delay({
                 "id": str(meme.id),
                 "title": meme.title,
@@ -96,6 +95,11 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
                 "thumbnail_url": meme.thumbnail_url,
                 "media_url": meme.media_url,
                 "views_count": meme.views_count,
+                "shares_count": meme.shares_count, # <-- ВАЖНО
+                "width": meme.width,               # <-- ВАЖНО
+                "height": meme.height,             # <-- ВАЖНО
+                "duration": meme.duration,         # <-- ВАЖНО
+                "status": meme.status,             # <-- КРИТИЧНО для поиска
                 "tags": tags_list
             })
         except Exception as e:

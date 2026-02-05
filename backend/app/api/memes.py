@@ -731,22 +731,56 @@ async def report_meme(
     
     return {"message": "Report submitted"}
 
-#  ДОБАВЛЯЕМ НОВЫЙ ЭНДПОИНТ (можно в конец файла)
 @router.post("/{meme_id}/share")
 async def share_meme_counter(
     meme_id: uuid.UUID,
     db: AsyncSession = Depends(get_db)
 ):
-    """Инкрементирует счетчик шеров (вызывается ботом)"""
-    # 1. Атомарное обновление в БД (безопасно при высокой нагрузке)
+    """Инкрементирует счетчик шеров и обновляет поиск (Исправлено)"""
+    
+    # 1. Обновляем в БД с защитой от NULL
+    # func.coalesce превращает NULL в 0 перед сложением
     stmt = (
         update(Meme)
         .where(Meme.id == meme_id)
-        .values(shares_count=Meme.shares_count + 1)
+        .values(shares_count=func.coalesce(Meme.shares_count, 0) + 1)
         .execution_options(synchronize_session=False)
+        .returning(Meme.shares_count) # Сразу возвращаем новое значение
     )
-    await db.execute(stmt)
+    
+    result = await db.execute(stmt)
+    new_count = result.scalar() or 1
     await db.commit()
     
-    # 2. (Опционально) Можно также инкрементировать в Redis/MeiliSearch для мгновенного обновления топов
-    return {"status": "ok"}
+    print(f"📈 Meme {meme_id} shared! New count: {new_count}")
+    
+    # 2. Обновляем индекс MeiliSearch
+    updated_meme = await db.scalar(
+        select(Meme)
+        .options(selectinload(Meme.tags))
+        .where(Meme.id == meme_id)
+    )
+    
+    if updated_meme:
+        try:
+            current_tags_list = [t.name for t in updated_meme.tags]
+            
+            # Отправляем задачу с обновленным количеством
+            celery_app.send_task("app.worker.index_meme_task", args=[{
+                "id": str(updated_meme.id),
+                "title": updated_meme.title,
+                "description": updated_meme.description,
+                "thumbnail_url": updated_meme.thumbnail_url,
+                "media_url": updated_meme.media_url,
+                "views_count": updated_meme.views_count,
+                "shares_count": new_count, # <-- Передаем точное новое число
+                "width": updated_meme.width,
+                "height": updated_meme.height,
+                "duration": updated_meme.duration,
+                "status": updated_meme.status,
+                "tags": current_tags_list 
+            }])
+        except Exception as e:
+            print(f"Error scheduling search update for share: {e}")
+    
+    return {"status": "ok", "count": new_count}
