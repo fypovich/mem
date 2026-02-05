@@ -449,16 +449,30 @@ async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Ошибка при поиске.")
 
 async def on_chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Срабатывает, когда пользователь нажал на мем в инлайн-поиске.
+    """
     result = update.chosen_inline_result
     meme_id = result.result_id
+    query = result.query # Запрос, по которому нашли
+    
+    logger.info(f"👇 CHOSEN RESULT TRIGGERED! User selected meme: {meme_id}")
+
     try:
         async with aiohttp.ClientSession() as session:
             url = f"{API_INTERNAL_URL}/memes/{meme_id}/share"
+            logger.info(f"➡️ Sending POST request to: {url}")
+            
             async with session.post(url) as resp:
+                response_text = await resp.text()
+                
                 if resp.status == 200:
-                    logger.info(f"✅ Share counted for meme {meme_id}")
+                    logger.info(f"✅ Share counted successfully! Server response: {response_text}")
+                else:
+                    logger.error(f"⚠️ Server returned error: {resp.status} - {response_text}")
+                    
     except Exception as e:
-        logger.error(f"Error tracking share: {e}")
+        logger.error(f"❌ Error in on_chosen_result: {e}")
 
 if __name__ == '__main__':
     ensure_bot_user_exists()
@@ -469,7 +483,6 @@ if __name__ == '__main__':
         entry_points=[CommandHandler("upload", upload_start)],
         states={
             UPLOAD_MEDIA: [
-                # 🔥 ПРИНИМАЕМ ВСЁ: Фото, Видео, Анимации и любые Документы
                 MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.Document.ALL, handle_media)
             ],
             UPLOAD_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_title)],
@@ -490,4 +503,7 @@ if __name__ == '__main__':
     app.add_handler(ChosenInlineResultHandler(on_chosen_result))
     
     print(f"🤖 Бот запущен! Пользователь бота: {BOT_USERNAME}")
-    app.run_polling()
+    
+    # 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: Явно указываем типы обновлений
+    # Без этого chosen_inline_result может не приходить
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
