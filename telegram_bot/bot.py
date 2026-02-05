@@ -35,7 +35,10 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEB_APP_URL = os.getenv("WEB_APP_URL")
 API_INTERNAL_URL = os.getenv("API_INTERNAL_URL", "http://backend:8000/api/v1") 
+# Если переменная не задана, берем WEB_APP_URL, но убираем слэш в конце если есть
 API_PUBLIC_URL = os.getenv("API_PUBLIC_URL", WEB_APP_URL)
+if API_PUBLIC_URL and API_PUBLIC_URL.endswith('/'):
+    API_PUBLIC_URL = API_PUBLIC_URL[:-1]
 
 # Данные для системного пользователя-бота
 BOT_USERNAME = "bot"
@@ -55,11 +58,7 @@ if not TOKEN:
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def ensure_bot_user_exists():
-    """
-    Регистрирует или логинит пользователя 'bot', чтобы получить токен для API.
-    """
     global API_ACCESS_TOKEN
-    
     login_url = f"{API_INTERNAL_URL}/auth/token"
     try:
         resp = requests.post(login_url, data={"username": BOT_USERNAME, "password": BOT_PASSWORD})
@@ -81,7 +80,6 @@ def ensure_bot_user_exists():
             "full_name": "Telegram Bot"
         }
         resp = requests.post(register_url, json=payload)
-        
         if resp.status_code in [200, 201]:
             logger.info(f"✅ Created user '{BOT_USERNAME}'")
             login_resp = requests.post(login_url, data={"username": BOT_USERNAME, "password": BOT_PASSWORD})
@@ -90,7 +88,6 @@ def ensure_bot_user_exists():
                 return
         else:
             logger.error(f"❌ Registration failed: {resp.status_code} {resp.text}")
-            
     except Exception as e:
         logger.error(f"Failed to create bot user: {e}")
 
@@ -99,13 +96,11 @@ def ensure_bot_user_exists():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     logger.info(f"User {user.id} ({user.username}) started bot")
-    
     keyboard = [
         [InlineKeyboardButton("📱 Открыть MemeHUB", web_app=WebAppInfo(url=WEB_APP_URL))],
         [InlineKeyboardButton("🎲 Случайный мем", callback_data="random_meme")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await update.message.reply_text(
         f"Привет, {user.first_name}! 👋\n\n"
         "Я бот MemeHUB. \n"
@@ -123,7 +118,7 @@ async def upload_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Отправь мне:\n"
         "• Картинку 📸\n"
         "• Видео 📹\n"
-        "• Или GIF 🎞\n\n"
+        "• Или GIF (файлом) 🎞\n\n"
         "Или /cancel для отмены.",
         parse_mode="Markdown"
     )
@@ -134,17 +129,46 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_obj = None
     is_video = False
     
-    if message.video:
+    # Очистка флага принудительного расширения
+    if 'force_ext' in context.user_data:
+        del context.user_data['force_ext']
+    
+    # 1. Проверяем ДОКУМЕНТ (Файл) - Самая частая проблема с GIF
+    if message.document:
+        file_obj = await message.document.get_file()
+        fname = message.document.file_name or ""
+        mime = message.document.mime_type or ""
+        
+        # Исправленная логика: проверяем, видео ли это. Если нет - считаем картинкой/гифкой.
+        # Это позволяет принимать файлы без расширения или со странными MIME.
+        if 'video' in mime and not 'gif' in mime and not fname.lower().endswith('.gif'):
+             is_video = True
+        else:
+             # Это картинка или GIF
+             is_video = False
+             # Если явно GIF, ставим флаг для сохранения расширения
+             if fname.lower().endswith('.gif') or 'gif' in mime:
+                 context.user_data['force_ext'] = 'gif'
+             # Если имени нет, но это документ, на всякий случай тоже можно пометить как gif или jpg
+             # (Оставим бэкенду разбираться, главное приняли файл)
+
+    # 2. Проверяем ВИДЕО (сжатое телеграмом)
+    elif message.video:
         file_obj = await message.video.get_file()
         is_video = True
+
+    # 3. Проверяем АНИМАЦИЮ (Telegram сжал GIF в MP4 без звука)
     elif message.animation:
         file_obj = await message.animation.get_file()
-        is_video = False 
+        is_video = False # Считаем контентом без звука
+
+    # 4. Проверяем ФОТО
     elif message.photo:
         file_obj = await message.photo[-1].get_file()
         is_video = False
+    
     else:
-        await message.reply_text("❌ Это не медиа-файл. Попробуй еще раз.")
+        await message.reply_text("❌ Формат не поддерживается. Пришли файл или медиа.")
         return UPLOAD_MEDIA
 
     context.user_data['file_id'] = file_obj.file_id
@@ -158,9 +182,7 @@ async def handle_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(title) < 2:
         await update.message.reply_text("Слишком короткий заголовок.")
         return UPLOAD_TITLE
-        
     context.user_data['title'] = title
-    
     await update.message.reply_text(
         "📝 Заголовок есть.\n\n"
         "Теперь напиши **теги** через запятую (например: `кот, смешно`):",
@@ -171,16 +193,13 @@ async def handle_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_tags(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tags = update.message.text.strip()
     context.user_data['tags'] = tags
-    
     is_video = context.user_data.get('is_video', False)
-    
     if is_video:
         await update.message.reply_text("⏳ Загружаю видео на сервер...")
         return await perform_upload(update, context)
     else:
         keyboard = [['/skip Пропустить']]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-        
         await update.message.reply_text(
             "🎤 **Добавить звук?**\n\n"
             "Отправь **Голосовое** или **Аудиофайл**.\n"
@@ -201,7 +220,6 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await message.reply_text("Это не аудио. Отправь файл или /skip.")
         return UPLOAD_AUDIO
-        
     await message.reply_text("🎵 Аудио принято! Обрабатываю...", reply_markup=ReplyKeyboardRemove())
     return await perform_upload(update, context)
 
@@ -211,11 +229,10 @@ async def skip_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def perform_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global API_ACCESS_TOKEN
-    
     if not API_ACCESS_TOKEN:
         ensure_bot_user_exists()
         if not API_ACCESS_TOKEN:
-            await update.message.reply_text("❌ Ошибка: Бот не смог авторизоваться на сервере.")
+            await update.message.reply_text("❌ Ошибка: Бот не смог авторизоваться.")
             return ConversationHandler.END
 
     try:
@@ -223,7 +240,15 @@ async def perform_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         main_buffer = await main_file.download_as_bytearray()
         
         file_path = main_file.file_path
-        ext = file_path.split('.')[-1]
+        
+        # ЛОГИКА РАСШИРЕНИЯ
+        if context.user_data.get('force_ext') == 'gif':
+            ext = 'gif'
+        elif '.' in file_path:
+            ext = file_path.split('.')[-1]
+        else:
+            ext = 'jpg' # Дефолт, если телеграм не дал расширения
+            
         filename = f"upload.{ext}"
 
         form = aiohttp.FormData()
@@ -237,16 +262,14 @@ async def perform_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
             form.add_field('audio_file', audio_buffer, filename="voice.ogg")
 
         headers = {"Authorization": f"Bearer {API_ACCESS_TOKEN}"}
-
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{API_INTERNAL_URL}/memes/upload", data=form, headers=headers) as resp:
                 if resp.status in [200, 201]:
                     meme = await resp.json()
                     share_link = f"@{context.bot.username} {meme.get('title')}"
-                    
                     await update.message.reply_text(
                         f"🎉 **Готово!** Мем опубликован.\n"
-                        f"Ищи его в поиске: `{share_link}`",
+                        f"Ищи его: `{share_link}`",
                         parse_mode="Markdown"
                     )
                 else:
@@ -264,6 +287,116 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
+
+# --- INLINE LOGIC (ПОИСК) ---
+
+async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw_query = update.inline_query.query.strip()
+    
+    # Можно принудительно искать только картинки через #img, но лучше показывать всё
+    clean_query = raw_query
+    if raw_query.endswith("#img"):
+        clean_query = raw_query.replace("#img", "").strip()
+    
+    params = {"limit": 60}
+    if not clean_query:
+        params["q"] = ""
+        params["sort"] = "new" 
+    else:
+        params["q"] = clean_query
+
+    results = [] # Единый список результатов
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{API_INTERNAL_URL}/search/", params=params) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    memes = data.get("memes", [])
+                    
+                    if not API_PUBLIC_URL:
+                        logger.warning("⚠️ API_PUBLIC_URL is not set!")
+
+                    for meme in memes:
+                        meme_id = str(meme.get("id"))
+                        title = meme.get("title", "Meme")
+                        shares = meme.get("shares_count", 0)
+                        
+                        media_path = meme.get('media_url', '')
+                        thumb_path = meme.get('thumbnail_url', '')
+                        
+                        # Формируем полные ссылки (HTTPS обязательно для Telegram)
+                        media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
+                        thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
+                        
+                        width = meme.get("width")
+                        height = meme.get("height")
+                        duration = int(meme.get("duration", 0) or 0)
+                        
+                        ext = media_path.split('.')[-1].lower()
+                        
+                        # --- ЛОГИКА ОТОБРАЖЕНИЯ ---
+                        # Добавляем ВСЁ в один список results
+                        
+                        if ext in ['jpg', 'jpeg', 'png', 'webp']:
+                            # Картинка
+                            results.append(InlineQueryResultPhoto(
+                                id=meme_id, 
+                                photo_url=media_url, 
+                                thumbnail_url=thumb_url,
+                                title=title, 
+                                photo_width=width, 
+                                photo_height=height
+                            ))
+                        
+                        elif ext == 'gif':
+                            # GIF
+                            results.append(InlineQueryResultGif(
+                                id=meme_id, 
+                                gif_url=media_url, 
+                                thumbnail_url=thumb_url,
+                                title=f"🎞 {title}", 
+                                gif_width=width, 
+                                gif_height=height
+                            ))
+                        
+                        else: 
+                            # Видео (MP4)
+                            # Telegram требует thumbnail_url для видео. Если его нет — используем заглушку или пропускаем
+                            if not thumb_path:
+                                # Можно использовать логотип бота или что-то дефолтное, если нет превью
+                                # Но лучше попытаться показать хотя бы что-то
+                                pass 
+                            
+                            tags = meme.get('tags', [])
+                            tag_str = ""
+                            if tags:
+                                # Обработка разных форматов тегов (строки или объекты)
+                                tag_names = [t.get('name', '') if isinstance(t, dict) else str(t) for t in tags[:3]]
+                                tag_str = " ".join([f"#{t}" for t in tag_names if t])
+                            
+                            description = f"🔥 {shares} | {tag_str}"
+
+                            results.append(InlineQueryResultVideo(
+                                id=meme_id, 
+                                video_url=media_url, 
+                                mime_type="video/mp4",
+                                thumbnail_url=thumb_url, 
+                                title=f"📹 {title}",
+                                description=description,
+                                video_width=width, 
+                                video_height=height,
+                                video_duration=duration
+                            ))
+
+                    # Отправляем ВСЕ результаты сразу
+                    # cache_time=1 ставим для тестов, чтобы не кешировалось надолго
+                    await update.inline_query.answer(results, cache_time=1)
+                else:
+                    logger.error(f"Search API returned {resp.status}")
+                    
+    except Exception as e:
+        logger.error(f"Inline error: {e}")
 
 async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -288,138 +421,6 @@ async def random_meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error(f"Error fetching random meme: {e}")
         await update.message.reply_text("Ошибка при поиске.")
 
-# --- INLINE LOGIC ---
-
-async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка инлайн-запросов (Поиск + Режимы)"""
-    raw_query = update.inline_query.query.strip()
-    
-    force_images = False
-    clean_query = raw_query
-    
-    if raw_query.endswith("#img"):
-        force_images = True
-        clean_query = raw_query.replace("#img", "").strip()
-    
-    params = {"limit": 60}
-    if not clean_query:
-        params["q"] = ""
-        params["sort"] = "new" 
-    else:
-        params["q"] = clean_query
-
-    video_results = []
-    image_results = []
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_INTERNAL_URL}/search/", params=params) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    memes = data.get("memes", [])
-                    
-                    # Разделение результатов
-                    temp_videos = []
-                    temp_images = []
-
-                    for meme in memes:
-                        media_path = meme.get('media_url', '')
-                        ext = media_path.split('.')[-1].lower()
-                        if ext in ['jpg', 'jpeg', 'png', 'webp', 'gif']:
-                            temp_images.append(meme)
-                        else:
-                            temp_videos.append(meme)
-
-                    img_count = len(temp_images)
-                    vid_count = len(temp_videos)
-
-                    # --- РЕЖИМ: КАРТИНКИ ---
-                    if force_images or (not temp_videos and temp_images):
-                        back_btn = None
-                        if vid_count > 0:
-                            back_btn = InlineKeyboardMarkup([[
-                                InlineKeyboardButton(f"📹 К видео ({vid_count})", switch_inline_query_current_chat=clean_query)
-                            ]])
-
-                        for meme in temp_images:
-                            meme_id = str(meme.get("id"))
-                            title = meme.get("title", "Meme")
-                            shares = meme.get("shares_count", 0)
-                            media_path = meme.get('media_url', '')
-                            thumb_path = meme.get('thumbnail_url', '')
-                            width = meme.get("width")
-                            height = meme.get("height")
-                            media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
-                            thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
-                            ext = media_path.split('.')[-1].lower()
-                            display_title = title if ext not in ['gif'] else f"🎞 {title} (🔥 {shares})"
-
-                            if ext in ['gif']:
-                                image_results.append(InlineQueryResultGif(
-                                    id=meme_id, gif_url=media_url, thumbnail_url=thumb_url,
-                                    gif_width=width, gif_height=height, title=display_title,
-                                    reply_markup=back_btn
-                                ))
-                            else:
-                                image_results.append(InlineQueryResultPhoto(
-                                    id=meme_id, photo_url=media_url, thumbnail_url=thumb_url,
-                                    photo_width=width, photo_height=height, title=f"🖼 {display_title}",
-                                    reply_markup=back_btn
-                                ))
-                        
-                        await update.inline_query.answer(image_results, cache_time=1)
-
-                    # --- РЕЖИМ: ВИДЕО ---
-                    else:
-                        switch_btn = None
-                        if img_count > 0:
-                            new_query = f"{clean_query} #img".strip()
-                            switch_btn = InlineKeyboardMarkup([[
-                                InlineKeyboardButton(f"📸 Фото/GIF ({img_count})", switch_inline_query_current_chat=new_query)
-                            ]])
-
-                        for meme in temp_videos:
-                            meme_id = str(meme.get("id"))
-                            title = meme.get("title", "Meme")
-                            shares = meme.get("shares_count", 0)
-                            media_path = meme.get('media_url', '')
-                            thumb_path = meme.get('thumbnail_url', '')
-                            duration = int(meme.get("duration", 0) or 0)
-                            width = meme.get("width")
-                            height = meme.get("height")
-                            media_url = media_path if media_path.startswith("http") else f"{API_PUBLIC_URL}{media_path}"
-                            thumb_url = thumb_path if thumb_path.startswith("http") else f"{API_PUBLIC_URL}{thumb_path}"
-                            
-                            # 🔥 ЗАЩИЩЕННАЯ ОБРАБОТКА ТЕГОВ 🔥
-                            tags = meme.get('tags', [])
-                            tag_names = []
-                            # Безопасно извлекаем имена тегов
-                            if tags:
-                                for t in tags:
-                                    if isinstance(t, dict):
-                                        tag_names.append(t.get('name', ''))
-                                    elif isinstance(t, str):
-                                        tag_names.append(t)
-                                    # Если int или что-то другое - игнорируем
-
-                            tag_str = " ".join([f"#{t}" for t in tag_names[:3] if t])
-                            list_description = f"🔥 Отправлено: {shares} раз\n{tag_str}"
-
-                            video_results.append(InlineQueryResultVideo(
-                                id=meme_id, video_url=media_url, mime_type="video/mp4",
-                                thumbnail_url=thumb_url, video_width=width, video_height=height,
-                                video_duration=duration, title=f"📹 {title}", description=list_description,
-                                reply_markup=switch_btn
-                            ))
-                        
-                        if not video_results and image_results:
-                             await update.inline_query.answer(image_results, cache_time=1)
-                        else:
-                             await update.inline_query.answer(video_results, cache_time=1)
-
-    except Exception as e:
-        logger.error(f"Inline error: {e}")
-
 async def on_chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = update.chosen_inline_result
     meme_id = result.result_id
@@ -440,7 +441,10 @@ if __name__ == '__main__':
     upload_handler = ConversationHandler(
         entry_points=[CommandHandler("upload", upload_start)],
         states={
-            UPLOAD_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION, handle_media)],
+            UPLOAD_MEDIA: [
+                # 🔥 ПРИНИМАЕМ ВСЁ: Фото, Видео, Анимации и любые Документы
+                MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.Document.ALL, handle_media)
+            ],
             UPLOAD_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_title)],
             UPLOAD_TAGS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tags)],
             UPLOAD_AUDIO: [
