@@ -282,14 +282,14 @@ def animate_sticker_task(self, image_path: str, animation: str,
                          text_size: int = 15,
                          text_x: float = 0.5,
                          text_y: float = 0.8):
-    """Создает анимированный GIF"""
+    """Создает анимированный GIF или PNG (если без анимации)"""
     try:
-        output_filename = f"sticker_{uuid.uuid4()}.gif"
-        output_path = os.path.join("uploads", output_filename)
-        
-        service = StickerService(output_path)
-        service.create_animated_sticker(
-            image_path, 
+        file_id = str(uuid.uuid4())
+        gif_path = os.path.join("uploads", f"sticker_{file_id}.gif")
+
+        service = StickerService(gif_path)
+        result_path = service.create_animated_sticker(
+            image_path,
             animation=animation,
             outline_color=outline_color,
             outline_width=outline_width,
@@ -299,8 +299,9 @@ def animate_sticker_task(self, image_path: str, animation: str,
             text_x=text_x,
             text_y=text_y
         )
-        
-        return {"url": f"/static/{output_filename}"}
+
+        result_filename = os.path.basename(result_path)
+        return {"url": f"/static/{result_filename}"}
     except Exception as e:
         print(f"Worker Error: {e}")
         raise e

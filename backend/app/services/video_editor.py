@@ -19,26 +19,32 @@ class VideoEditorService:
         return np.clip(1 - dist * strength, 0.45, 1.0)
 
     def _apply_filter(self, clip, filter_name):
-        """Применение продвинутых эффектов к видео"""
+        """Применение кинематографических эффектов к видео"""
         print(f"🎨 [VideoEditor] Applying filter: '{filter_name}'")
 
         if not filter_name or filter_name == "No Filter":
             return clip
 
-        # 1. BLACK & WHITE — зернистость + виньетка + контраст
+        # 1. BLACK & WHITE — кинематографический ч/б с плёночным зерном
         if filter_name == "Black & White":
-            print("   -> Applying BW + Film Grain")
+            print("   -> Applying Cinematic BW")
             bw_clip = clip.fx(vfx.blackwhite)
             w_v, h_v = clip.size
-            vignette = self._make_vignette(h_v, w_v, 0.4)
+            vignette = self._make_vignette(h_v, w_v, 0.30)
 
             def bw_film(get_frame, t):
                 frame = get_frame(t).astype('float64')
-                # Зернистость
-                noise = np.random.normal(0, 18, frame.shape)
+                # Мягкое плёночное зерно
+                noise = np.random.normal(0, 10, frame.shape)
                 frame = frame + noise
-                # Контраст
-                frame = (frame - 128) * 1.15 + 128
+                # Мягкий контраст
+                frame = (frame - 128) * 1.10 + 128
+                # Холодные тени (синеватый оттенок в тёмных зонах)
+                luminance = np.mean(frame, axis=2, keepdims=True)
+                shadow_mask = np.clip(1.0 - luminance / 80, 0, 1)
+                frame[:, :, 2] += shadow_mask[:, :, 0] * 10
+                # Lifted blacks (винтажный fade)
+                frame = frame + 8
                 # Виньетка
                 for c in range(3):
                     frame[:, :, c] *= vignette
@@ -46,11 +52,11 @@ class VideoEditorService:
 
             return bw_clip.fl(bw_film)
 
-        # 2. SEPIA — тёплый тон + виньетка
+        # 2. SEPIA — винтажная плёнка с тёплым тоном
         elif filter_name == "Sepia":
-            print("   -> Applying Sepia")
+            print("   -> Applying Vintage Sepia")
             w_v, h_v = clip.size
-            vignette = self._make_vignette(h_v, w_v, 0.3)
+            vignette = self._make_vignette(h_v, w_v, 0.25)
 
             def sepia_effect(get_frame, t):
                 frame = get_frame(t).astype(np.float64)
@@ -60,9 +66,11 @@ class VideoEditorService:
                     [0.272, 0.534, 0.131]
                 ])
                 sepia_frame = frame @ sepia_matrix.T
-                # Тёплый оттенок
-                sepia_frame[:, :, 0] *= 1.06  # Красный +
-                sepia_frame[:, :, 2] *= 0.88  # Синий -
+                # Мягкий тёплый оттенок
+                sepia_frame[:, :, 0] *= 1.05
+                sepia_frame[:, :, 2] *= 0.90
+                # Lifted blacks (винтажный fade)
+                sepia_frame = sepia_frame + 8
                 # Виньетка
                 for c in range(3):
                     sepia_frame[:, :, c] *= vignette
@@ -70,35 +78,35 @@ class VideoEditorService:
 
             return clip.fl(sepia_effect)
 
-        # 3. RAINBOW — более плавные переливы, сохраняя исходные цвета
+        # 3. RAINBOW — тонкие цветовые переливы
         elif filter_name == "Rainbow":
             print("   -> Applying Rainbow")
             def color_cycle(get_frame, t):
                 frame = get_frame(t).astype(float)
-                # Плавная смена оттенков с сохранением 70% оригинала
-                r_shift = (np.sin(t * 2.5) + 1) / 2
-                g_shift = (np.sin(t * 2.5 + 2.09) + 1) / 2
-                b_shift = (np.sin(t * 2.5 + 4.19) + 1) / 2
+                # Плавная смена оттенков с сохранением 85% оригинала
+                r_shift = (np.sin(t * 1.8) + 1) / 2
+                g_shift = (np.sin(t * 1.8 + 2.09) + 1) / 2
+                b_shift = (np.sin(t * 1.8 + 4.19) + 1) / 2
 
-                frame[:, :, 0] = frame[:, :, 0] * 0.7 + (r_shift * 200 * 0.3)
-                frame[:, :, 1] = frame[:, :, 1] * 0.7 + (g_shift * 200 * 0.3)
-                frame[:, :, 2] = frame[:, :, 2] * 0.7 + (b_shift * 200 * 0.3)
+                frame[:, :, 0] = frame[:, :, 0] * 0.85 + (r_shift * 160 * 0.15)
+                frame[:, :, 1] = frame[:, :, 1] * 0.85 + (g_shift * 160 * 0.15)
+                frame[:, :, 2] = frame[:, :, 2] * 0.85 + (b_shift * 160 * 0.15)
 
                 return np.clip(frame, 0, 255).astype('uint8')
 
             return clip.fl(color_cycle)
 
-        # 4. RUMBLE — тряска + лёгкий motion blur
+        # 4. RUMBLE — управляемая тряска с motion blur
         elif filter_name == "Rumble":
             print("   -> Applying Rumble")
             w, h = clip.size
-            clip_zoomed = clip.resize(1.12)
+            clip_zoomed = clip.resize(1.08)
 
             def rumble_effect(get_frame, t):
                 dt = int(t * 20)
                 random.seed(dt)
-                dx = random.randint(-18, 18)
-                dy = random.randint(-18, 18)
+                dx = random.randint(-12, 12)
+                dy = random.randint(-12, 12)
 
                 cx = (clip_zoomed.w - w) / 2
                 cy = (clip_zoomed.h - h) / 2
@@ -108,16 +116,16 @@ class VideoEditorService:
                     int(cx + dx) : int(cx + dx + w)
                 ]
 
-                # Motion blur — смешиваем с чуть сдвинутым кадром
-                if abs(dx) > 8 or abs(dy) > 8:
+                # Motion blur при сильном смещении
+                if abs(dx) > 6 or abs(dy) > 6:
                     blurred = cv2.GaussianBlur(frame, (5, 5), 0)
-                    frame = cv2.addWeighted(frame, 0.7, blurred, 0.3, 0)
+                    frame = cv2.addWeighted(frame, 0.75, blurred, 0.25, 0)
 
                 return frame
 
             return clip.fl(rumble_effect)
 
-        # 5. VHS — улучшенные помехи + jitter + color bleed
+        # 5. VHS — аутентичные ретро-помехи
         elif filter_name == "VHS":
             print("   -> Applying VHS")
             def vhs_effect(get_frame, t):
@@ -125,51 +133,50 @@ class VideoEditorService:
                 h_img, w_img = frame.shape[:2]
                 frame_float = frame.astype(float)
 
-                # RGB Split (хроматическая аберрация) — подвижный сдвиг
-                shift = 5 + int(2 * np.sin(t * 4))
+                # RGB Split (хроматическая аберрация) — мягкий сдвиг
+                shift = 3 + int(1 * np.sin(t * 4))
                 r_channel = np.roll(frame_float[:, :, 0], shift=shift, axis=1)
                 g_channel = frame_float[:, :, 1]
                 b_channel = np.roll(frame_float[:, :, 2], shift=-shift, axis=1)
                 merged = np.stack([r_channel, g_channel, b_channel], axis=2)
 
-                # Scanlines — каждая 2-я строка
-                merged[::2, :] *= 0.88
+                # Scanlines — мягкие
+                merged[::2, :] *= 0.92
 
-                # Горизонтальный jitter — случайные строки подёргиваются
-                jitter_count = 4 + int(3 * abs(np.sin(t * 7)))
+                # Горизонтальный jitter — редкий
+                jitter_count = 2 + int(2 * abs(np.sin(t * 7)))
                 jitter_rows = np.random.choice(h_img, size=jitter_count, replace=False)
                 for row in jitter_rows:
-                    merged[row] = np.roll(merged[row], np.random.randint(-10, 10), axis=0)
+                    merged[row] = np.roll(merged[row], np.random.randint(-6, 6), axis=0)
 
-                # Tracking error (бегущая полоса шума)
-                noise_y = int((t * 100) % h_img)
-                noise_h = 15 + int(15 * abs(np.sin(t * 3)))
+                # Tracking error (тонкая бегущая полоса шума)
+                noise_y = int((t * 80) % h_img)
+                noise_h = 8 + int(8 * abs(np.sin(t * 3)))
                 end_y = min(noise_y + noise_h, h_img)
                 if end_y > noise_y:
-                    noise = np.random.randint(-70, 70, (end_y - noise_y, w_img, 3))
+                    noise = np.random.randint(-40, 40, (end_y - noise_y, w_img, 3))
                     merged[noise_y:end_y, :] += noise
 
-                # Color bleed (размытие цветовых каналов)
+                # Color bleed (размытие R и B каналов)
                 merged[:, :, 0] = cv2.GaussianBlur(merged[:, :, 0].astype('float32'), (5, 1), 0)
                 merged[:, :, 2] = cv2.GaussianBlur(merged[:, :, 2].astype('float32'), (5, 1), 0)
 
                 return np.clip(merged, 0, 255).astype('uint8')
 
-            return clip.fx(vfx.lum_contrast, contrast=1.3).fl(vhs_effect)
+            return clip.fx(vfx.lum_contrast, contrast=1.15).fl(vhs_effect)
 
-        # 6. GROOVY — тёплые тона + шлейф + покачивание
+        # 6. GROOVY — мягкий ретро-шлейф с покачиванием
         elif filter_name == "Groovy":
             print("   -> Applying Groovy")
-            clip_delayed = clip.fl_time(lambda t: max(0, t - 0.15), keep_duration=True)
-            clip_blend = CompositeVideoClip([clip, clip_delayed.set_opacity(0.5)])
+            clip_delayed = clip.fl_time(lambda t: max(0, t - 0.12), keep_duration=True)
+            clip_blend = CompositeVideoClip([clip, clip_delayed.set_opacity(0.4)])
 
             w, h = clip.size
-            clip_zoomed = clip_blend.resize(1.12)
+            clip_zoomed = clip_blend.resize(1.08)
 
             def groovy_pos(get_frame, t):
-                # Плавное покачивание с тёплым тоном
-                dx = int(np.sin(t * 2.5) * 25)
-                dy = int(np.cos(t * 1.8) * 15)
+                dx = int(np.sin(t * 2.0) * 18)
+                dy = int(np.cos(t * 1.5) * 10)
 
                 cx = (clip_zoomed.w - w) / 2
                 cy = (clip_zoomed.h - h) / 2
@@ -179,10 +186,14 @@ class VideoEditorService:
                     int(cx + dx) : int(cx + dx + w)
                 ].astype(float)
 
-                # Тёплый цветовой сдвиг
-                frame[:, :, 0] *= 1.08  # Красный +
-                frame[:, :, 1] *= 1.02  # Зелёный +
-                frame[:, :, 2] *= 0.88  # Синий -
+                # Мягкий тёплый цветовой сдвиг
+                frame[:, :, 0] *= 1.05
+                frame[:, :, 1] *= 1.01
+                frame[:, :, 2] *= 0.92
+
+                # Лёгкое повышение насыщенности
+                gray = np.mean(frame, axis=2, keepdims=True)
+                frame = gray + (frame - gray) * 1.15
 
                 return np.clip(frame, 0, 255).astype('uint8')
 

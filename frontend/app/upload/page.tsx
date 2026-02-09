@@ -242,16 +242,18 @@ export default function UploadPage() {
                             <img src={mediaPreview} className="w-full h-full object-contain" alt="Preview" />
                         )}
                         <div className="absolute top-4 right-4 flex gap-2">
-                            <Button
-                                size="sm"
-                                variant="secondary"
-                                className="rounded-full bg-black/60 hover:bg-black/80 text-white border-0 backdrop-blur-sm"
-                                onClick={handleEditMedia}
-                                disabled={isUploadingToEditor}
-                            >
-                                {isUploadingToEditor ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Pencil className="w-3.5 h-3.5 mr-1" />}
-                                Редактировать
-                            </Button>
+                            {mediaFile && mediaFile.type !== 'image/gif' && (
+                              <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="rounded-full bg-black/60 hover:bg-black/80 text-white border-0 backdrop-blur-sm"
+                                  onClick={handleEditMedia}
+                                  disabled={isUploadingToEditor}
+                              >
+                                  {isUploadingToEditor ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Pencil className="w-3.5 h-3.5 mr-1" />}
+                                  Редактировать
+                              </Button>
+                            )}
                             <Button size="icon" variant="destructive" className="rounded-full" onClick={removeMedia}>
                                 <X className="w-4 h-4" />
                             </Button>

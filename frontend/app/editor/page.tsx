@@ -202,10 +202,11 @@ function StickerMakerInner() {
   // Использовать в мем
   const handleUseInUpload = () => {
     if (!finalResult) return;
+    const isPng = finalResult.endsWith('.png');
     setEditorResult({
       url: finalResult,
       mediaType: 'image',
-      fileName: 'edited_sticker.gif',
+      fileName: isPng ? 'edited_sticker.png' : 'edited_sticker.gif',
     });
     router.push('/upload');
   };
