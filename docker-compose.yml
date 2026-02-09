@@ -77,6 +77,7 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
+      - rembg_models:/root/.u2net
     env_file:
       - ./backend/.env
     environment:
@@ -125,3 +126,4 @@ services:
 volumes:
   postgres_data:
   meili_data:
+  rembg_models:

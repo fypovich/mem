@@ -9,11 +9,14 @@ from sqlalchemy.orm import sessionmaker
 from celery import shared_task
 
 # --- Импорты ---
-from app.core.celery_app import celery_app 
+from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.models.models import Meme, Notification, NotificationType, SearchTerm
-from app.services.media import MediaProcessor 
+from app.services.media import MediaProcessor
 from app.services.search import get_search_service
+from app.services.ai import AIService
+from app.services.sticker import StickerService
+from app.services.video_editor import VideoEditorService
 
 # Настройка БД
 engine = create_engine(settings.DATABASE_URL.replace("+asyncpg", ""))
@@ -311,14 +314,14 @@ def process_video_editor_task(self, video_path: str, options: dict, audio_path: 
     task_id = self.request.id
     
     # Создаем соединение внутри задачи, чтобы не зависеть от глобального контекста
-    redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+    redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
     
     # Обновляем статус: STARTED
     redis_client.set(f"task:{task_id}", json.dumps({"status": "PROCESSING", "progress": 0}))
 
     try:
         # Инициализируем новый сервис
-        editor_service = VideoEditorService(output_dir=settings.UPLOAD_DIR)
+        editor_service = VideoEditorService(output_dir="uploads")
         
         # Генерируем имя выходного файла
         output_filename = f"edited_{uuid.uuid4()}.mp4"

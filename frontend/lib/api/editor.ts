@@ -75,11 +75,17 @@ export const checkStatus = async (taskId: string) => {
   return res.json();
 };
 
-// Функция для загрузки временного файла (маски)
-export const uploadTempFile = async (file: File) => {
-    // Используем тот же эндпоинт, так как он принимает файл и возвращает путь
-    // remove_bg на прозрачном фоне (маске) безопасен
-    return processImage(file, 'remove_bg');
+// Загрузка временного файла на сервер (маски, или файла для редактора)
+export const uploadTempFile = async (file: File): Promise<{ server_path: string; url: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_URL}/editor/temp/upload`, {
+        method: "POST",
+        headers: getHeaders(),
+        body: formData,
+    });
+    if (!res.ok) throw new Error("Failed to upload temp file");
+    return res.json();
 };
 
 export async function uploadVideo(file: File): Promise<{ file_path: string; url: string }> {
@@ -98,18 +104,11 @@ export async function uploadVideo(file: File): Promise<{ file_path: string; url:
   return res.json();
 }
 
-export interface VideoProcessOptions {
-  trim_start?: number;
-  trim_end?: number;
-  crop?: { x: number; y: number; width: number; height: number };
-  remove_audio?: boolean;
-  text_config?: { text: string; size: number; color: string; x: number; y: number };
-  filter_name?: string;
-}
+export type { VideoProcessOptions } from '@/types/editor';
 
 export async function processVideo(
   videoPath: string,
-  options: VideoProcessOptions,
+  options: import('@/types/editor').VideoProcessOptions,
   audioFile?: File
 ): Promise<{ task_id: string }> {
   const formData = new FormData();

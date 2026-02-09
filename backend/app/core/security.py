@@ -11,7 +11,7 @@ from app.core.config import settings
 # Константы (лучше брать из settings, но оставим как у вас для совместимости)
 SECRET_KEY = settings.SECRET_KEY if hasattr(settings, 'SECRET_KEY') else "super-secret-key-change-me-in-production"
 ALGORITHM = settings.ALGORITHM if hasattr(settings, 'ALGORITHM') else "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 дней
 RESET_PASSWORD_EXPIRE_MINUTES = 15
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

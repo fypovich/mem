@@ -12,13 +12,13 @@ import type { VideoProcessOptions, CropOptions, TextOptions } from "@/types/edit
 
 // --- СПИСОК ЭФФЕКТОВ ---
 const FILTERS = [
-  "No Filter",
-  "Black & White",
-  "Sepia", 
-  "Rainbow",
-  "Rumble",
-  "VHS",
-  "Groovy"
+  { id: "No Filter", label: "Без фильтра" },
+  { id: "Black & White", label: "Ч/Б" },
+  { id: "Sepia", label: "Сепия" },
+  { id: "Rainbow", label: "Радуга" },
+  { id: "Rumble", label: "Тряска" },
+  { id: "VHS", label: "VHS" },
+  { id: "Groovy", label: "Groovy" },
 ] as const;
 
 interface VideoEditorProps {
@@ -261,12 +261,25 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
     };
     const start = (trimRange[0] / 100) * duration;
     const end = (trimRange[1] / 100) * duration;
+    // Convert text position from full-video-relative to crop-area-relative
+    let adjustedTextConfig: TextOptions | undefined = undefined;
+    if (textConfig.text) {
+        const textPixelX = textConfig.x * layout.width;
+        const textPixelY = textConfig.y * layout.height;
+        adjustedTextConfig = {
+            ...textConfig,
+            size: Math.round(textConfig.size * scaleY),
+            x: Math.max(0, Math.min(1, (textPixelX - crop.x) / crop.width)),
+            y: Math.max(0, Math.min(1, (textPixelY - crop.y) / crop.height)),
+        };
+    }
+
     onProcess({
       trim_start: start,
       trim_end: end,
       remove_audio: removeAudio,
       filter_name: filter === "No Filter" ? undefined : filter,
-      text_config: textConfig.text ? textConfig : undefined,
+      text_config: adjustedTextConfig,
       crop: finalCrop
     });
   }
@@ -344,7 +357,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
             ) : (
                 <div className="flex flex-col items-center justify-center text-zinc-500 gap-2">
                     <Loader2 className="animate-spin h-8 w-8 text-blue-500"/> 
-                    <span className="text-sm">Loading Video...</span>
+                    <span className="text-sm">Загрузка видео...</span>
                 </div>
             )}
         </div>
@@ -367,7 +380,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
                         setTrimRange([0, 100]);
                     }
                 }}>
-                    <RotateCcw size={12} className="mr-1.5"/> Reset
+                    <RotateCcw size={12} className="mr-1.5"/> Сброс
                 </Button>
             </div>
             <div className="relative h-10 w-full rounded-md overflow-hidden bg-black/50 group select-none">
@@ -400,29 +413,27 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       {/* --- RIGHT: TOOLS --- */}
       <div className="w-full lg:w-72 border-l border-zinc-800 bg-zinc-900/30 flex flex-col h-full">
           <div className="p-4 border-b border-zinc-800 font-medium text-sm flex items-center gap-2 text-zinc-200">
-              <Wand2 size={16} className="text-blue-500"/> Editing Tools
+              <Wand2 size={16} className="text-blue-500"/> Инструменты
           </div>
           <ScrollArea className="flex-1">
               <div className="p-4 space-y-6">
                   {/* Filters Grid */}
                   <div className="space-y-2">
-                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Filters</Label>
+                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Фильтры</Label>
                       <div className="grid grid-cols-3 gap-2">
                           {FILTERS.map((f) => (
                               <button
-                                  key={f}
-                                  onClick={() => setFilter(f)}
-                                  className={`group relative aspect-square rounded-md overflow-hidden border transition-all ${filter === f ? 'border-blue-500 ring-1 ring-blue-500/50' : 'border-zinc-800 hover:border-zinc-600'}`}
+                                  key={f.id}
+                                  onClick={() => setFilter(f.id)}
+                                  className={`group relative aspect-square rounded-md overflow-hidden border transition-all ${filter === f.id ? 'border-blue-500 ring-1 ring-blue-500/50' : 'border-zinc-800 hover:border-zinc-600'}`}
                               >
-                                  {/* Filter Preview in Button */}
-                                  <div className={`absolute inset-0 bg-zinc-800 ${getFilterClass(f)}`}>
-                                       {/* Optional: Add a small dummy image or gradient to see effect */}
+                                  <div className={`absolute inset-0 bg-zinc-800 ${getFilterClass(f.id)}`}>
                                        <div className="w-full h-full bg-gradient-to-br from-purple-500 to-orange-500 opacity-50"></div>
                                   </div>
-                                  {f === "VHS" && <div className="vhs-overlay absolute inset-0 opacity-100" />}
-                                  
+                                  {f.id === "VHS" && <div className="vhs-overlay absolute inset-0 opacity-100" />}
+
                                   <span className="absolute bottom-0 w-full bg-black/60 text-[8px] py-0.5 text-center truncate px-1 backdrop-blur-sm z-10">
-                                      {f}
+                                      {f.label}
                                   </span>
                               </button>
                           ))}
@@ -431,14 +442,14 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
 
                   {/* Text Controls */}
                   <div className="space-y-2">
-                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Text</Label>
+                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Текст</Label>
                       <div className="space-y-3 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
-                          <Input placeholder="Add caption..." className="h-8 text-xs bg-zinc-950 border-zinc-700"
+                          <Input placeholder="Добавить подпись..." className="h-8 text-xs bg-zinc-950 border-zinc-700"
                               value={textConfig.text} onChange={(e) => setTextConfig({...textConfig, text: e.target.value})} />
                           {textConfig.text && (
                               <>
                                   <div className="space-y-1">
-                                      <div className="flex justify-between text-[10px] text-zinc-400"><span>Size</span><span>{textConfig.size}px</span></div>
+                                      <div className="flex justify-between text-[10px] text-zinc-400"><span>Размер</span><span>{textConfig.size}px</span></div>
                                       <Slider value={[textConfig.size]} min={10} max={100} step={1} className="py-1"
                                           onValueChange={(v) => setTextConfig({...textConfig, size: v[0]})} />
                                   </div>
@@ -456,9 +467,9 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
 
                   {/* Audio Controls */}
                   <div className="space-y-2">
-                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Audio</Label>
+                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Аудио</Label>
                       <div className="flex items-center justify-between bg-zinc-900/50 p-2 px-3 rounded-lg border border-zinc-800">
-                          <span className="text-xs">Mute Sound</span>
+                          <span className="text-xs">Убрать звук</span>
                           <Switch checked={removeAudio} onCheckedChange={setRemoveAudio} className="scale-75 data-[state=checked]:bg-red-500" />
                       </div>
                   </div>
@@ -467,7 +478,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
               <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-lg shadow-blue-900/20"
                   onClick={prepareAndProcess} disabled={isProcessing}>
-                  {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Processing...</> : <><MonitorPlay className="mr-2 h-4 w-4"/> Export Video</>}
+                  {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Обработка...</> : <><MonitorPlay className="mr-2 h-4 w-4"/> Экспорт</>}
               </Button>
           </div>
       </div>

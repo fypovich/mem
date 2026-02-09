@@ -302,7 +302,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                     </div>
                     
                     <div className="flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800/50">
-                        <MousePointer2 size={12}/> Scroll to zoom • Drag to pan
+                        <MousePointer2 size={12}/> Прокрутка для зума • Зажмите для перемещения
                     </div>
                 </div>
 
@@ -359,8 +359,8 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
             <div className="w-80 flex flex-col bg-[#18181b] rounded-xl border border-zinc-800 shadow-xl h-full flex-shrink-0 overflow-hidden">
                 {/* Panel Header */}
                 <div className="p-6 border-b border-zinc-800 shrink-0">
-                    <h3 className="text-xl font-bold text-white mb-1">Cut it Out</h3>
-                    <p className="text-sm text-zinc-400 leading-snug">Use tools to remove background.</p>
+                    <h3 className="text-xl font-bold text-white mb-1">Вырезание фона</h3>
+                    <p className="text-sm text-zinc-400 leading-snug">Используйте инструменты для удаления фона.</p>
                 </div>
 
                 {/* Panel Content (Scrollable) */}
@@ -368,7 +368,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                     
                     {/* Auto Magic */}
                     <div className="space-y-3">
-                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">AI Magic</Label>
+                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">ИИ</Label>
                         <Button 
                             variant="outline"
                             onClick={onAutoRemove}
@@ -380,8 +380,8 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                                 {isProcessing ? <Loader2 className="animate-spin text-purple-400" size={20}/> : <Wand2 className="text-purple-400" size={20}/>}
                             </div>
                             <div className="flex flex-col items-start z-10">
-                                <span className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">Auto Remove</span>
-                                <span className="text-[11px] text-zinc-500">Detect & remove bg</span>
+                                <span className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">Авто-удаление</span>
+                                <span className="text-[11px] text-zinc-500">Определить и удалить фон</span>
                             </div>
                         </Button>
                     </div>
@@ -389,7 +389,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                     {/* Manual Tools Grid */}
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Manual Tools</Label>
+                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Инструменты</Label>
                         </div>
                         
                         <div className="grid grid-cols-2 gap-3">
@@ -397,28 +397,28 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                                 active={tool === 'lasso'} 
                                 onClick={() => setTool('lasso')} 
                                 icon={<Scissors size={24} />} 
-                                label="Lasso" 
+                                label="Лассо"
                                 color="text-blue-400"
                             />
-                            <ToolButton 
-                                active={tool === 'eraser'} 
-                                onClick={() => setTool('eraser')} 
-                                icon={<Eraser size={24} />} 
-                                label="Eraser" 
+                            <ToolButton
+                                active={tool === 'eraser'}
+                                onClick={() => setTool('eraser')}
+                                icon={<Eraser size={24} />}
+                                label="Ластик"
                                 color="text-pink-400"
                             />
-                            <ToolButton 
-                                active={tool === 'restore'} 
-                                onClick={() => setTool('restore')} 
-                                icon={<RotateCcw size={24} />} 
-                                label="Restore" 
+                            <ToolButton
+                                active={tool === 'restore'}
+                                onClick={() => setTool('restore')}
+                                icon={<RotateCcw size={24} />}
+                                label="Восстановить"
                                 color="text-green-400"
                             />
-                            <ToolButton 
-                                active={tool === 'move'} 
-                                onClick={() => setTool('move')} 
-                                icon={<Move size={24} />} 
-                                label="Move" 
+                            <ToolButton
+                                active={tool === 'move'}
+                                onClick={() => setTool('move')}
+                                icon={<Move size={24} />}
+                                label="Двигать"
                                 color="text-yellow-400"
                             />
                         </div>
@@ -428,7 +428,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                     {(tool === 'eraser' || tool === 'restore') && (
                         <div className="space-y-4 p-4 bg-zinc-900 rounded-xl border border-zinc-800 animate-in fade-in slide-in-from-top-2">
                             <div className="flex justify-between items-center text-xs font-medium text-zinc-400">
-                                <span>Brush Size</span>
+                                <span>Размер кисти</span>
                                 <span className="text-white bg-zinc-800 px-2 py-1 rounded">{brushSize}px</span>
                             </div>
                             <Slider 
@@ -447,7 +447,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                         className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-lg rounded-xl shadow-lg shadow-purple-900/20 transition-all hover:scale-[1.02]"
                         onClick={onNext}
                     >
-                        Continue to Design <ChevronRight size={20} className="ml-2" />
+                        Далее к дизайну <ChevronRight size={20} className="ml-2" />
                     </Button>
                 </div>
             </div>
