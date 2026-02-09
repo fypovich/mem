@@ -5,6 +5,7 @@ Thumbs.db
 .idea/
 *.log
 *.zip
+bag
 
 # --- Backend (Python) ---
 backend/venv/
