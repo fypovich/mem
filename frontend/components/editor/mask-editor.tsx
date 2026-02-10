@@ -273,7 +273,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
     };
 
     return (
-        <div className="flex h-full w-full gap-6 p-6 box-border overflow-hidden bg-zinc-950">
+        <div className="flex h-full w-full gap-6 p-6 box-border overflow-hidden bg-background">
             {/* Left Column: Canvas & History */}
             <div className="flex-1 flex flex-col gap-4 min-w-0 min-h-0 h-full">
                 {/* Header Actions (Undo/Redo) - над картинкой */}
@@ -284,7 +284,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                             size="icon" 
                             onClick={handleUndo} 
                             disabled={historyIndex <= 0} 
-                            className="bg-zinc-800 text-white hover:bg-zinc-700 w-10 h-10 rounded-full"
+                            className="bg-secondary text-foreground hover:bg-accent w-10 h-10 rounded-full"
                             title="Undo"
                         >
                             <Undo size={18} />
@@ -294,20 +294,20 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                             size="icon" 
                             onClick={handleRedo} 
                             disabled={historyIndex >= history.length - 1} 
-                            className="bg-zinc-800 text-white hover:bg-zinc-700 w-10 h-10 rounded-full"
+                            className="bg-secondary text-foreground hover:bg-accent w-10 h-10 rounded-full"
                             title="Redo"
                         >
                             <Redo size={18} />
                         </Button>
                     </div>
                     
-                    <div className="flex items-center gap-2 text-xs text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800/50">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full border border-border/50">
                         <MousePointer2 size={12}/> Прокрутка для зума • Зажмите для перемещения
                     </div>
                 </div>
 
                 {/* Canvas Area Container - занимает всю оставшуюся высоту */}
-                <div className="flex-1 relative overflow-hidden rounded-xl border border-zinc-800 bg-[#121212] shadow-2xl flex items-center justify-center">
+                <div className="flex-1 relative overflow-hidden rounded-xl border border-border bg-background shadow-2xl flex items-center justify-center">
                     <div 
                         ref={containerRef}
                         className="w-full h-full relative overflow-hidden touch-none cursor-crosshair bg-[url('/transparent-grid.png')] bg-repeat"
@@ -356,11 +356,11 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
             </div>
 
             {/* Right Column: Tools Panel - фиксированная ширина, внутренний скролл */}
-            <div className="w-80 flex flex-col bg-[#18181b] rounded-xl border border-zinc-800 shadow-xl h-full flex-shrink-0 overflow-hidden">
+            <div className="w-80 flex flex-col bg-card rounded-xl border border-border shadow-xl h-full flex-shrink-0 overflow-hidden">
                 {/* Panel Header */}
-                <div className="p-6 border-b border-zinc-800 shrink-0">
-                    <h3 className="text-xl font-bold text-white mb-1">Вырезание фона</h3>
-                    <p className="text-sm text-zinc-400 leading-snug">Используйте инструменты для удаления фона.</p>
+                <div className="p-6 border-b border-border shrink-0">
+                    <h3 className="text-xl font-bold text-foreground mb-1">Вырезание фона</h3>
+                    <p className="text-sm text-muted-foreground leading-snug">Используйте инструменты для удаления фона.</p>
                 </div>
 
                 {/* Panel Content (Scrollable) */}
@@ -368,20 +368,20 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                     
                     {/* Auto Magic */}
                     <div className="space-y-3">
-                        <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">ИИ</Label>
+                        <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">ИИ</Label>
                         <Button 
                             variant="outline"
                             onClick={onAutoRemove}
                             disabled={isProcessing}
-                            className="w-full justify-start gap-4 h-16 bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800 hover:border-purple-500/50 text-left group transition-all relative overflow-hidden"
+                            className="w-full justify-start gap-4 h-16 bg-muted/50 border-border hover:bg-accent hover:border-purple-500/50 text-left group transition-all relative overflow-hidden"
                         >
                             <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"/>
                             <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0 border border-purple-500/30 group-hover:scale-110 transition-transform">
                                 {isProcessing ? <Loader2 className="animate-spin text-purple-400" size={20}/> : <Wand2 className="text-purple-400" size={20}/>}
                             </div>
                             <div className="flex flex-col items-start z-10">
-                                <span className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">Авто-удаление</span>
-                                <span className="text-[11px] text-zinc-500">Определить и удалить фон</span>
+                                <span className="text-sm font-bold text-foreground group-hover:text-purple-300 transition-colors">Авто-удаление</span>
+                                <span className="text-[11px] text-muted-foreground">Определить и удалить фон</span>
                             </div>
                         </Button>
                     </div>
@@ -389,7 +389,7 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                     {/* Manual Tools Grid */}
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                            <Label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Инструменты</Label>
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Инструменты</Label>
                         </div>
                         
                         <div className="grid grid-cols-2 gap-3">
@@ -426,10 +426,10 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
 
                     {/* Tool Settings (Contextual) */}
                     {(tool === 'eraser' || tool === 'restore') && (
-                        <div className="space-y-4 p-4 bg-zinc-900 rounded-xl border border-zinc-800 animate-in fade-in slide-in-from-top-2">
-                            <div className="flex justify-between items-center text-xs font-medium text-zinc-400">
+                        <div className="space-y-4 p-4 bg-card rounded-xl border border-border animate-in fade-in slide-in-from-top-2">
+                            <div className="flex justify-between items-center text-xs font-medium text-muted-foreground">
                                 <span>Размер кисти</span>
-                                <span className="text-white bg-zinc-800 px-2 py-1 rounded">{brushSize}px</span>
+                                <span className="text-foreground bg-secondary px-2 py-1 rounded">{brushSize}px</span>
                             </div>
                             <Slider 
                                 value={[brushSize]} 
@@ -442,9 +442,9 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
                 </div>
 
                 {/* Footer Action */}
-                <div className="p-6 border-t border-zinc-800 bg-zinc-900 shrink-0">
+                <div className="p-6 border-t border-border bg-card shrink-0">
                     <Button 
-                        className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-lg rounded-xl shadow-lg shadow-purple-900/20 transition-all hover:scale-[1.02]"
+                        className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-foreground font-bold text-lg rounded-xl shadow-lg shadow-purple-900/20 transition-all hover:scale-[1.02]"
                         onClick={onNext}
                     >
                         Далее к дизайну <ChevronRight size={20} className="ml-2" />
@@ -464,11 +464,11 @@ function ToolButton({ active, onClick, icon, label, color }: { active: boolean, 
             className={cn(
                 "flex flex-col items-center justify-center gap-3 p-4 rounded-xl border-2 transition-all duration-200 h-28",
                 active 
-                ? "bg-zinc-800 border-white/20 text-white shadow-lg scale-[1.02]" 
-                : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-800 hover:text-white hover:border-zinc-700"
+                ? "bg-secondary border-white/20 text-foreground shadow-lg scale-[1.02]" 
+                : "bg-card border-border text-muted-foreground hover:bg-accent hover:text-foreground hover:border-input"
             )}
         >
-            <div className={cn("p-2 rounded-full bg-zinc-950", active ? color : "text-current")}>
+            <div className={cn("p-2 rounded-full bg-background", active ? color : "text-current")}>
                 {icon}
             </div>
             <span className="text-xs font-bold">{label}</span>

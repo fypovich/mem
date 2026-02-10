@@ -126,10 +126,10 @@
 
 /* === Sticker Animations === */
 
-/* Spinny: Linear 360 */
+/* Spinny: Linear 360 counterclockwise (matching backend) */
 @keyframes spinny {
   0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  100% { transform: rotate(-360deg); }
 }
 
 /* Zoomie: Pulse Scale (1 -> 1.15 -> 1) */
@@ -138,10 +138,13 @@
   50% { transform: scale(1.15); }
 }
 
-/* Flippy: Discrete Flip steps with hold (mimicking scaleX flip) */
+/* Flippy: Smooth 3D flip via scaleX cosine + scaleY squash at edges */
 @keyframes flippy {
-  0%, 49% { transform: scaleX(1); }
-  50%, 100% { transform: scaleX(-1); }
+  0% { transform: scaleX(1) scaleY(1); }
+  25% { transform: scaleX(0.02) scaleY(0.92); }
+  50% { transform: scaleX(-1) scaleY(1); }
+  75% { transform: scaleX(0.02) scaleY(0.92); }
+  100% { transform: scaleX(1) scaleY(1); }
 }
 
 /* Tilty: Pendulum motion, amplitude ±15deg */
@@ -150,19 +153,24 @@
   50% { transform: rotate(15deg); }
 }
 
-/* Jelly: Physics based squash & stretch via skew and scale */
+/* Jelly: Усиленный squash & stretch (fixed 75% skew sign) */
 @keyframes jelly {
   0%, 100% { transform: scale(1, 1) skewX(0deg); }
-  25% { transform: scale(1.15, 0.85) skewX(5deg); }
-  50% { transform: scale(0.85, 1.15) skewX(-5deg); }
-  75% { transform: scale(1.05, 0.95) skewX(2deg); }
+  25% { transform: scale(1.20, 0.80) skewX(8deg); }
+  50% { transform: scale(0.80, 1.20) skewX(-8deg); }
+  75% { transform: scale(1.10, 0.90) skewX(-4deg); }
 }
 
-/* Bouncy: Jump with ground impact squash effect */
+/* Bouncy: Multiple bounces with diminishing amplitude (matching backend 3-4 bounces) */
 @keyframes bouncy {
-  0%, 100% { transform: translateY(0) scale(1.2, 0.8); animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
-  45% { transform: translateY(-30%) scale(1, 1); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
-  90% { transform: translateY(0) scale(1.2, 0.8); }
+  0% { transform: translateY(0) scaleX(1.25) scaleY(0.75); animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+  22% { transform: translateY(-30%) scaleX(0.92) scaleY(1.08); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
+  35% { transform: translateY(0) scaleX(1.20) scaleY(0.80); animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+  50% { transform: translateY(-18%) scaleX(0.95) scaleY(1.05); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
+  62% { transform: translateY(0) scaleX(1.12) scaleY(0.88); animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1); }
+  75% { transform: translateY(-8%) scaleX(0.98) scaleY(1.02); animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0); }
+  87% { transform: translateY(0) scaleX(1.05) scaleY(0.95); }
+  100% { transform: translateY(0) scaleX(1.25) scaleY(0.75); }
 }
 
 /* Peeker: Slide up from mask (requires parent overflow-hidden) */
@@ -172,78 +180,15 @@
   100% { transform: translateY(100%); }
 }
 
-/* Floaties: Lissajous Curve Approximation (Figure 8 motion) */
-/* x = sin(t), y = sin(2t) */
+/* Floaties: Lissajous figure-8 x=sin(t), y=sin(2t) with intermediate keyframes */
 @keyframes floaties {
-  0% { transform: translate(0, 0) rotate(0deg); }
-  25% { transform: translate(20px, 10px) rotate(5deg); }
-  50% { transform: translate(0, 0) rotate(0deg); }
-  75% { transform: translate(-20px, 10px) rotate(-5deg); }
-  100% { transform: translate(0, 0) rotate(0deg); }
-}
-
-/* --- VIDEO EDITOR EFFECTS --- */
-
-/* 1. RAINBOW */
-@keyframes rainbow-cycle {
-  0% { filter: hue-rotate(0deg) saturate(1.5); }
-  50% { filter: hue-rotate(180deg) saturate(1.5); }
-  100% { filter: hue-rotate(360deg) saturate(1.5); }
-}
-.effect-rainbow {
-  animation: rainbow-cycle 3s linear infinite;
-}
-
-/* 2. RUMBLE */
-@keyframes rumble-shake {
-  0% { transform: translate(0, 0) scale(1.1); }
-  10% { transform: translate(-2px, -2px) scale(1.1); }
-  20% { transform: translate(2px, 2px) scale(1.1); }
-  30% { transform: translate(-2px, 2px) scale(1.1); }
-  40% { transform: translate(2px, -2px) scale(1.1); }
-  50% { transform: translate(-2px, 1px) scale(1.1); }
-  60% { transform: translate(2px, 1px) scale(1.1); }
-  70% { transform: translate(-1px, -2px) scale(1.1); }
-  80% { transform: translate(2px, -1px) scale(1.1); }
-  90% { transform: translate(-1px, 2px) scale(1.1); }
-  100% { transform: translate(0, 0) scale(1.1); }
-}
-.effect-rumble {
-  animation: rumble-shake 0.3s linear infinite;
-}
-
-/* 3. GROOVY */
-@keyframes groovy-move {
-  0% { transform: scale(1.1) rotate(0deg) translate(0, 0); filter: hue-rotate(0deg); }
-  25% { transform: scale(1.15) rotate(2deg) translate(10px, 10px); }
-  50% { transform: scale(1.1) rotate(0deg) translate(0, 20px); filter: hue-rotate(30deg); }
-  75% { transform: scale(1.15) rotate(-2deg) translate(-10px, 10px); }
-  100% { transform: scale(1.1) rotate(0deg) translate(0, 0); filter: hue-rotate(0deg); }
-}
-.effect-groovy {
-  animation: groovy-move 4s ease-in-out infinite;
-  opacity: 0.9; /* Slight ghosting simulation */
-}
-
-/* 4. VHS */
-.effect-vhs {
-  filter: contrast(1.4) brightness(1.1) sepia(0.3) saturate(1.2);
-}
-/* VHS Scanlines Overlay */
-.vhs-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-  background-size: 100% 4px, 6px 100%;
-  z-index: 10;
-  opacity: 0.6;
-}
-
-/* 5. BLACK & WHITE */
-.effect-bw {
-  filter: grayscale(100%) contrast(1.2) brightness(0.9);
+  0%     { transform: translate(0, 0) rotate(0deg); }
+  12.5%  { transform: translate(18px, 15px) rotate(2deg); }
+  25%    { transform: translate(25px, 0) rotate(3deg); }
+  37.5%  { transform: translate(18px, -15px) rotate(2deg); }
+  50%    { transform: translate(0, 0) rotate(0deg); }
+  62.5%  { transform: translate(-18px, 15px) rotate(-2deg); }
+  75%    { transform: translate(-25px, 0) rotate(-3deg); }
+  87.5%  { transform: translate(-18px, -15px) rotate(-2deg); }
+  100%   { transform: translate(0, 0) rotate(0deg); }
 }

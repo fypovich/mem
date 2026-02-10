@@ -30,6 +30,12 @@ def validate_upload_path(path: str) -> str:
 
 
 # --- MODELS ---
+class CropOptions(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
 class AnimationRequest(BaseModel):
     image_path: str
     animation: str
@@ -40,12 +46,7 @@ class AnimationRequest(BaseModel):
     text_size: Optional[int] = 15
     text_x: Optional[float] = 0.5
     text_y: Optional[float] = 0.8
-
-class CropOptions(BaseModel):
-    x: int
-    y: int
-    width: int
-    height: int
+    crop: Optional[CropOptions] = None
 
 class TextOptions(BaseModel):
     text: str
@@ -60,7 +61,6 @@ class VideoProcessOptions(BaseModel):
     crop: Optional[CropOptions] = None
     remove_audio: bool = False
     text_config: Optional[TextOptions] = None
-    filter_name: Optional[str] = None
 
 # --- ENDPOINTS ---
 
@@ -172,6 +172,7 @@ async def create_sticker(
             "text_size": request.text_size,
             "text_x": request.text_x,
             "text_y": request.text_y,
+            "crop": request.crop.model_dump() if request.crop else None,
         }
     )
     return {"task_id": task.id}

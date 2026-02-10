@@ -5,21 +5,8 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Wand2, Play, Pause, RotateCcw, Type, MonitorPlay } from "lucide-react"
+import { Loader2, Play, Pause, RotateCcw, MonitorPlay, Volume2, VolumeX } from "lucide-react"
 import type { VideoProcessOptions, CropOptions, TextOptions } from "@/types/editor"
-
-// --- СПИСОК ЭФФЕКТОВ ---
-const FILTERS = [
-  { id: "No Filter", label: "Без фильтра" },
-  { id: "Black & White", label: "Ч/Б" },
-  { id: "Sepia", label: "Сепия" },
-  { id: "Rainbow", label: "Радуга" },
-  { id: "Rumble", label: "Тряска" },
-  { id: "VHS", label: "VHS" },
-  { id: "Groovy", label: "Groovy" },
-] as const;
 
 interface VideoEditorProps {
   videoUrl: string;
@@ -49,7 +36,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
     x: 0.5,
     y: 0.8
   })
-  const [filter, setFilter] = useState<string>("No Filter")
   const [removeAudio, setRemoveAudio] = useState(false)
 
   // --- Refs ---
@@ -61,19 +47,6 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
   const cropStartRef = useRef<CropOptions | null>(null)
   const activeHandleRef = useRef<ResizeHandle | null>(null)
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('none')
-
-  // --- Helpers for Effects ---
-  const getFilterClass = (name: string) => {
-      switch(name) {
-          case "Black & White": return "effect-bw";
-          case "Rainbow": return "effect-rainbow";
-          case "Rumble": return "effect-rumble";
-          case "VHS": return "effect-vhs";
-          case "Groovy": return "effect-groovy";
-          case "Sepia": return "grayscale brightness-75 sepia"; // Tailwind utility fallback
-          default: return "";
-      }
-  }
 
   // --- Layout Calculation ---
   const calculateLayout = useCallback(() => {
@@ -278,207 +251,182 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
       trim_start: start,
       trim_end: end,
       remove_audio: removeAudio,
-      filter_name: filter === "No Filter" ? undefined : filter,
       text_config: adjustedTextConfig,
       crop: finalCrop
     });
   }
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-140px)] bg-zinc-950 text-white overflow-hidden border border-zinc-800 rounded-lg" 
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-140px)] bg-background text-foreground overflow-hidden"
          onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onMouseMove={handleMouseMove}>
-      
-      {/* --- LEFT: VIDEO --- */}
-      <div className="flex-1 flex flex-col min-w-0 p-3 gap-3 h-full">
-        <div ref={wrapperRef} className="flex-1 min-h-0 relative flex items-center justify-center bg-zinc-900/50 rounded-lg overflow-hidden select-none border border-zinc-800/50">
-            {videoUrl ? (
-                <div 
-                    ref={containerRef}
-                    style={{ width: layout.width, height: layout.height }}
-                    className="relative shadow-2xl bg-black"
-                >
-                    {/* VIDEO ELEMENT WITH DYNAMIC CSS CLASS */}
-                    <video
-                        ref={videoRef}
-                        src={videoUrl}
-                        className={`w-full h-full object-contain pointer-events-none block ${getFilterClass(filter)}`}
-                        onTimeUpdate={handleTimeUpdate}
-                        onLoadedMetadata={handleLoadedMetadata}
-                    />
-                    
-                    {/* VHS SCANLINE OVERLAY (Only for VHS) */}
-                    {filter === "VHS" && <div className="vhs-overlay" />}
 
-                    {/* CROP OVERLAY */}
-                    <div 
-                        className="absolute border-2 border-blue-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] cursor-move group z-20"
-                        style={{ left: crop.x, top: crop.y, width: crop.width, height: crop.height }}
-                        onMouseDown={(e) => handleMouseDown(e, 'crop-move')}
-                    >
-                        <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-0 group-hover:opacity-30 transition-opacity">
-                            <div className="border-r border-white/50 col-span-1 row-span-3"></div>
-                            <div className="border-r border-white/50 col-span-1 row-span-3"></div>
-                            <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-1/3"></div>
-                            <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-2/3"></div>
-                        </div>
-                        {(['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'] as ResizeHandle[]).map((h) => (
-                            <div key={h} onMouseDown={(e) => handleMouseDown(e, 'crop-resize', h)}
-                                className={`absolute w-3 h-3 bg-blue-500 rounded-full border border-white z-30
-                                    ${h.includes('n') ? '-top-1.5' : ''} ${h.includes('s') ? '-bottom-1.5' : ''}
-                                    ${h.includes('w') ? '-left-1.5' : ''} ${h.includes('e') ? '-right-1.5' : ''}
-                                    ${h === 'n' || h === 's' ? 'left-1/2 -translate-x-1/2 cursor-ns-resize' : ''}
-                                    ${h === 'w' || h === 'e' ? 'top-1/2 -translate-y-1/2 cursor-ew-resize' : ''}
-                                    ${h === 'nw' ? 'cursor-nw-resize' : ''} ${h === 'ne' ? 'cursor-ne-resize' : ''}
-                                    ${h === 'sw' ? 'cursor-sw-resize' : ''} ${h === 'se' ? 'cursor-se-resize' : ''}
-                                `}
-                            />
-                        ))}
-                    </div>
+      {/* Video Preview */}
+      <div ref={wrapperRef} className="flex-1 min-h-0 relative flex items-center justify-center bg-muted/30 overflow-hidden select-none">
+          {videoUrl ? (
+              <div
+                  ref={containerRef}
+                  style={{ width: layout.width, height: layout.height }}
+                  className="relative shadow-2xl bg-black"
+              >
+                  <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      className="w-full h-full object-contain pointer-events-none block"
+                      onTimeUpdate={handleTimeUpdate}
+                      onLoadedMetadata={handleLoadedMetadata}
+                  />
 
-                    {/* TEXT */}
-                    {textConfig.text && (
-                        <div
-                            className="absolute cursor-grab active:cursor-grabbing border border-transparent hover:border-white/50 p-2 rounded z-30"
-                            style={{
-                                left: `${textConfig.x * 100}%`,
-                                top: `${textConfig.y * 100}%`,
-                                transform: 'translate(-50%, -50%)',
-                                fontSize: `${textConfig.size}px`,
-                                color: textConfig.color,
-                                textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-                                whiteSpace: 'nowrap'
-                            }}
-                            onMouseDown={(e) => handleMouseDown(e, 'text-move')}
-                        >
-                            {textConfig.text}
-                        </div>
-                    )}
-                </div>
-            ) : (
-                <div className="flex flex-col items-center justify-center text-zinc-500 gap-2">
-                    <Loader2 className="animate-spin h-8 w-8 text-blue-500"/> 
-                    <span className="text-sm">Загрузка видео...</span>
-                </div>
-            )}
-        </div>
+                  {/* Crop Overlay */}
+                  <div
+                      className="absolute border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] cursor-move group z-20"
+                      style={{ left: crop.x, top: crop.y, width: crop.width, height: crop.height }}
+                      onMouseDown={(e) => handleMouseDown(e, 'crop-move')}
+                  >
+                      <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-0 group-hover:opacity-30 transition-opacity">
+                          <div className="border-r border-white/50 col-span-1 row-span-3"></div>
+                          <div className="border-r border-white/50 col-span-1 row-span-3"></div>
+                          <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-1/3"></div>
+                          <div className="border-b border-white/50 col-span-3 row-span-1 absolute w-full top-2/3"></div>
+                      </div>
+                      {(['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'] as ResizeHandle[]).map((h) => (
+                          <div key={h} onMouseDown={(e) => handleMouseDown(e, 'crop-resize', h)}
+                              className={`absolute w-3 h-3 bg-primary rounded-full border border-white z-30
+                                  ${h.includes('n') ? '-top-1.5' : ''} ${h.includes('s') ? '-bottom-1.5' : ''}
+                                  ${h.includes('w') ? '-left-1.5' : ''} ${h.includes('e') ? '-right-1.5' : ''}
+                                  ${h === 'n' || h === 's' ? 'left-1/2 -translate-x-1/2 cursor-ns-resize' : ''}
+                                  ${h === 'w' || h === 'e' ? 'top-1/2 -translate-y-1/2 cursor-ew-resize' : ''}
+                                  ${h === 'nw' ? 'cursor-nw-resize' : ''} ${h === 'ne' ? 'cursor-ne-resize' : ''}
+                                  ${h === 'sw' ? 'cursor-sw-resize' : ''} ${h === 'se' ? 'cursor-se-resize' : ''}
+                              `}
+                          />
+                      ))}
+                  </div>
 
-        {/* TIMELINE */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 shrink-0 h-[100px] flex flex-col justify-center">
-            <div className="flex items-center justify-between mb-2">
-                <div className="flex gap-2 items-center">
-                    <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-white/10" onClick={togglePlay}>
-                        {isPlaying ? <Pause size={16}/> : <Play size={16} className="ml-0.5"/>}
-                    </Button>
-                    <div className="flex items-baseline gap-1">
-                        <span className="text-sm font-medium text-white font-mono">{currentTime.toFixed(1)}s</span>
-                        <span className="text-xs text-zinc-500 font-mono">/ {duration.toFixed(1)}s</span>
-                    </div>
-                </div>
-                <Button size="sm" variant="ghost" className="h-7 text-xs text-zinc-400 hover:text-white" onClick={() => {
-                    if (videoRef.current) {
-                        videoRef.current.currentTime = (trimRange[0]/100) * duration;
-                        setTrimRange([0, 100]);
-                    }
-                }}>
-                    <RotateCcw size={12} className="mr-1.5"/> Сброс
-                </Button>
-            </div>
-            <div className="relative h-10 w-full rounded-md overflow-hidden bg-black/50 group select-none">
-                <div className="absolute inset-0 flex opacity-40 grayscale group-hover:grayscale-0 transition-all duration-300">
-                    {thumbnails.map((src, i) => (
-                        <img key={i} src={src} className="h-full flex-1 object-cover pointer-events-none" alt="frame" />
-                    ))}
-                </div>
-                <div className="absolute inset-0 px-0 flex items-center z-10">
-                    <Slider
-                        value={trimRange}
-                        min={0} max={100} step={0.1}
-                        onValueChange={(val) => {
-                            setTrimRange(val as [number, number]);
-                            if (videoRef.current) {
-                                if (isPlaying) videoRef.current.pause();
-                                setIsPlaying(false);
-                                videoRef.current.currentTime = (val[0] / 100) * duration;
-                            }
-                        }}
-                        className="cursor-pointer"
-                    />
-                </div>
-                <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-0 pointer-events-none shadow-[0_0_8px_rgba(239,68,68,0.6)]"
-                    style={{ left: `${(currentTime / duration) * 100}%` }} />
-            </div>
-        </div>
+                  {textConfig.text && (
+                      <div
+                          className="absolute cursor-grab active:cursor-grabbing border border-transparent hover:border-white/50 p-1 rounded z-30"
+                          style={{
+                              left: `${textConfig.x * 100}%`,
+                              top: `${textConfig.y * 100}%`,
+                              transform: 'translate(-50%, -50%)',
+                              fontSize: `${textConfig.size}px`,
+                              color: textConfig.color,
+                              textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                              whiteSpace: 'nowrap'
+                          }}
+                          onMouseDown={(e) => handleMouseDown(e, 'text-move')}
+                      >
+                          {textConfig.text}
+                      </div>
+                  )}
+              </div>
+          ) : (
+              <div className="flex flex-col items-center justify-center text-muted-foreground gap-2">
+                  <Loader2 className="animate-spin h-8 w-8 text-primary"/>
+                  <span className="text-sm">Загрузка видео...</span>
+              </div>
+          )}
       </div>
 
-      {/* --- RIGHT: TOOLS --- */}
-      <div className="w-full lg:w-72 border-l border-zinc-800 bg-zinc-900/30 flex flex-col h-full">
-          <div className="p-4 border-b border-zinc-800 font-medium text-sm flex items-center gap-2 text-zinc-200">
-              <Wand2 size={16} className="text-blue-500"/> Инструменты
+      {/* Right Sidebar */}
+      <div className="w-full lg:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-border bg-card overflow-y-auto">
+          {/* Таймлайн */}
+          <div className="p-4 border-b border-border">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 block">Таймлайн</Label>
+              <div className="flex items-center gap-2 mb-2">
+                  <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-accent shrink-0" onClick={togglePlay}>
+                      {isPlaying ? <Pause size={14}/> : <Play size={14} className="ml-0.5"/>}
+                  </Button>
+                  <span className="text-xs font-medium text-foreground font-mono tabular-nums">{currentTime.toFixed(1)}s</span>
+                  <span className="text-[10px] text-muted-foreground font-mono">/ {duration.toFixed(1)}s</span>
+                  <div className="flex-1" />
+                  <Button size="sm" variant="ghost" className="h-7 text-[10px] text-muted-foreground hover:text-foreground px-2" onClick={() => {
+                      if (videoRef.current) {
+                          videoRef.current.currentTime = (trimRange[0]/100) * duration;
+                          setTrimRange([0, 100]);
+                      }
+                  }}>
+                      <RotateCcw size={10} className="mr-1"/> Сброс
+                  </Button>
+              </div>
+              <div className="relative h-12 w-full rounded-lg overflow-hidden bg-popover/50 select-none">
+                  <div className="absolute inset-0 flex">
+                      {thumbnails.length > 0 ? thumbnails.map((src, i) => {
+                          const thumbPercent = (i / thumbnails.length) * 100;
+                          const isInRange = thumbPercent >= trimRange[0] && thumbPercent <= trimRange[1];
+                          return (
+                              <img key={i} src={src} className={`h-full flex-1 object-cover pointer-events-none transition-all duration-300 ${isInRange ? 'opacity-80 grayscale-0' : 'opacity-30 grayscale'}`} alt="frame" />
+                          );
+                      }) : (
+                          <div className="flex h-full w-full gap-0.5">
+                              {Array.from({length: 10}).map((_, i) => (
+                                  <div key={i} className="flex-1 bg-muted animate-pulse rounded-sm" />
+                              ))}
+                          </div>
+                      )}
+                  </div>
+                  <div className="absolute inset-0 flex items-center z-10">
+                      <Slider
+                          value={trimRange}
+                          min={0} max={100} step={0.1}
+                          onValueChange={(val) => {
+                              setTrimRange(val as [number, number]);
+                              if (videoRef.current) {
+                                  if (isPlaying) videoRef.current.pause();
+                                  setIsPlaying(false);
+                                  videoRef.current.currentTime = (val[0] / 100) * duration;
+                              }
+                          }}
+                          className="cursor-pointer"
+                      />
+                  </div>
+                  <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-0 pointer-events-none shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+                      style={{ left: `${(currentTime / duration) * 100}%` }} />
+              </div>
           </div>
-          <ScrollArea className="flex-1">
-              <div className="p-4 space-y-6">
-                  {/* Filters Grid */}
-                  <div className="space-y-2">
-                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Фильтры</Label>
-                      <div className="grid grid-cols-3 gap-2">
-                          {FILTERS.map((f) => (
-                              <button
-                                  key={f.id}
-                                  onClick={() => setFilter(f.id)}
-                                  className={`group relative aspect-square rounded-md overflow-hidden border transition-all ${filter === f.id ? 'border-blue-500 ring-1 ring-blue-500/50' : 'border-zinc-800 hover:border-zinc-600'}`}
-                              >
-                                  <div className={`absolute inset-0 bg-zinc-800 ${getFilterClass(f.id)}`}>
-                                       <div className="w-full h-full bg-gradient-to-br from-purple-500 to-orange-500 opacity-50"></div>
-                                  </div>
-                                  {f.id === "VHS" && <div className="vhs-overlay absolute inset-0 opacity-100" />}
 
-                                  <span className="absolute bottom-0 w-full bg-black/60 text-[8px] py-0.5 text-center truncate px-1 backdrop-blur-sm z-10">
-                                      {f.label}
-                                  </span>
-                              </button>
+          {/* Текст */}
+          <div className="p-4 border-b border-border">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 block">Текст</Label>
+              <Input placeholder="Подпись..." className="mb-3 bg-background border-input"
+                  value={textConfig.text} onChange={(e) => setTextConfig({...textConfig, text: e.target.value})} />
+              {textConfig.text && (
+                  <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground shrink-0">Размер: {textConfig.size}</span>
+                          <Slider value={[textConfig.size]} min={10} max={100} step={1} className="flex-1"
+                              onValueChange={(v) => setTextConfig({...textConfig, size: v[0]})} />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                          {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#ec4899'].map(c => (
+                              <button key={c} onClick={() => setTextConfig({...textConfig, color: c})}
+                                  className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${textConfig.color === c ? 'border-primary ring-2 ring-primary/30' : 'border-transparent'}`}
+                                  style={{ backgroundColor: c }} />
                           ))}
                       </div>
                   </div>
+              )}
+          </div>
 
-                  {/* Text Controls */}
-                  <div className="space-y-2">
-                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Текст</Label>
-                      <div className="space-y-3 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
-                          <Input placeholder="Добавить подпись..." className="h-8 text-xs bg-zinc-950 border-zinc-700"
-                              value={textConfig.text} onChange={(e) => setTextConfig({...textConfig, text: e.target.value})} />
-                          {textConfig.text && (
-                              <>
-                                  <div className="space-y-1">
-                                      <div className="flex justify-between text-[10px] text-zinc-400"><span>Размер</span><span>{textConfig.size}px</span></div>
-                                      <Slider value={[textConfig.size]} min={10} max={100} step={1} className="py-1"
-                                          onValueChange={(v) => setTextConfig({...textConfig, size: v[0]})} />
-                                  </div>
-                                  <div className="flex gap-1.5 flex-wrap pt-1">
-                                      {['#ffffff', '#000000', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#ec4899'].map(c => (
-                                          <button key={c} onClick={() => setTextConfig({...textConfig, color: c})}
-                                              className={`w-5 h-5 rounded-full border ${textConfig.color === c ? 'border-white ring-1 ring-white/50' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                                              style={{ backgroundColor: c }} />
-                                      ))}
-                                  </div>
-                              </>
-                          )}
-                      </div>
-                  </div>
-
-                  {/* Audio Controls */}
-                  <div className="space-y-2">
-                      <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-bold">Аудио</Label>
-                      <div className="flex items-center justify-between bg-zinc-900/50 p-2 px-3 rounded-lg border border-zinc-800">
-                          <span className="text-xs">Убрать звук</span>
-                          <Switch checked={removeAudio} onCheckedChange={setRemoveAudio} className="scale-75 data-[state=checked]:bg-red-500" />
-                      </div>
-                  </div>
+          {/* Аудио */}
+          <div className="p-4 border-b border-border">
+              <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Аудио</Label>
+                  <button
+                      onClick={() => setRemoveAudio(!removeAudio)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-sm ${removeAudio ? 'bg-destructive/10 border-destructive/30 text-destructive' : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'}`}
+                  >
+                      {removeAudio ? <VolumeX size={14}/> : <Volume2 size={14}/>}
+                      {removeAudio ? 'Выключен' : 'Включён'}
+                  </button>
               </div>
-          </ScrollArea>
-          <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
-              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-lg shadow-blue-900/20"
+          </div>
+
+          {/* Экспорт */}
+          <div className="p-4">
+              <Button className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl shadow-lg transition-all hover:scale-[1.01]"
                   onClick={prepareAndProcess} disabled={isProcessing}>
-                  {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Обработка...</> : <><MonitorPlay className="mr-2 h-4 w-4"/> Экспорт</>}
+                  {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Обработка...</> : <><MonitorPlay className="mr-2 h-4 w-4"/> Экспорт видео</>}
               </Button>
           </div>
       </div>

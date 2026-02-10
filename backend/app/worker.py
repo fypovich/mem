@@ -274,14 +274,15 @@ def process_sticker_image(self, file_path: str, operation: str, **kwargs):
         raise e
 
 @shared_task(bind=True, name="app.worker.animate_sticker_task")
-def animate_sticker_task(self, image_path: str, animation: str, 
-                         outline_color: str = None, 
+def animate_sticker_task(self, image_path: str, animation: str,
+                         outline_color: str = None,
                          outline_width: int = 0,
-                         text: str = None, 
+                         text: str = None,
                          text_color: str = "white",
                          text_size: int = 15,
                          text_x: float = 0.5,
-                         text_y: float = 0.8):
+                         text_y: float = 0.8,
+                         crop: dict = None):
     """Создает анимированный GIF или PNG (если без анимации)"""
     try:
         file_id = str(uuid.uuid4())
@@ -297,7 +298,8 @@ def animate_sticker_task(self, image_path: str, animation: str,
             text_color=text_color,
             text_size=text_size,
             text_x=text_x,
-            text_y=text_y
+            text_y=text_y,
+            crop=crop,
         )
 
         result_filename = os.path.basename(result_path)
@@ -337,7 +339,6 @@ def process_video_editor_task(self, video_path: str, options: dict, audio_path: 
             remove_audio=options.get('remove_audio', False),
             new_audio_path=audio_path,
             text_config=options.get('text_config'),
-            filter_name=options.get('filter_name') # Теперь передаем имя фильтра (VHS, Groovy и т.д.)
         )
 
         # Формируем URL результата

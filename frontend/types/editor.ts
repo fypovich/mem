@@ -65,7 +65,6 @@ export interface VideoProcessOptions {
   crop?: CropOptions;
   remove_audio: boolean;
   text_config?: TextOptions;
-  filter_name?: string;
 }
 
 export interface ProcessingStatus {
