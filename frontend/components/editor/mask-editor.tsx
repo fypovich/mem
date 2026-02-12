@@ -443,11 +443,11 @@ export const MaskEditor = forwardRef<MaskEditorRef, MaskEditorProps>(
 
                 {/* Footer Action */}
                 <div className="p-6 border-t border-border bg-card shrink-0">
-                    <Button 
-                        className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-foreground font-bold text-lg rounded-xl shadow-lg shadow-purple-900/20 transition-all hover:scale-[1.02]"
+                    <Button
+                        className="w-full h-14 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-lg rounded-xl shadow-lg transition-all hover:scale-[1.02]"
                         onClick={onNext}
                     >
-                        Далее к дизайну <ChevronRight size={20} className="ml-2" />
+                        Далее <ChevronRight size={20} className="ml-2" />
                     </Button>
                 </div>
             </div>

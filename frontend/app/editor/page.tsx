@@ -6,26 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Loader2, Upload, ChevronLeft, Download, Sparkles, Image as ImageIcon, Check, ArrowUpFromLine, Crop } from "lucide-react";
+import { Loader2, ChevronLeft, Download, Sparkles, Check, ArrowUpFromLine } from "lucide-react";
 import type { CropOptions } from "@/types/editor";
 import { toast } from "sonner";
 import { processImage, checkStatus, createSticker, getFullUrl, uploadTempFile } from "@/lib/api/editor";
 import { MaskEditor, MaskEditorRef } from "@/components/editor/mask-editor";
 import { getEditorSource, setEditorResult } from "@/lib/editor-bridge";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
-
-// Анимации
-const ANIMATIONS = [
-    { id: 'none', label: 'Нет', icon: '🚫', desc: 'Без анимации' },
-    { id: 'bouncy', label: 'Прыжок', icon: '🏀', desc: 'Подпрыгивание с отскоком' },
-    { id: 'jelly', label: 'Желе', icon: '🍮', desc: 'Желеобразное покачивание' },
-    { id: 'flippy', label: 'Переворот', icon: '🔄', desc: 'Плавный переворот по горизонтали' },
-    { id: 'spinny', label: 'Вращение', icon: '🌪️', desc: 'Непрерывное вращение на 360°' },
-    { id: 'zoomie', label: 'Пульс', icon: '🔎', desc: 'Пульсирующее увеличение' },
-    { id: 'tilty', label: 'Качание', icon: '🤪', desc: 'Покачивание из стороны в сторону' },
-    { id: 'floaties', label: 'Призрак', icon: '👻', desc: 'Парящие призрачные следы' },
-    { id: 'peeker', label: 'Прятки', icon: '🙈', desc: 'Выглядывание снизу вверх' },
-];
 
 const ASPECT_PRESETS = [
   { id: 'free', label: 'Свободное', ratio: null as number | null },
@@ -67,8 +53,7 @@ function StickerMakerInner() {
   const [imgHeight, setImgHeight] = useState(0);
 
   // Design Settings
-  const [anim, setAnim] = useState("none");
-  const [outlineColor, setOutlineColor] = useState<string | null>("#ffffff");
+  const [outlineColor, setOutlineColor] = useState<string | null>(null);
   const [outlineWidth, setOutlineWidth] = useState(6);
   const [text, setText] = useState("");
   const [textColor, setTextColor] = useState("#ffffff");
@@ -76,9 +61,9 @@ function StickerMakerInner() {
   const [textPos, setTextPos] = useState({ x: 50, y: 85 });
 
   // Crop
-  const [cropEnabled, setCropEnabled] = useState(false);
   const [cropRect, setCropRect] = useState<CropOptions>({ x: 0, y: 0, width: 0, height: 0 });
-  const [aspectPreset, setAspectPreset] = useState('free');
+  const [aspectPreset, setAspectPreset] = useState('');
+  const cropActive = aspectPreset !== '';
   const [imgLayout, setImgLayout] = useState({ width: 0, height: 0 });
   const cropDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const cropStartRef = useRef<CropOptions | null>(null);
@@ -107,26 +92,20 @@ function StickerMakerInner() {
     return () => observer.disconnect();
   }, [maskedSrc, step]);
 
-  // Загрузить файл из upload page
+  // Загрузить файл из upload page (редактор доступен только через /upload)
   useEffect(() => {
-    if (fromUpload) {
-      const source = getEditorSource();
-      if (source) {
-        setOriginalSrc(source.url);
-        setStep("cutout");
-      }
+    if (!fromUpload) {
+      router.replace('/upload');
+      return;
     }
-  }, [fromUpload]);
-
-  // 1. UPLOAD
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-    const file = e.target.files[0];
-    if (originalSrc && originalSrc.startsWith("blob:")) URL.revokeObjectURL(originalSrc);
-    const url = URL.createObjectURL(file);
-    setOriginalSrc(url);
-    setStep("cutout");
-  };
+    const source = getEditorSource();
+    if (source) {
+      setOriginalSrc(source.url);
+      setStep("cutout");
+    } else {
+      router.replace('/upload');
+    }
+  }, [fromUpload, router]);
 
   // Polling helper
   const startPolling = (taskId: string, onSuccess: (result: any) => void, onFailure?: () => void) => {
@@ -213,14 +192,14 @@ function StickerMakerInner() {
     setIsProcessing(true);
     const toastId = toast.loading("Создание изображения...");
     try {
-        const cropData = cropEnabled && imgRef.current && cropRect.width > 0 ? {
+        const cropData = cropActive && imgRef.current && cropRect.width > 0 ? {
             x: Math.round(cropRect.x * (imgRef.current.naturalWidth / imgLayout.width)),
             y: Math.round(cropRect.y * (imgRef.current.naturalHeight / imgLayout.height)),
             width: Math.round(cropRect.width * (imgRef.current.naturalWidth / imgLayout.width)),
             height: Math.round(cropRect.height * (imgRef.current.naturalHeight / imgLayout.height)),
         } : undefined;
 
-        const { task_id } = await createSticker(serverPath, anim, {
+        const { task_id } = await createSticker(serverPath, "none", {
             text: text,
             textColor: textColor,
             textSize: textSize,
@@ -269,13 +248,18 @@ function StickerMakerInner() {
               className="max-h-[60vh] max-w-full w-auto object-contain drop-shadow-2xl pointer-events-none"
               onLoad={() => {
                 if (imgRef.current) {
-                  setImgHeight(imgRef.current.clientHeight);
-                  setImgLayout({ width: imgRef.current.clientWidth, height: imgRef.current.clientHeight });
+                  const w = imgRef.current.clientWidth;
+                  const h = imgRef.current.clientHeight;
+                  setImgHeight(h);
+                  setImgLayout({ width: w, height: h });
+                  if (cropActive && cropRect.width === 0) {
+                    setCropRect({ x: 0, y: 0, width: w, height: h });
+                  }
                 }
               }}
           />
           {/* Crop overlay */}
-          {cropEnabled && imgLayout.width > 0 && (
+          {cropActive && imgLayout.width > 0 && (
               <div className="absolute inset-0 z-40">
                   <div
                       className="absolute border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.7)] cursor-move group"
@@ -303,30 +287,35 @@ function StickerMakerInner() {
                   </div>
               </div>
           )}
-          {text && !cropEnabled && (
-              <div
-                  className="absolute cursor-move whitespace-nowrap z-50 font-black text-center leading-none pointer-events-auto"
-                  style={{
-                      left: `${textPos.x}%`,
-                      top: `${textPos.y}%`,
-                      transform: 'translate(-50%, -50%)',
-                      fontSize: `${imgHeight > 0 ? Math.round(imgHeight * (textSize / 100)) : textSize * 2}px`,
-                      color: textColor,
-                      WebkitTextStroke: '2px black',
-                      fontFamily: 'Impact, sans-serif',
-                      textShadow: '3px 3px 0 #000'
-                  }}
-                  onPointerDown={(e) => { e.stopPropagation(); setIsDraggingText(true); }}
-              >
-                  {text}
-              </div>
-          )}
+          {text && (() => {
+              const fontSize = imgHeight > 0 ? Math.round(imgHeight * (textSize / 100)) : textSize * 2;
+              const strokeWidth = Math.max(2, Math.floor(fontSize / 10));
+              return (
+                  <div
+                      className={`absolute whitespace-nowrap z-50 text-center leading-none ${cropActive ? 'pointer-events-none' : 'cursor-move pointer-events-auto'}`}
+                      style={{
+                          left: `${textPos.x}%`,
+                          top: `${textPos.y}%`,
+                          transform: 'translate(-50%, -50%)',
+                          fontSize: `${fontSize}px`,
+                          color: textColor,
+                          fontFamily: 'Arial, "Liberation Sans", sans-serif',
+                          fontWeight: 'bold',
+                          WebkitTextStroke: `${strokeWidth}px black`,
+                          paintOrder: 'stroke fill',
+                      }}
+                      onPointerDown={cropActive ? undefined : (e) => { e.stopPropagation(); setIsDraggingText(true); }}
+                  >
+                      {text}
+                  </div>
+              );
+          })()}
       </div>
   );
 
   const handleTextDrag = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDraggingText || !previewRef.current) return;
-    const rect = previewRef.current.getBoundingClientRect();
+    if (!isDraggingText || !imgRef.current) return;
+    const rect = imgRef.current.getBoundingClientRect();
     let clientX, clientY;
     if ('touches' in e) {
         clientX = e.touches[0].clientX;
@@ -342,23 +331,20 @@ function StickerMakerInner() {
 
 
   // --- CROP HANDLERS ---
-  const initCrop = (enabled: boolean) => {
-    setCropEnabled(enabled);
-    if (enabled && imgRef.current) {
-      const w = imgRef.current.clientWidth;
-      const h = imgRef.current.clientHeight;
-      setCropRect({ x: 0, y: 0, width: w, height: h });
-      setAspectPreset('free');
-    }
-  };
-
   const handleAspectChange = (presetId: string) => {
+    if (aspectPreset === presetId) {
+      // Повторный клик — снять выбор, убрать обрезку
+      setAspectPreset('');
+      setCropRect({ x: 0, y: 0, width: 0, height: 0 });
+      return;
+    }
     setAspectPreset(presetId);
+    if (!imgLayout.width) return;
+
     const preset = ASPECT_PRESETS.find(p => p.id === presetId);
-    if (!preset?.ratio || !imgLayout.width) {
-      if (!preset?.ratio && imgLayout.width) {
-        setCropRect({ x: 0, y: 0, width: imgLayout.width, height: imgLayout.height });
-      }
+    if (!preset?.ratio) {
+      // "Свободное" — полный размер картинки
+      setCropRect({ x: 0, y: 0, width: imgLayout.width, height: imgLayout.height });
       return;
     }
     const ratio = preset.ratio;
@@ -440,18 +426,8 @@ function StickerMakerInner() {
 
   if (step === "upload") {
     return (
-        <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex h-[calc(100vh-3.5rem)] items-center justify-center bg-background p-4">
-            <div className="text-center animate-in zoom-in-95">
-                <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full bg-card border border-border shadow-xl">
-                    <ImageIcon className="h-12 w-12 text-muted-foreground" />
-                </div>
-                <h1 className="mb-2 text-3xl font-bold text-foreground">Редактор фото</h1>
-                <p className="mb-8 text-muted-foreground">Загрузите фото для редактирования</p>
-                <Button size="lg" className="relative cursor-pointer bg-primary hover:bg-primary/90 text-foreground rounded-full px-10 py-6 text-lg transition-all hover:scale-105">
-                    <input type="file" accept="image/*" onChange={handleFileSelect} className="absolute inset-0 opacity-0 cursor-pointer" />
-                    <Upload className="mr-2 h-5 w-5" /> Выбрать фото
-                </Button>
-            </div>
+        <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex items-center justify-center bg-background">
+            <Loader2 className="animate-spin h-8 w-8 text-muted-foreground" />
         </div>
     );
   }
@@ -469,7 +445,7 @@ function StickerMakerInner() {
                    </div>
                    <div className="flex gap-3">
                        {fromUpload && (
-                           <Button className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-foreground rounded-xl" onClick={handleUseInUpload}>
+                           <Button className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl" onClick={handleUseInUpload}>
                                <ArrowUpFromLine className="mr-2 h-4 w-4"/> Использовать
                            </Button>
                        )}
@@ -482,7 +458,7 @@ function StickerMakerInner() {
                    </div>
                    <button
                        className="mt-4 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                       onClick={() => { setStep("upload"); setOriginalSrc(null); setMaskedSrc(null); setServerPath(null); setText(""); setFinalResult(null); }}
+                       onClick={() => router.push('/upload')}
                    >
                        Загрузить другой файл
                    </button>
@@ -496,13 +472,13 @@ function StickerMakerInner() {
 
       {/* HEADER (Top Bar) */}
       <div className="flex h-16 items-center justify-between px-4 border-b border-border bg-background shrink-0 z-30">
-        <Button variant="ghost" size="icon" onClick={() => step === "design" ? setStep("cutout") : (fromUpload ? router.push('/upload') : setStep("upload"))} className="text-muted-foreground hover:text-foreground h-8 w-8">
+        <Button variant="ghost" size="icon" onClick={() => step === "design" ? setStep("cutout") : router.push('/upload')} className="text-muted-foreground hover:text-foreground h-8 w-8">
           <ChevronLeft className="h-5 w-5" />
         </Button>
-        <span className="font-semibold text-base tracking-tight text-foreground">{step === 'cutout' ? 'Удаление фона' : 'Дизайн стикера'}</span>
+        <span className="font-semibold text-base tracking-tight text-foreground">{step === 'cutout' ? 'Удаление фона' : 'Редактор картинки'}</span>
         {step === 'cutout' ? (
-          <Button variant="ghost" className="text-primary hover:text-primary/80 font-semibold text-sm h-8" onClick={handleCutoutFinish} disabled={isProcessing}>
-            {isProcessing ? <Loader2 className="animate-spin h-4 w-4"/> : 'Готово'}
+          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-sm h-8 rounded-lg px-4" onClick={handleCutoutFinish} disabled={isProcessing}>
+            {isProcessing ? <Loader2 className="animate-spin h-4 w-4"/> : 'Далее'}
           </Button>
         ) : (
           <div className="w-8" />
@@ -529,20 +505,15 @@ function StickerMakerInner() {
                 <div
                     ref={previewRef}
                     className="flex-1 min-h-0 relative overflow-hidden flex items-center justify-center touch-none bg-gradient-to-b from-background to-muted/30"
-                    onMouseMove={cropEnabled ? handleCropMouseMove : handleTextDrag}
-                    onMouseUp={cropEnabled ? handleCropMouseUp : () => setIsDraggingText(false)}
-                    onMouseLeave={cropEnabled ? handleCropMouseUp : () => setIsDraggingText(false)}
-                    onTouchMove={cropEnabled ? undefined : handleTextDrag}
-                    onTouchEnd={cropEnabled ? undefined : () => setIsDraggingText(false)}
-                    onMouseDown={cropEnabled ? undefined : () => setIsDraggingText(true)}
-                    onTouchStart={cropEnabled ? undefined : () => setIsDraggingText(true)}
+                    onMouseMove={cropActive ? handleCropMouseMove : handleTextDrag}
+                    onMouseUp={cropActive ? handleCropMouseUp : () => setIsDraggingText(false)}
+                    onMouseLeave={cropActive ? handleCropMouseUp : () => setIsDraggingText(false)}
+                    onTouchMove={cropActive ? undefined : handleTextDrag}
+                    onTouchEnd={cropActive ? undefined : () => setIsDraggingText(false)}
                 >
                     <div
-                        className="will-change-transform relative transition-transform"
+                        className="relative"
                         style={{
-                            animation: cropEnabled ? 'none' : `${anim} ${['flippy','spinny','floaties'].includes(anim) ? '3s' : '2s'} infinite linear`,
-                            animationTimingFunction: ['bouncy','jelly','zoomie','tilty','floaties'].includes(anim) ? 'ease-in-out' : 'linear',
-                            transformOrigin: ['tilty','bouncy'].includes(anim) ? 'bottom center' : 'center center',
                             filter: outlineColor ? 'url(#hard-outline)' : 'none'
                         }}
                     >
@@ -554,11 +525,6 @@ function StickerMakerInner() {
                                 <feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge>
                             </filter>
                         </svg>
-                        {anim === 'floaties' && !cropEnabled && Array.from({length: 7}, (_, i) => (
-                            <div key={i} className="absolute inset-0" style={{ animation: `floaties 3s infinite ease-in-out`, animationDelay: `-${(i + 1) * 0.15}s`, zIndex: -(i + 1) }}>
-                                <StickerPreviewContent />
-                            </div>
-                        ))}
                         <StickerPreviewContent />
                     </div>
                 </div>
@@ -567,29 +533,18 @@ function StickerMakerInner() {
                 <div className="w-full md:w-80 shrink-0 border-t md:border-t-0 md:border-l border-border bg-card overflow-y-auto">
                     {/* Обрезка */}
                     <div className="p-4 border-b border-border">
-                        <div className="flex items-center justify-between mb-3">
-                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Обрезка</Label>
-                            <button
-                                onClick={() => initCrop(!cropEnabled)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all text-sm ${cropEnabled ? 'bg-primary/10 border-primary/30 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'}`}
-                            >
-                                <Crop size={14} />
-                                {cropEnabled ? 'Вкл' : 'Выкл'}
-                            </button>
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 block">Обрезка</Label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                            {ASPECT_PRESETS.map(p => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => handleAspectChange(p.id)}
+                                    className={`px-2 py-1.5 rounded-md border text-xs font-medium transition-all ${aspectPreset === p.id ? 'bg-primary border-primary text-primary-foreground' : 'bg-card border-border text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
                         </div>
-                        {cropEnabled && (
-                            <div className="grid grid-cols-3 gap-1.5">
-                                {ASPECT_PRESETS.map(p => (
-                                    <button
-                                        key={p.id}
-                                        onClick={() => handleAspectChange(p.id)}
-                                        className={`px-2 py-1.5 rounded-md border text-xs font-medium transition-all ${aspectPreset === p.id ? 'bg-primary border-primary text-primary-foreground' : 'bg-card border-border text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                                    >
-                                        {p.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                     </div>
 
                     {/* Обводка */}
@@ -643,30 +598,7 @@ function StickerMakerInner() {
                         )}
                     </div>
 
-                    {/* Анимация — 3 колонки */}
-                    <div className="p-4 border-b border-border">
-                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 block">Анимация</Label>
-                        <TooltipProvider delayDuration={300}>
-                        <div className="grid grid-cols-3 gap-2">
-                            {ANIMATIONS.map(a => (
-                                <Tooltip key={a.id}>
-                                    <TooltipTrigger asChild>
-                                        <button
-                                            onClick={() => setAnim(a.id)}
-                                            className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${anim === a.id ? 'bg-primary border-primary text-primary-foreground shadow-md' : 'bg-card border-border text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                                        >
-                                            <span className="text-xl leading-none">{a.icon}</span>
-                                            <span className="text-[10px] font-bold leading-none">{a.label}</span>
-                                        </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="top" className="text-xs">{a.desc}</TooltipContent>
-                                </Tooltip>
-                            ))}
-                        </div>
-                        </TooltipProvider>
-                    </div>
-
-                    {/* Создать стикер */}
+                    {/* Далее */}
                     <div className="p-4">
                         <Button
                             onClick={handleGenerate}
@@ -674,7 +606,7 @@ function StickerMakerInner() {
                             className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl shadow-lg transition-all hover:scale-[1.01]"
                         >
                             {isProcessing ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Sparkles className="mr-2" size={16}/>}
-                            Создать стикер
+                            Далее
                         </Button>
                     </div>
                 </div>

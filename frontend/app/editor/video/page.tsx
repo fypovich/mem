@@ -2,9 +2,9 @@
 
 import React, { useState, useRef, useEffect, Suspense } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Upload, ChevronLeft, Download, Check, Film, ArrowUpFromLine } from "lucide-react";
+import { Loader2, ChevronLeft, Download, Check, ArrowUpFromLine } from "lucide-react";
 import { toast } from "sonner";
-import { uploadVideo, processVideo } from "@/lib/api/editor";
+import { processVideo } from "@/lib/api/editor";
 import { checkStatus, getFullUrl } from "@/lib/api/editor";
 import type { VideoProcessOptions } from "@/types/editor";
 import VideoEditor from "@/components/editor/video-editor";
@@ -35,36 +35,21 @@ function VideoEditorInner() {
     };
   }, []);
 
-  // Загрузить файл из upload page
+  // Загрузить файл из upload page (редактор доступен только через /upload)
   useEffect(() => {
-    if (fromUpload) {
-      const source = getEditorSource();
-      if (source) {
-        setServerPath(source.serverPath);
-        setVideoUrl(source.url);
-        setStep("editor");
-      }
+    if (!fromUpload) {
+      router.replace('/upload');
+      return;
     }
-  }, [fromUpload]);
-
-  // 1. UPLOAD
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-
-    const file = e.target.files[0];
-    setIsProcessing(true);
-
-    try {
-        const data = await uploadVideo(file);
-        setServerPath(data.file_path);
-        setVideoUrl(getFullUrl(data.url));
-        setStep("editor");
-    } catch (err) {
-        toast.error("Ошибка загрузки видео");
-    } finally {
-        setIsProcessing(false);
+    const source = getEditorSource();
+    if (source) {
+      setServerPath(source.serverPath);
+      setVideoUrl(source.url);
+      setStep("editor");
+    } else {
+      router.replace('/upload');
     }
-  };
+  }, [fromUpload, router]);
 
   // 2. PROCESS
   const handleProcessVideo = async (options: VideoProcessOptions) => {
@@ -133,18 +118,8 @@ function VideoEditorInner() {
 
   if (step === "upload") {
     return (
-        <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex flex-col items-center justify-center bg-background p-4">
-             <div className="text-center animate-in zoom-in-95">
-                <div className="mx-auto mb-6 flex h-32 w-32 items-center justify-center rounded-full bg-card border border-border shadow-xl">
-                    {isProcessing ? <Loader2 className="animate-spin h-12 w-12 text-muted-foreground" /> : <Film className="h-12 w-12 text-muted-foreground" />}
-                </div>
-                <h1 className="mb-2 text-3xl font-bold text-foreground">Редактор видео</h1>
-                <p className="mb-8 text-muted-foreground">Загрузите видео для редактирования</p>
-                <Button size="lg" disabled={isProcessing} className="relative cursor-pointer bg-primary hover:bg-primary/90 text-foreground rounded-full px-10 py-6 text-lg transition-all hover:scale-105">
-                    <input type="file" accept="video/*" onChange={handleFileSelect} className="absolute inset-0 opacity-0 cursor-pointer" />
-                    <Upload className="mr-2 h-5 w-5" /> {isProcessing ? "Загрузка..." : "Выбрать видео"}
-                </Button>
-            </div>
+        <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex items-center justify-center bg-background">
+            <Loader2 className="animate-spin h-8 w-8 text-muted-foreground" />
         </div>
     );
   }
@@ -153,7 +128,7 @@ function VideoEditorInner() {
     <div className="fixed top-14 bottom-0 left-0 md:left-64 right-0 z-10 flex flex-col bg-background overflow-hidden text-foreground animate-in fade-in duration-300">
         {/* Header */}
         <div className="flex h-16 items-center justify-between px-4 border-b border-border bg-background shrink-0 z-30">
-            <Button variant="ghost" size="icon" onClick={() => fromUpload ? router.push('/upload') : setStep("upload")} className="text-muted-foreground hover:text-foreground h-8 w-8">
+            <Button variant="ghost" size="icon" onClick={() => router.push('/upload')} className="text-muted-foreground hover:text-foreground h-8 w-8">
                 <ChevronLeft className="h-5 w-5" />
             </Button>
             <span className="font-semibold text-base tracking-tight text-foreground">Редактор видео</span>
@@ -193,7 +168,7 @@ function VideoEditorInner() {
 
                     <div className="flex gap-3">
                         {fromUpload && (
-                            <Button className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-foreground rounded-xl" onClick={handleUseInUpload}>
+                            <Button className="flex-1 h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl" onClick={handleUseInUpload}>
                                 <ArrowUpFromLine className="mr-2 h-4 w-4"/> Использовать
                             </Button>
                         )}
@@ -206,9 +181,9 @@ function VideoEditorInner() {
                     </div>
                     <button
                         className="mt-4 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => { setStep("upload"); setVideoUrl(null); setServerPath(null); setFinalResult(null); }}
+                        onClick={() => router.push('/upload')}
                     >
-                        Загрузить другое видео
+                        Загрузить другой файл
                     </button>
                 </div>
             </div>

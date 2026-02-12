@@ -5,7 +5,7 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Play, Pause, RotateCcw, MonitorPlay, Volume2, VolumeX } from "lucide-react"
+import { Loader2, Play, Pause, RotateCcw, Volume2, VolumeX } from "lucide-react"
 import type { VideoProcessOptions, CropOptions, TextOptions } from "@/types/editor"
 
 interface VideoEditorProps {
@@ -426,7 +426,7 @@ export default function VideoEditor({ videoUrl, isProcessing, onProcess }: Video
           <div className="p-4">
               <Button className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl shadow-lg transition-all hover:scale-[1.01]"
                   onClick={prepareAndProcess} disabled={isProcessing}>
-                  {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Обработка...</> : <><MonitorPlay className="mr-2 h-4 w-4"/> Экспорт видео</>}
+                  {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Обработка...</> : 'Далее'}
               </Button>
           </div>
       </div>
