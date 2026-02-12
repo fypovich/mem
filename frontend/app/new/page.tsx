@@ -26,10 +26,16 @@ export default async function NewMemesPage() {
   const memes = await getNewMemes();
 
   return (
-    <div className="container max-w-6xl mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-8 flex items-center gap-3">
-        <RefreshCw className="w-8 h-8 text-blue-500" /> Свежие мемы
-      </h1>
+    <div className="container mx-auto py-6 px-4">
+      <div className="flex items-center gap-2 mb-8">
+        <div className="p-3 bg-blue-500/10 rounded-full">
+            <RefreshCw className="w-6 h-6 text-blue-500" />
+        </div>
+        <div>
+            <h1 className="text-2xl md:text-3xl font-extrabold">Свежие мемы</h1>
+            <p className="text-muted-foreground">Самый свежий контент</p>
+        </div>
+      </div>
 
       <MemeGrid items={memes} />
     </div>

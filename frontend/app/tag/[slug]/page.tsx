@@ -45,10 +45,10 @@ export default async function TagPage({ params }: { params: Promise<{ slug: stri
     <div className="container max-w-6xl mx-auto py-8 px-4">
       <div className="flex items-center gap-3 mb-8">
         <div className="p-3 bg-primary/10 rounded-full">
-            <Hash className="w-8 h-8 text-primary" />
+            <Hash className="w-6 h-6 text-primary" />
         </div>
         <div>
-            <h1 className="text-3xl font-bold">#{decodedTag}</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">#{decodedTag}</h1>
             <p className="text-muted-foreground">{memes.length} мемов</p>
         </div>
       </div>

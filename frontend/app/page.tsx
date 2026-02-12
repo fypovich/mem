@@ -48,7 +48,7 @@ export default function Home() {
       {/* Переключатель вкладок */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight mb-1">Лента</h1>
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight mb-1">Лента</h1>
             <p className="text-muted-foreground text-sm">Главные мемы дня</p>
           </div>
 

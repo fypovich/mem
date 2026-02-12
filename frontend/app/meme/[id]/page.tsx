@@ -129,7 +129,7 @@ export default async function MemePage({ params }: { params: Params }) {
   return (
     <div className="container max-w-4xl mx-auto py-6 px-4">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8 items-start">
 
         {/* ЛЕВАЯ КОЛОНКА */}
         <div className="lg:col-span-2 space-y-8">

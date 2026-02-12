@@ -85,35 +85,22 @@ function SearchContent() {
         </h1>
 
         <Tabs defaultValue="all" className="w-full">
-            {/* Стиль табов как в профиле */}
-            <TabsList className="mb-6 w-full justify-start overflow-x-auto bg-transparent p-0 gap-6 border-b rounded-none h-auto">
-                <TabsTrigger 
-                    value="all"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 pb-3 text-base"
-                >
+            <TabsList className="mb-6 w-full justify-start">
+                <TabsTrigger value="all" className="flex items-center gap-2">
                     Все
                 </TabsTrigger>
                 {memes.length > 0 && (
-                    <TabsTrigger 
-                        value="memes"
-                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 pb-3 text-base"
-                    >
+                    <TabsTrigger value="memes" className="flex items-center gap-2">
                         Мемы ({memes.length})
                     </TabsTrigger>
                 )}
                 {users.length > 0 && (
-                    <TabsTrigger 
-                        value="users"
-                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 pb-3 text-base"
-                    >
+                    <TabsTrigger value="users" className="flex items-center gap-2">
                         Люди ({users.length})
                     </TabsTrigger>
                 )}
                 {tags.length > 0 && (
-                    <TabsTrigger 
-                        value="tags"
-                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 pb-3 text-base"
-                    >
+                    <TabsTrigger value="tags" className="flex items-center gap-2">
                         Теги ({tags.length})
                     </TabsTrigger>
                 )}

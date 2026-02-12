@@ -196,19 +196,19 @@ export default function SettingsPage() {
 
   return (
     <div className="container max-w-5xl mx-auto py-10 px-4">
-      <h1 className="text-3xl font-bold mb-6">Настройки</h1>
+      <h1 className="text-2xl md:text-3xl font-bold mb-6">Настройки</h1>
 
-      <Tabs defaultValue="profile" className="flex flex-col md:flex-row gap-8">
-        
+      <Tabs defaultValue="profile" orientation="vertical" className="flex flex-col md:flex-row gap-8">
+
         <aside className="w-full md:w-64 shrink-0">
-          <TabsList className="flex md:flex-col h-auto bg-transparent p-0 gap-2 w-full justify-start">
-            <TabsTrigger value="profile" className="w-full justify-start gap-2 px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary border border-transparent">
+          <TabsList className="bg-transparent p-0 gap-1 w-full">
+            <TabsTrigger value="profile" className="flex-none h-auto gap-2 px-4 py-2.5 rounded-lg data-[state=active]:bg-primary/10 dark:data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
               <User className="w-4 h-4" /> Профиль
             </TabsTrigger>
-            <TabsTrigger value="account" className="w-full justify-start gap-2 px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary border border-transparent">
+            <TabsTrigger value="account" className="flex-none h-auto gap-2 px-4 py-2.5 rounded-lg data-[state=active]:bg-primary/10 dark:data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
               <Lock className="w-4 h-4" /> Аккаунт и Пароль
             </TabsTrigger>
-            <TabsTrigger value="notifications" className="w-full justify-start gap-2 px-4 py-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary border border-transparent">
+            <TabsTrigger value="notifications" className="flex-none h-auto gap-2 px-4 py-2.5 rounded-lg data-[state=active]:bg-primary/10 dark:data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
               <Bell className="w-4 h-4" /> Уведомления
             </TabsTrigger>
           </TabsList>

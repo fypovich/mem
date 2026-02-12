@@ -230,7 +230,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="container max-w-2xl mx-auto py-6 px-4">
-      <div className="flex items-center justify-between mb-6 sticky top-16 z-20 bg-background/95 backdrop-blur py-2">
+      <div className="flex items-center justify-between mb-6 sticky top-14 z-20 bg-background/95 backdrop-blur py-2">
         <h1 className="text-2xl font-bold flex items-center gap-2">
             Уведомления
             {notifications.filter(n => !n.is_read).length > 0 && (

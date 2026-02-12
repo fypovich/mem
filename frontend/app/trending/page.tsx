@@ -40,7 +40,7 @@ export default async function TrendingPage() {
             <Flame className="w-6 h-6 text-orange-500" />
         </div>
         <div>
-            <h1 className="text-3xl font-extrabold">В тренде</h1>
+            <h1 className="text-2xl md:text-3xl font-extrabold">В тренде</h1>
             <p className="text-muted-foreground">Самое популярное за неделю</p>
         </div>
       </div>

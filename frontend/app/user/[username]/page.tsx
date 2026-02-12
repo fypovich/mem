@@ -185,7 +185,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
 
       {/* ТАБЫ */}
       <Tabs defaultValue="posts" className="w-full">
-        <TabsList className="mb-6 w-full justify-start overflow-x-auto">
+        <TabsList className="mb-6 w-full justify-start">
           <TabsTrigger value="posts" className="flex items-center gap-2">
             <Grid className="w-4 h-4" /> Публикации ({memes.length})
           </TabsTrigger>
