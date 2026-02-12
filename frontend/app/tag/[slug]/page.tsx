@@ -1,8 +1,31 @@
 import React from "react";
 import { Hash } from "lucide-react";
 import { MemeGrid } from "@/components/meme-grid";
+import type { Metadata } from "next";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const tag = decodeURIComponent(slug);
+  const pageUrl = `${SITE_URL}/tag/${slug}`;
+
+  return {
+    title: `#${tag}`,
+    description: `Мемы с тегом #${tag} на MemeHUB. Смотрите подборку лучших мемов.`,
+    openGraph: {
+      title: `#${tag} — мемы`,
+      description: `Подборка мемов с тегом #${tag}`,
+      url: pageUrl,
+    },
+    twitter: {
+      card: "summary",
+      title: `#${tag} — мемы на MemeHUB`,
+    },
+    alternates: { canonical: pageUrl },
+  };
+}
 
 async function getTagMemes(tag: string) {
   try {

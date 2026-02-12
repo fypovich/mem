@@ -11,7 +11,6 @@ class SearchResponse(BaseModel):
     memes: List[Any] = []
     users: List[Any] = []
     tags: List[Any] = []
-    subjects: List[Any] = []
 
 @router.get("/", response_model=SearchResponse)
 async def search_global(q: str = "", limit: int = 20): # <-- q теперь optional (по умолчанию "")

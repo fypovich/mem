@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.security import verify_password
 from app.core.database import engine
-from app.models.models import User, Meme, Tag, Subject, Report, SearchTerm, Comment
+from app.models.models import User, Meme, Tag, Report, SearchTerm, Comment
 
 # --- Настройка аутентификации ---
 class AdminAuth(AuthenticationBackend):
@@ -69,10 +69,6 @@ class SearchTermAdmin(ModelView, model=SearchTerm):
     column_sortable_list = [SearchTerm.count]
     icon = "fa-solid fa-magnifying-glass"
 
-class SubjectAdmin(ModelView, model=Subject):
-    column_list = [Subject.name, Subject.slug, Subject.category]
-    icon = "fa-solid fa-star"
-
 class TagAdmin(ModelView, model=Tag):
     column_list = [Tag.name]
     icon = "fa-solid fa-tag"
@@ -84,5 +80,4 @@ def setup_admin(app):
     admin.add_view(MemeAdmin)
     admin.add_view(ReportAdmin)
     admin.add_view(SearchTermAdmin)
-    admin.add_view(SubjectAdmin)
     admin.add_view(TagAdmin)

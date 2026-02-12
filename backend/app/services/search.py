@@ -16,22 +16,20 @@ class SearchService:
         self._setup_indexes()
 
     def _setup_indexes(self):
-        # 1. Мемы: ищем по заголовку, описанию, тегам и персонажам
+        # 1. Мемы: ищем по заголовку, описанию, тегам
         self.index_memes.update_searchable_attributes([
-            'title', 
-            'description', 
-            'tags', 
-            'subject',
-            'author_username' # 🔥 ДОБАВЛЕНО: чтобы работал поиск по @username
+            'title',
+            'description',
+            'tags',
+            'author_username'
         ])
-        
-        # Фильтры: добавляем 'status' и 'author_username'
+
+        # Фильтры
         self.index_memes.update_filterable_attributes([
-            'tags', 
-            'subject', 
-            'user_id', 
+            'tags',
+            'user_id',
             'status',
-            'author_username' # 🔥 ДОБАВЛЕНО: для фильтрации where author_username = ...
+            'author_username'
         ])
         
         # Сортировка

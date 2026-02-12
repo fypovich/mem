@@ -64,27 +64,12 @@ class Tag(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
 
-class SubjectCategory(str):
-    PERSON = "person"
-    GAME = "game"
-    MOVIE = "movie"
-    OTHER = "other"
-
-class Subject(Base):
-    __tablename__ = "subjects"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    slug = Column(String, unique=True, index=True)
-    category = Column(String, default="person") # person, game, movie...
-    image_url = Column(String, nullable=True)
-
 class Meme(Base):
     __tablename__ = "memes"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
-    subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=True)
-    
+
     title = Column(String)
     description = Column(String, nullable=True)
     media_url = Column(String) # путь к файлу
@@ -105,7 +90,6 @@ class Meme(Base):
 
     # Связи
     user = relationship("User", back_populates="memes")
-    subject = relationship("Subject")
     tags = relationship("Tag", secondary=meme_tags, backref="memes")
     likes = relationship("Like", back_populates="meme", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="meme", cascade="all, delete-orphan")

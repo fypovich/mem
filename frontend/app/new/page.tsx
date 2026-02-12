@@ -1,6 +1,16 @@
 import React from "react";
+import type { Metadata } from "next";
 import { RefreshCw } from "lucide-react";
-import { MemeGrid } from "@/components/meme-grid"; // <-- Импорт
+import { MemeGrid } from "@/components/meme-grid";
+
+export const metadata: Metadata = {
+  title: "Свежие мемы",
+  description: "Самые новые мемы на MemeHUB. Смотрите свежий контент первыми.",
+  openGraph: {
+    title: "Свежие мемы",
+    description: "Самые новые мемы на MemeHUB.",
+  },
+};
 
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 

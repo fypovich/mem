@@ -3,8 +3,18 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import type { Metadata } from "next";
 
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+export async function generateMetadata({ params }: { params: Promise<{ username: string }> }): Promise<Metadata> {
+  const { username } = await params;
+  return {
+    title: `Подписчики @${username}`,
+    description: `Список подписчиков пользователя @${username} на MemeHUB.`,
+    robots: { index: false, follow: true },
+  };
+}
 
 async function getFollowers(username: string) {
     try {

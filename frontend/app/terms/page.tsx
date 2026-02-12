@@ -1,4 +1,10 @@
 import React from "react";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Условия использования",
+  description: "Условия использования платформы MemeHUB. Правила публикации контента и поведения.",
+};
 
 export default function TermsPage() {
   return (

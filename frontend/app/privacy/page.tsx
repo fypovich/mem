@@ -1,4 +1,10 @@
 import React from "react";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Политика конфиденциальности",
+  description: "Политика конфиденциальности MemeHUB. Как мы собираем, используем и защищаем ваши данные.",
+};
 
 export default function PrivacyPage() {
   return (

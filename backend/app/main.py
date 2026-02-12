@@ -82,8 +82,7 @@ async def sync_search_index():
 
             # 1. Мемы
             query = select(Meme).where(Meme.status == 'approved').options(
-                selectinload(Meme.tags),
-                selectinload(Meme.subject)
+                selectinload(Meme.tags)
             )
             memes_list = (await db.execute(query)).scalars().all()
 
@@ -91,8 +90,7 @@ async def sync_search_index():
                 documents = []
                 for meme in memes_list:
                     tags_list = [t.name for t in meme.tags]
-                    subject_name = meme.subject.name if meme.subject else None
-                    
+
                     documents.append({
                         "id": str(meme.id),
                         "title": meme.title,
@@ -101,7 +99,6 @@ async def sync_search_index():
                         "media_url": meme.media_url,
                         "views_count": meme.views_count,
                         "tags": tags_list,
-                        "subject": subject_name
                     })
                 search_service.index_memes.add_documents(documents)
                 print(f"✅ Synced {len(documents)} memes.")

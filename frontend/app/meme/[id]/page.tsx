@@ -1,19 +1,61 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Calendar, Eye, User as UserIcon } from "lucide-react"; 
+import { Calendar, Eye } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge"; 
-import { MemeInteractions } from "@/components/meme-interactions"; 
+import { Badge } from "@/components/ui/badge";
+import { MemeInteractions } from "@/components/meme-interactions";
 import { CommentsSection } from "@/components/comments-section";
 import { MemeGrid } from "@/components/meme-grid";
 import { MemeOwnerActions } from "@/components/meme-owner-actions";
+import type { Metadata } from "next";
+import { getImageUrl } from "@/lib/seo";
 
-// 1. Адрес для запросов СЕРВЕРА (внутри Docker)
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 const FETCH_API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
-// 2. Адрес для отображения в БРАУЗЕРЕ (картинки, видео)
 const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  try {
+    const res = await fetch(`${FETCH_API_URL}/api/v1/memes/${id}`, { cache: "no-store" });
+    if (!res.ok) return { title: "Мем не найден" };
+    const meme = await res.json();
+
+    const imageUrl = getImageUrl(meme.thumbnail_url);
+    const pageUrl = `${SITE_URL}/meme/${id}`;
+    const description = meme.description
+      ? meme.description.slice(0, 160)
+      : `Мем «${meme.title}» от @${meme.user.username} на MemeHUB`;
+    const tags = meme.tags.map((t: any) => t.name);
+
+    return {
+      title: meme.title,
+      description,
+      keywords: ["мем", ...tags],
+      openGraph: {
+        type: "article",
+        title: meme.title,
+        description,
+        url: pageUrl,
+        siteName: "MemeHUB",
+        images: imageUrl ? [{ url: imageUrl, width: meme.width, height: meme.height, alt: meme.title }] : [],
+        publishedTime: meme.created_at,
+        authors: [`@${meme.user.username}`],
+        tags,
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: meme.title,
+        description,
+        images: imageUrl ? [imageUrl] : [],
+      },
+      alternates: { canonical: pageUrl },
+    };
+  } catch {
+    return { title: "Мем не найден" };
+  }
+}
 
 async function getMeme(id: string) {
   try {
@@ -60,10 +102,35 @@ export default async function MemePage({ params }: { params: Params }) {
   
   const isMp4 = meme.media_url.endsWith(".mp4");
 
+  const thumbnailUrl = meme.thumbnail_url.startsWith("http") ? meme.thumbnail_url : `${DISPLAY_API_URL}${meme.thumbnail_url}`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": isMp4 ? "VideoObject" : "ImageObject",
+    "name": meme.title,
+    "description": meme.description || meme.title,
+    "contentUrl": mediaSrc,
+    "thumbnailUrl": thumbnailUrl,
+    "uploadDate": meme.created_at,
+    "author": {
+      "@type": "Person",
+      "name": meme.user.full_name || meme.user.username,
+      "url": `${SITE_URL}/user/${meme.user.username}`,
+    },
+    "interactionStatistic": [
+      { "@type": "InteractionCounter", "interactionType": "https://schema.org/LikeAction", "userInteractionCount": meme.likes_count },
+      { "@type": "InteractionCounter", "interactionType": "https://schema.org/WatchAction", "userInteractionCount": meme.views_count },
+      { "@type": "InteractionCounter", "interactionType": "https://schema.org/CommentAction", "userInteractionCount": meme.comments_count },
+    ],
+    ...(isMp4 && meme.duration ? { "duration": `PT${Math.round(meme.duration)}S` } : {}),
+    ...(meme.width ? { "width": meme.width } : {}),
+    ...(meme.height ? { "height": meme.height } : {}),
+  };
+
   return (
     <div className="container max-w-4xl mx-auto py-6 px-4">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        
+
         {/* ЛЕВАЯ КОЛОНКА */}
         <div className="lg:col-span-2 space-y-8">
           
@@ -136,15 +203,8 @@ export default async function MemePage({ params }: { params: Params }) {
                         </div>
                      )}
 
-                     {(meme.tags.length > 0 || meme.subject) && (
+                     {meme.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2">
-                            {meme.subject && (
-                                <Link href={`/character/${meme.subject.slug}`}>
-                                    <Badge variant="outline" className="px-3 py-1 gap-1 text-sm cursor-pointer hover:bg-primary/10 hover:border-primary transition-colors">
-                                        <UserIcon className="w-3 h-3" /> {meme.subject.name}
-                                    </Badge>
-                                </Link>
-                            )}
                             {meme.tags.map((tag: any) => (
                                 <Link key={tag.name} href={`/tag/${tag.name}`}>
                                     <Badge variant="secondary" className="px-3 py-1 text-sm cursor-pointer hover:bg-primary hover:text-white transition-colors">

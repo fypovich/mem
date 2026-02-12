@@ -67,19 +67,10 @@ class UserProfile(BaseModel):
     class Config:
         from_attributes = True
 
-# --- Tag & Subject ---
+# --- Tag ---
 class TagResponse(BaseModel):
     id: int
     name: str
-    class Config:
-        from_attributes = True
-
-class SubjectResponse(BaseModel):
-    id: int
-    name: str
-    slug: str
-    category: str
-    image_url: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -131,7 +122,6 @@ class MemeResponse(MemeBase):
     
     user: UserResponse # Или UserProfile
     tags: List[TagResponse] = []
-    subject: Optional[SubjectResponse] = None
     
     likes_count: int = 0
     comments_count: int = 0

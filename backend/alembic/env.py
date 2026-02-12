@@ -11,7 +11,7 @@ from alembic import context
 from app.core.config import settings
 from app.core.database import Base
 # Импортируем модели, чтобы они зарегистрировались в metadata
-from app.models.models import User, Meme, Subject, Tag, Like, Comment, meme_tags
+from app.models.models import User, Meme, Tag, Like, Comment, meme_tags
 
 config = context.config
 

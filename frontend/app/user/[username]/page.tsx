@@ -8,12 +8,50 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileSettingsButton } from "@/components/profile-settings-button";
 import { ProfileHeaderActions } from "@/components/profile-header-actions";
 import { MemeGrid } from "@/components/meme-grid";
+import type { Metadata } from "next";
+import { getImageUrl } from "@/lib/seo";
 
-// 1. Адрес для запросов СЕРВЕРА (внутри Docker) — чтобы получить JSON с данными
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 const FETCH_API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
-// 2. Адрес для БРАУЗЕРА (картинки) — чтобы браузер мог загрузить фото
 const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+export async function generateMetadata({ params }: { params: Promise<{ username: string }> }): Promise<Metadata> {
+  const { username } = await params;
+  try {
+    const res = await fetch(`${FETCH_API_URL}/api/v1/users/${username}`, { cache: "no-store" });
+    if (!res.ok) return { title: "Пользователь не найден" };
+    const user = await res.json();
+
+    const displayName = user.full_name || `@${username}`;
+    const description = user.bio
+      ? user.bio.slice(0, 160)
+      : `Профиль ${displayName} на MemeHUB. ${user.followers_count} подписчиков.`;
+    const avatarUrl = getImageUrl(user.avatar_url);
+    const pageUrl = `${SITE_URL}/user/${username}`;
+
+    return {
+      title: displayName,
+      description,
+      openGraph: {
+        type: "profile",
+        title: displayName,
+        description,
+        url: pageUrl,
+        images: avatarUrl ? [{ url: avatarUrl, alt: displayName }] : [],
+        username,
+      },
+      twitter: {
+        card: "summary",
+        title: displayName,
+        description,
+        images: avatarUrl ? [avatarUrl] : [],
+      },
+      alternates: { canonical: pageUrl },
+    };
+  } catch {
+    return { title: "Пользователь не найден" };
+  }
+}
 
 async function getUser(username: string) {
   try {
@@ -60,8 +98,27 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
   const headerUrl = user.header_url ? `${DISPLAY_API_URL}${user.header_url}` : null;
   const avatarUrl = user.avatar_url ? `${DISPLAY_API_URL}${user.avatar_url}` : undefined;
 
+  const profileJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    "mainEntity": {
+      "@type": "Person",
+      "name": user.full_name || user.username,
+      "alternateName": `@${user.username}`,
+      "url": `${SITE_URL}/user/${user.username}`,
+      "image": avatarUrl,
+      ...(user.bio ? { "description": user.bio } : {}),
+      "interactionStatistic": [{
+        "@type": "InteractionCounter",
+        "interactionType": "https://schema.org/FollowAction",
+        "userInteractionCount": user.followers_count || 0,
+      }],
+    },
+  };
+
   return (
     <div className="container max-w-6xl mx-auto py-8 px-4">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(profileJsonLd) }} />
       {/* Шапка профиля */}
       <div className="relative mb-8">
         {/* Фон (Header) */}

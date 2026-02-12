@@ -89,9 +89,7 @@ async def get_notifications(
         .where(Notification.user_id == current_user.id)
         .options(
             selectinload(Notification.sender),
-            # Важно: загружаем Meme, а внутри него tags и subject
-            selectinload(Notification.meme).selectinload(Meme.tags),
-            selectinload(Notification.meme).selectinload(Meme.subject)
+            selectinload(Notification.meme).selectinload(Meme.tags)
         )
         .order_by(Notification.created_at.desc())
         .offset(skip)
@@ -137,8 +135,7 @@ async def mark_notification_read(
         (Notification.user_id == current_user.id)
     ).options(
         selectinload(Notification.sender),
-        selectinload(Notification.meme).selectinload(Meme.tags),
-        selectinload(Notification.meme).selectinload(Meme.subject)
+        selectinload(Notification.meme).selectinload(Meme.tags)
     )
     result = await db.execute(query)
     notification = result.scalars().first()

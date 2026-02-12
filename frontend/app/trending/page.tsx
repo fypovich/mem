@@ -1,8 +1,18 @@
 import React from "react";
+import type { Metadata } from "next";
 import { MemeGrid } from "@/components/meme-grid";
 import { Flame } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "В тренде",
+  description: "Самые популярные мемы за неделю на MemeHUB. Топ мемов, которые набирают просмотры и лайки.",
+  openGraph: {
+    title: "В тренде",
+    description: "Самые популярные мемы за неделю на MemeHUB.",
+  },
+};
 
 // Умный выбор адреса: если мы на сервере — берем внутренний, если в браузере — внешний
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";

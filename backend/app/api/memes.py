@@ -14,8 +14,8 @@ from sqlalchemy.orm import selectinload, aliased
 
 from app.core.database import get_db
 from app.models.models import (
-    Meme, User, Like, Comment, Tag, Subject, 
-    meme_tags, Notification, NotificationType, follows, SubjectCategory, Report, Block
+    Meme, User, Like, Comment, Tag,
+    meme_tags, Notification, NotificationType, follows, Report, Block
 )
 from app.schemas import MemeResponse, CommentCreate, CommentResponse, MemeUpdate, ReportCreate
 from fastapi.security import OAuth2PasswordBearer
@@ -49,25 +49,13 @@ async def get_popular_content(db: AsyncSession = Depends(get_db)):
     tags_res = await db.execute(tags_stmt)
     tags = [{"name": row[0], "count": row[1]} for row in tags_res.all()]
 
-    # Топ 5 персонажей
-    subjects_stmt = (
-        select(Subject.name, Subject.slug, func.count(Meme.id).label("count"))
-        .join(Meme)
-        .group_by(Subject.id, Subject.name, Subject.slug)
-        .order_by(desc("count"))
-        .limit(5)
-    )
-    subjects_res = await db.execute(subjects_stmt)
-    subjects = [{"name": row[0], "slug": row[1], "count": row[2]} for row in subjects_res.all()]
-
-    return {"tags": tags, "subjects": subjects}
+    return {"tags": tags}
 
 @router.post("/upload", response_model=MemeResponse)
 async def upload_meme(
     title: str = Form(...),
     description: str = Form(None),
     tags: str = Form(None),
-    subject: str = Form(None),
     file: UploadFile = File(...),
     audio_file: UploadFile = File(None),
     db: AsyncSession = Depends(get_db),
@@ -131,17 +119,6 @@ async def upload_meme(
                 await db.flush()
             db_tags.append(tag)
 
-    db_subject = None
-    if subject:
-        clean_name = subject.strip()
-        slug = clean_name.lower().replace(" ", "_")
-        res = await db.execute(select(Subject).where(Subject.slug == slug))
-        db_subject = res.scalars().first()
-        if not db_subject:
-            db_subject = Subject(name=clean_name, slug=slug, category="person")
-            db.add(db_subject)
-            await db.flush()
-
     new_meme = Meme(
         id=uuid.UUID(file_id),
         title=title, 
@@ -152,9 +129,8 @@ async def upload_meme(
         width=width, 
         height=height,
         has_audio=has_audio,
-        user_id=current_user.id, 
-        status=status,
-        subject_id=db_subject.id if db_subject else None
+        user_id=current_user.id,
+        status=status
     )
     new_meme.tags = db_tags
     
@@ -209,7 +185,7 @@ async def upload_meme(
 
     res = await db.execute(
         select(Meme)
-        .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
+        .options(selectinload(Meme.user), selectinload(Meme.tags))
         .where(Meme.id == new_meme.id)
     )
     return res.scalars().first()
@@ -222,8 +198,6 @@ async def read_memes(
     username: Optional[str] = None, 
     liked_by: Optional[str] = None,
     tag: Optional[str] = None,
-    subject: Optional[str] = None,
-    category: Optional[str] = None, 
     sort: str = "new",              
     period: str = "all",            
     db: AsyncSession = Depends(get_db),
@@ -249,8 +223,7 @@ async def read_memes(
         )
         .options(
             selectinload(Meme.user),
-            selectinload(Meme.tags),    
-            selectinload(Meme.subject) 
+            selectinload(Meme.tags)
         )
         .where(Meme.status == "approved")
     )
@@ -263,11 +236,6 @@ async def read_memes(
         query = query.join(User, Meme.user_id == User.id).where(User.username == username)
     if tag:
         query = query.join(Meme.tags).where(Tag.name == tag)
-    if subject:
-        query = query.join(Meme.subject).where(Subject.slug == subject)
-    if category:
-        if category in [e.value for e in SubjectCategory]:
-             query = query.join(Meme.subject).where(Subject.category == category)
     if liked_by:
         uid_res = await db.execute(select(User.id).where(User.username == liked_by))
         uid = uid_res.scalar_one_or_none()
@@ -318,7 +286,7 @@ async def get_random_meme(db: AsyncSession = Depends(get_db)):
     
     query = (
         select(Meme)
-        .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
+        .options(selectinload(Meme.user), selectinload(Meme.tags))
         .where(Meme.status == "approved")
         .offset(random_offset)
         .limit(1)
@@ -357,7 +325,7 @@ async def read_meme(
             comments_count.label("comments_count"),
             is_liked.label("is_liked")
         )
-        .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
+        .options(selectinload(Meme.user), selectinload(Meme.tags))
         .where(Meme.id == meme_id)
     )
 
@@ -532,7 +500,6 @@ async def get_similar_memes(
         return []
 
     tag_ids = [t.id for t in current_meme.tags]
-    subject_id = current_meme.subject_id
 
     LikeStats = aliased(Like)
     CommentStats = aliased(Comment)
@@ -551,17 +518,13 @@ async def get_similar_memes(
         )
         .options(
             selectinload(Meme.user),
-            selectinload(Meme.tags),    
-            selectinload(Meme.subject) 
+            selectinload(Meme.tags)
         )
         .where(Meme.id != meme_id) 
         .where(Meme.status == "approved")
     )
 
     conditions = []
-    if subject_id:
-        conditions.append(Meme.subject_id == subject_id)
-    
     if tag_ids:
         conditions.append(Meme.tags.any(Tag.id.in_(tag_ids)))
 
@@ -706,7 +669,7 @@ async def update_meme(
 
     final_query = (
         select(Meme)
-        .options(selectinload(Meme.user), selectinload(Meme.tags), selectinload(Meme.subject))
+        .options(selectinload(Meme.user), selectinload(Meme.tags))
         .where(Meme.id == meme.id)
     )
     final_res = await db.execute(final_query)

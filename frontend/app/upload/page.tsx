@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { UploadCloud, Music, X, Wand2, Loader2, Volume2, Pencil } from "lucide-react";
+import { UploadCloud, Music, X, Loader2, Volume2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,7 +41,6 @@ export default function UploadPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tagsInput, setTagsInput] = useState("");
-  const [subject, setSubject] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -62,7 +61,6 @@ export default function UploadPage() {
         if (form.title) setTitle(form.title);
         if (form.description) setDescription(form.description);
         if (form.tagsInput) setTagsInput(form.tagsInput);
-        if (form.subject) setSubject(form.subject);
       } catch {}
       sessionStorage.removeItem('upload_form');
     }
@@ -146,7 +144,7 @@ export default function UploadPage() {
       });
 
       // Сохраняем форму
-      sessionStorage.setItem('upload_form', JSON.stringify({ title, description, tagsInput, subject }));
+      sessionStorage.setItem('upload_form', JSON.stringify({ title, description, tagsInput }));
 
       if (mediaType === 'image') {
         router.push('/editor?from=upload');
@@ -175,7 +173,6 @@ export default function UploadPage() {
         formData.append("title", title);
         if (description) formData.append("description", description);
         if (tagsInput) formData.append("tags", tagsInput);
-        if (subject) formData.append("subject", subject);
         formData.append("file", mediaFile);
         if (audioFile) formData.append("audio_file", audioFile);
 
@@ -311,10 +308,6 @@ export default function UploadPage() {
                     <div className="grid gap-2"><Label htmlFor="title">Название</Label><Input id="title" placeholder="Придумайте заголовок..." value={title} onChange={(e) => setTitle(e.target.value)} /></div>
                     <div className="grid gap-2"><Label htmlFor="desc">Описание</Label><Textarea id="desc" placeholder="Контекст (необязательно)" className="resize-none h-24" value={description} onChange={(e) => setDescription(e.target.value)} /></div>
                     <Separator />
-                    <div className="grid gap-2">
-                        <Label>Персонаж</Label>
-                        <div className="relative"><Wand2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input placeholder="Например: Райан Гослинг" className="pl-9" value={subject} onChange={(e) => setSubject(e.target.value)} /></div>
-                    </div>
                     <div className="grid gap-2">
                         <Label>Теги</Label>
                         <Input placeholder="жиза, мем..." value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} />
