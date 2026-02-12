@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -19,22 +20,16 @@ interface ProfileHeaderActionsProps {
 
 export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
-  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
-  
+  const { token, user: authUser } = useAuth();
+
   const [isFollowing, setIsFollowing] = useState(user?.is_following || false);
   const [isBlocked, setIsBlocked] = useState(user?.is_blocked || false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const t = localStorage.getItem("token");
-    const u = localStorage.getItem("username");
-    setToken(t);
-    setCurrentUsername(u);
-
-    if (t && user?.username) {
+    if (token && user?.username) {
         fetch(`${API_URL}/api/v1/users/${user.username}`, {
-            headers: { "Authorization": `Bearer ${t}` }
+            headers: { Authorization: `Bearer ${token}` }
         })
         .then(res => res.json())
         .then(data => {
@@ -43,9 +38,9 @@ export function ProfileHeaderActions({ user }: ProfileHeaderActionsProps) {
         })
         .catch(err => console.error("Error refreshing user state:", err));
     }
-  }, [user?.username]);
+  }, [user?.username, token]);
 
-  if (!user || currentUsername === user.username) {
+  if (!user || authUser?.username === user.username) {
     return null;
   }
 

@@ -1,7 +1,7 @@
 import React from "react";
 import type { Metadata } from "next";
-import { MemeGrid } from "@/components/meme-grid";
 import { Flame } from "lucide-react";
+import { InfiniteMemeGrid } from "@/components/infinite-meme-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +14,12 @@ export const metadata: Metadata = {
   },
 };
 
-// Умный выбор адреса: если мы на сервере — берем внутренний, если в браузере — внешний
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function getTrendingMemes() {
   try {
-    const res = await fetch(`${API_URL}/api/v1/memes/?sort=popular&period=week`, { 
-        cache: "no-store" 
+    const res = await fetch(`${API_URL}/api/v1/memes/?sort=popular&period=week&limit=20`, {
+        cache: "no-store"
     });
     if (!res.ok) return [];
     return res.json();
@@ -31,7 +30,7 @@ async function getTrendingMemes() {
 }
 
 export default async function TrendingPage() {
-  const memes = await getTrendingMemes();
+  const initialMemes = await getTrendingMemes();
 
   return (
     <div className="container mx-auto py-6 px-4">
@@ -45,13 +44,11 @@ export default async function TrendingPage() {
         </div>
       </div>
 
-      {memes.length > 0 ? (
-          <MemeGrid items={memes} />
-      ) : (
-          <div className="text-center py-20 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-              Пока тихо... Станьте первым, кто создаст тренд!
-          </div>
-      )}
+      <InfiniteMemeGrid
+        fetchUrl="/api/v1/memes/?sort=popular&period=week"
+        initialItems={initialMemes}
+        limit={20}
+      />
     </div>
   );
 }

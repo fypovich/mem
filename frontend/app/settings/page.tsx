@@ -16,15 +16,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { useAuth } from "@/contexts/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { token, isLoading: authLoading, isAuthenticated, logout: authLogout } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
-  
+
   const [user, setUser] = useState<any>(null);
   
   const [formData, setFormData] = useState({
@@ -43,17 +44,15 @@ export default function SettingsPage() {
 
   // 1. ЗАГРУЗКА ДАННЫХ
   useEffect(() => {
-    const storedToken = localStorage.getItem("token");
-    if (!storedToken) {
+    if (authLoading) return;
+    if (!isAuthenticated || !token) {
       router.push("/login");
       return;
     }
-    setToken(storedToken);
 
-    // Добавлено: cache: "no-store" и timestamp для избежания кэша
     fetch(`${API_URL}/api/v1/users/me?ts=${Date.now()}`, {
-        headers: { "Authorization": `Bearer ${storedToken}` },
-        cache: "no-store" 
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store"
     })
     .then(res => {
         if (!res.ok) throw new Error("Failed");
@@ -69,7 +68,7 @@ export default function SettingsPage() {
     })
     .catch(() => router.push("/login"))
     .finally(() => setIsLoading(false));
-  }, [router]);
+  }, [authLoading, isAuthenticated, token, router]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'header') => {
     if (e.target.files?.[0]) {
@@ -183,8 +182,7 @@ export default function SettingsPage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
+    authLogout();
     router.push("/login");
     router.refresh();
   };

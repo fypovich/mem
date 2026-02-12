@@ -8,9 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/contexts/auth-context";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function AuthPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   // --- STATE ДЛЯ ВХОДА ---
@@ -33,7 +37,7 @@ export default function AuthPage() {
       formData.append("username", loginUsername);
       formData.append("password", loginPassword);
 
-      const res = await fetch("http://127.0.0.1:8000/api/v1/auth/token", {
+      const res = await fetch(`${API_URL}/api/v1/auth/token`, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -44,16 +48,10 @@ export default function AuthPage() {
       if (!res.ok) throw new Error("Ошибка входа");
 
       const data = await res.json();
-      
-      // Сохраняем токен в localStorage
-      localStorage.setItem("token", data.access_token);
-      localStorage.setItem("username", loginUsername); 
-      
-      // ВАЖНО: Уведомляем другие компоненты (Header) о входе
-      window.dispatchEvent(new Event("auth-change"));
-      
-      router.push("/"); // На главную
-      router.refresh(); // Обновляем серверные компоненты
+
+      login(data.access_token, loginUsername);
+      router.push("/");
+      router.refresh();
 
     } catch (error) {
       alert("Неверный логин или пароль");
@@ -68,7 +66,7 @@ export default function AuthPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/v1/auth/register", {
+      const res = await fetch(`${API_URL}/api/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -84,14 +82,8 @@ export default function AuthPage() {
       }
 
       const data = await res.json();
-      
-      // Сразу сохраняем токен и входим
-      localStorage.setItem("token", data.access_token);
-      localStorage.setItem("username", regUsername);
 
-      // ВАЖНО: Уведомляем Header
-      window.dispatchEvent(new Event("auth-change"));
-
+      login(data.access_token, regUsername);
       router.push("/");
       router.refresh();
 

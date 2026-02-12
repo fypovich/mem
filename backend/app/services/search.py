@@ -56,9 +56,9 @@ class SearchService:
         except Exception as e:
             print(f"Error deleting document from {index_name}: {e}")
 
-    def search_multi(self, query: str, limit: int = 20):
+    def search_multi(self, query: str, limit: int = 20, offset: int = 0):
         """Параллельный поиск по всем индексам с поддержкой @username"""
-        
+
         filter_conditions = ["status = approved"]
         clean_query = query if query else ""
 
@@ -77,8 +77,9 @@ class SearchService:
         # --- 2. ПАРАМЕТРЫ ПОИСКА ---
         search_params = {
             'limit': limit,
+            'offset': offset,
             'filter': " AND ".join(filter_conditions),
-            'sort': ['created_at:desc'] # Сортируем по новизне (или shares_count:desc)
+            'sort': ['created_at:desc']
         }
 
         # Если запрос пустой (например, был только @admin или вообще ""), MeiliSearch требует ''

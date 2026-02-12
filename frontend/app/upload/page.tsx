@@ -13,8 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { uploadTempFile, getFullUrl } from "@/lib/api/editor";
 import { getEditorResult, setEditorSource, type EditorResult } from "@/lib/editor-bridge";
+import { useAuth } from "@/contexts/auth-context";
 
-const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
 const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
@@ -23,7 +24,7 @@ const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 
 export default function UploadPage() {
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
+  const { token, isLoading: authLoading, isAuthenticated } = useAuth();
 
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -46,10 +47,8 @@ export default function UploadPage() {
   const audioInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const t = localStorage.getItem("token");
-    if (!t) router.push("/login");
-    setToken(t);
-  }, [router]);
+    if (!authLoading && !isAuthenticated) router.push("/login");
+  }, [authLoading, isAuthenticated, router]);
 
   // Восстановление данных формы и результата из редактора
   useEffect(() => {

@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -29,17 +30,16 @@ interface CommentData {
 }
 
 export function CommentsSection({ memeId }: CommentsSectionProps) {
+  const { token } = useAuth();
   const [comments, setComments] = useState<CommentData[]>([]);
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<CommentData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
-  
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setToken(localStorage.getItem("token"));
     fetchComments();
   }, [memeId]);
 

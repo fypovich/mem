@@ -1,6 +1,6 @@
 import React from "react";
 import { Hash } from "lucide-react";
-import { MemeGrid } from "@/components/meme-grid";
+import { InfiniteMemeGrid } from "@/components/infinite-meme-grid";
 import type { Metadata } from "next";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -29,17 +29,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 async function getTagMemes(tag: string) {
   try {
-    const res = await fetch(`${API_URL}/api/v1/memes/?tag=${tag}&limit=50`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/api/v1/memes/?tag=${tag}&limit=20`, { cache: "no-store" });
     if (!res.ok) return [];
     return res.json();
   } catch (e) { return []; }
 }
 
-// Исправленный тип params
 export default async function TagPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params; // <-- Добавлен await
+  const { slug } = await params;
   const decodedTag = decodeURIComponent(slug);
-  const memes = await getTagMemes(decodedTag);
+  const initialMemes = await getTagMemes(decodedTag);
 
   return (
     <div className="container max-w-6xl mx-auto py-8 px-4">
@@ -49,11 +48,14 @@ export default async function TagPage({ params }: { params: Promise<{ slug: stri
         </div>
         <div>
             <h1 className="text-2xl md:text-3xl font-bold">#{decodedTag}</h1>
-            <p className="text-muted-foreground">{memes.length} мемов</p>
         </div>
       </div>
 
-      <MemeGrid items={memes} />
+      <InfiniteMemeGrid
+        fetchUrl={`/api/v1/memes/?tag=${encodeURIComponent(decodedTag)}`}
+        initialItems={initialMemes}
+        limit={20}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import "./globals.css";
 import { Header } from "@/components/header";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/contexts/auth-context";
 
 const inter = Inter({ subsets: ["latin", "cyrillic"] });
 
@@ -68,21 +69,24 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
-        <div className="relative flex min-h-screen flex-col">
-          <Header />
+        <AuthProvider>
+          <div className="relative flex min-h-screen flex-col">
+            <Header />
 
-          <div className="flex flex-1">
-            <aside className="fixed top-14 bottom-0 left-0 z-30 hidden w-64 border-r bg-background md:block overflow-y-auto py-6 px-4">
-               <Sidebar />
-            </aside>
+            <div className="flex flex-1">
+              <aside className="fixed top-14 bottom-0 left-0 z-30 hidden w-64 border-r bg-background md:block overflow-y-auto py-6 px-4">
+                 <Sidebar />
+              </aside>
 
-            <main className="flex w-full flex-col overflow-hidden md:pl-64">
-               <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-                   {children}
-               </div>
-            </main>
+              <main className="flex w-full flex-col overflow-hidden md:pl-64">
+                 <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+                     {children}
+                 </div>
+              </main>
+            </div>
           </div>
-        </div>
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   );

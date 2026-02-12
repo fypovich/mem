@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Heart, MessageCircle, UserPlus, Bell, Image as ImageIcon, Check, Star } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/auth-context";
 
 const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -29,17 +30,18 @@ interface Notification {
 
 export default function NotificationsPage() {
   const router = useRouter();
+  const { token, isLoading: authLoading, isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        router.push("/login");
-        return;
-      }
+    if (authLoading) return;
+    if (!isAuthenticated || !token) {
+      router.push("/login");
+      return;
+    }
 
+    const fetchNotifications = async () => {
       try {
         const res = await fetch(`${DISPLAY_API_URL}/api/v1/notifications/`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -56,10 +58,9 @@ export default function NotificationsPage() {
     };
 
     fetchNotifications();
-  }, [router]);
+  }, [authLoading, isAuthenticated, token, router]);
 
   const markAllRead = async () => {
-    const token = localStorage.getItem("token");
     if (!token) return;
     
     try {
@@ -99,7 +100,6 @@ export default function NotificationsPage() {
     }, [note.id, note.is_read]);
 
     const markAsReadSingle = async (id: string) => {
-        const token = localStorage.getItem("token");
         if (!token) return;
 
         try {

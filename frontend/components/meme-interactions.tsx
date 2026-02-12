@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Heart, Share2, Flag, Check, Loader2 } from "lucide-react"; // Убрал MessageCircle
+import { Heart, Share2, Flag, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -24,20 +25,22 @@ interface MemeInteractionsProps {
   authorUsername: string; // <-- Добавили, чтобы знать, кто автор
 }
 
-export function MemeInteractions({ 
-  memeId, 
-  initialLikes, 
+export function MemeInteractions({
+  memeId,
+  initialLikes,
   initialLiked,
   authorUsername
 }: MemeInteractionsProps) {
   const router = useRouter();
-  
+  const { token, user } = useAuth();
+
   // --- STATES ---
   const [likes, setLikes] = useState(initialLikes);
   const [isLiked, setIsLiked] = useState(initialLiked);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
-  const [isOwner, setIsOwner] = useState(false); // <-- Являюсь ли я автором?
-  
+
+  const isOwner = user?.username === authorUsername;
+
   // Share
   const [isCopied, setIsCopied] = useState(false);
 
@@ -49,15 +52,6 @@ export function MemeInteractions({
 
   // --- INIT LOGIC ---
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const currentUsername = localStorage.getItem("username");
-
-    // 1. Проверяем, владелец ли я
-    if (currentUsername === authorUsername) {
-        setIsOwner(true);
-    }
-
-    // 2. Актуализируем лайк
     if (token) {
       fetch(`${API_URL}/api/v1/memes/${memeId}/status`, {
         headers: { "Authorization": `Bearer ${token}` }
@@ -68,10 +62,9 @@ export function MemeInteractions({
       })
       .catch(err => console.error(err));
     }
-  }, [memeId, authorUsername]);
+  }, [memeId, token]);
 
   const handleLike = async () => {
-    const token = localStorage.getItem("token");
     if (!token) {
       router.push("/login");
       return;
@@ -89,7 +82,7 @@ export function MemeInteractions({
     try {
       const res = await fetch(`${API_URL}/api/v1/memes/${memeId}/like`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       if (!res.ok) throw new Error("Ошибка");
@@ -126,7 +119,6 @@ export function MemeInteractions({
   };
 
   const handleReportSubmit = async () => {
-    const token = localStorage.getItem("token");
     if (!token) {
         router.push("/login");
         return;
@@ -138,7 +130,7 @@ export function MemeInteractions({
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
+                Authorization: `Bearer ${token}`
             },
             body: JSON.stringify({ reason: reportReason, description: reportDesc })
         });

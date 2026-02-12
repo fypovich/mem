@@ -1,22 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/auth-context';
 
 export function ProfileSettingsButton({ username }: { username: string }) {
-    const [isMe, setIsMe] = useState(false);
+    const { user } = useAuth();
 
-    useEffect(() => {
-        // Проверяем, совпадает ли никнейм профиля с тем, под которым мы вошли
-        const storedUsername = localStorage.getItem("username");
-        if (storedUsername === username) {
-            setIsMe(true);
-        }
-    }, [username]);
-
-    if (!isMe) return null;
+    if (!user || user.username !== username) return null;
 
     return (
         <div className="absolute top-4 right-4">

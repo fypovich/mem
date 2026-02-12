@@ -13,7 +13,7 @@ class SearchResponse(BaseModel):
     tags: List[Any] = []
 
 @router.get("/", response_model=SearchResponse)
-async def search_global(q: str = "", limit: int = 20): # <-- q теперь optional (по умолчанию "")
+async def search_global(q: str = "", limit: int = 20, offset: int = 0):
     
     # УБИРАЕМ или МЕНЯЕМ эту проверку:
     # if not q or len(q) < 1:
@@ -37,6 +37,6 @@ async def search_global(q: str = "", limit: int = 20): # <-- q теперь opti
     if not search:
         return SearchResponse()
 
-    results = search.search_multi(q, limit)
-    
+    results = search.search_multi(q, limit, offset)
+
     return results

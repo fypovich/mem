@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/contexts/auth-context";
 
-const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -41,10 +43,9 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (res.ok) {
-        localStorage.setItem("token", data.access_token);
-        localStorage.setItem("username", data.user.username);
-        // Принудительное обновление состояния
-        window.location.href = "/"; 
+        login(data.access_token, data.user.username);
+        router.push("/");
+        router.refresh();
       } else {
         setError(data.detail || "Ошибка регистрации");
       }

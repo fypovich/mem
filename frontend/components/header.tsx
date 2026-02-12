@@ -17,74 +17,54 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "@/components/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 const WS_URL = API_URL.replace(/^http/, 'ws');
 
 export function Header() {
   const router = useRouter();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const { isLoading, isAuthenticated, user, token, logout: authLogout } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
-  
+
   const ws = useRef<WebSocket | null>(null);
 
-  const fetchUserData = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-        setIsAuthenticated(false);
-        setUser(null);
-        return;
-    }
+  const fetchNotifications = async () => {
+    const currentToken = token || localStorage.getItem("token");
+    if (!currentToken) return;
 
     try {
-        const resMe = await fetch(`${API_URL}/api/v1/users/me`, {
-            headers: { Authorization: `Bearer ${token}` }
+      const resNotif = await fetch(`${API_URL}/api/v1/notifications/unread-count`, {
+        headers: { Authorization: `Bearer ${currentToken}` }
+      });
+
+      if (resNotif.ok) {
+        const data = await resNotif.json();
+        setUnreadCount(data.count !== undefined ? data.count : 0);
+      } else {
+        const resList = await fetch(`${API_URL}/api/v1/notifications/?limit=10`, {
+          headers: { Authorization: `Bearer ${currentToken}` }
         });
-        
-        if (resMe.ok) {
-            const userData = await resMe.json();
-            setUser(userData);
-            setIsAuthenticated(true);
-            
-            const resNotif = await fetch(`${API_URL}/api/v1/notifications/unread-count`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            
-            if (resNotif.ok) {
-                const data = await resNotif.json();
-                setUnreadCount(data.count !== undefined ? data.count : 0);
-            } else {
-                 const resList = await fetch(`${API_URL}/api/v1/notifications/?limit=10`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                 });
-                 if(resList.ok) {
-                     const list = await resList.json();
-                     setUnreadCount(list.filter((n: any) => !n.is_read).length);
-                 }
-            }
-        } else {
-            handleLogout();
+        if (resList.ok) {
+          const list = await resList.json();
+          setUnreadCount(list.filter((n: any) => !n.is_read).length);
         }
+      }
     } catch (e) {
-        console.error(e);
+      console.error(e);
     }
   };
 
-  const connectWebSocket = (token: string) => {
+  const connectWebSocket = (wsToken: string) => {
       if (ws.current) return;
 
-      const socket = new WebSocket(`${WS_URL}/api/v1/notifications/ws?token=${token}`);
-      
-      socket.onopen = () => {
-          console.log("WS Connected 🟢");
-      };
+      const socket = new WebSocket(`${WS_URL}/api/v1/notifications/ws?token=${wsToken}`);
 
       socket.onmessage = (event) => {
           try {
-              const data = JSON.parse(event.data);
-              console.log("New Notification:", data);
+              JSON.parse(event.data);
               setUnreadCount(prev => prev + 1);
           } catch (e) {
               console.error("WS Parse error", e);
@@ -92,7 +72,6 @@ export function Header() {
       };
 
       socket.onclose = () => {
-          console.log("WS Closed 🔴. Reconnecting...");
           ws.current = null;
           setTimeout(() => {
               const t = localStorage.getItem("token");
@@ -103,56 +82,47 @@ export function Header() {
       ws.current = socket;
   };
 
+  // Fetch notifications and connect WS when authenticated
   useEffect(() => {
-    fetchUserData();
-
-    const handleAuthChange = () => fetchUserData();
-    window.addEventListener("auth-change", handleAuthChange);
-
-    // --- НОВОЕ: Слушаем обновление уведомлений ---
-    const handleNotifUpdate = () => fetchUserData();
-    window.addEventListener("notifications-updated", handleNotifUpdate);
-
-    const token = localStorage.getItem("token");
-    if (token) {
-        connectWebSocket(token);
+    if (isAuthenticated && token) {
+      fetchNotifications();
+      connectWebSocket(token);
     }
 
+    const handleNotifUpdate = () => fetchNotifications();
+    window.addEventListener("notifications-updated", handleNotifUpdate);
+
     return () => {
-        window.removeEventListener("auth-change", handleAuthChange);
-        window.removeEventListener("notifications-updated", handleNotifUpdate); // <--- Добавлено
+        window.removeEventListener("notifications-updated", handleNotifUpdate);
         if (ws.current) ws.current.close();
     };
-  }, []);
+  }, [isAuthenticated, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
-    setIsAuthenticated(false);
-    setUser(null);
     if (ws.current) {
         ws.current.close();
         ws.current = null;
     }
+    authLogout();
     router.push("/login");
     router.refresh();
   };
 
   const handleSearch = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && searchQuery.trim()) {
-      e.preventDefault(); 
+      e.preventDefault();
       router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
     }
   };
 
-  const avatarUrl = user?.avatar_url 
+  const avatarUrl = user?.avatar_url
     ? (user.avatar_url.startsWith("http") ? user.avatar_url : `${API_URL}${user.avatar_url}`)
     : undefined;
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center gap-4 px-4 mx-auto max-w-7xl">
-        
+
         <div className="md:hidden mr-2">
           <Sheet>
             <SheetTrigger asChild>
@@ -162,7 +132,7 @@ export function Header() {
             </SheetTrigger>
             <SheetContent side="left" className="p-0 w-72">
                <div className="px-4 py-6">
-                 <Sidebar /> 
+                 <Sidebar />
                </div>
             </SheetContent>
           </Sheet>
@@ -186,7 +156,11 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2 md:gap-4 ml-auto">
-          {isAuthenticated ? (
+          {isLoading ? (
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-8 w-8 rounded-full" />
+            </div>
+          ) : isAuthenticated ? (
             <>
               <Link href="/upload">
                 <Button size="sm" variant="ghost" className="hidden md:flex">

@@ -1,7 +1,7 @@
 import React from "react";
 import type { Metadata } from "next";
 import { RefreshCw } from "lucide-react";
-import { MemeGrid } from "@/components/meme-grid";
+import { InfiniteMemeGrid } from "@/components/infinite-meme-grid";
 
 export const metadata: Metadata = {
   title: "Свежие мемы",
@@ -16,14 +16,14 @@ const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL 
 
 async function getNewMemes() {
   try {
-    const res = await fetch(`${API_URL}/api/v1/memes/?limit=50&sort=new`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/api/v1/memes/?limit=20&sort=new`, { cache: "no-store" });
     if (!res.ok) return [];
     return res.json();
   } catch (e) { return []; }
 }
 
 export default async function NewMemesPage() {
-  const memes = await getNewMemes();
+  const initialMemes = await getNewMemes();
 
   return (
     <div className="container mx-auto py-6 px-4">
@@ -37,7 +37,11 @@ export default async function NewMemesPage() {
         </div>
       </div>
 
-      <MemeGrid items={memes} />
+      <InfiniteMemeGrid
+        fetchUrl="/api/v1/memes/?sort=new"
+        initialItems={initialMemes}
+        limit={20}
+      />
     </div>
   );
 }

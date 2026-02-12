@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, MoreVertical, Edit, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -35,9 +36,9 @@ interface MemeOwnerActionsProps {
 
 export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", initialDescription="", initialTags=[] }: MemeOwnerActionsProps) {
   const router = useRouter();
+  const { token, user } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isOwner, setIsOwner] = useState(false);
-  
+
   // Состояния для редактирования
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -47,14 +48,7 @@ export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", init
     tags: initialTags.map(t => t.name).join(", ")
   });
 
-  useEffect(() => {
-    const currentUsername = localStorage.getItem("username");
-    if (currentUsername === authorUsername) {
-      setIsOwner(true);
-    }
-  }, [authorUsername]);
-
-  if (!isOwner) {
+  if (!user || user.username !== authorUsername) {
     return null;
   }
 
@@ -65,7 +59,6 @@ export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", init
 
     setIsDeleting(true);
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch(`${API_URL}/api/v1/memes/${memeId}`, {
         method: "DELETE",
         headers: {
@@ -90,7 +83,6 @@ export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", init
   const handleUpdate = async () => {
     setIsSaving(true);
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch(`${API_URL}/api/v1/memes/${memeId}`, {
         method: "PUT",
         headers: {
