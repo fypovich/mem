@@ -2,7 +2,6 @@ import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Calendar, Eye } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { MemeInteractions } from "@/components/meme-interactions";
 import { CommentsSection } from "@/components/comments-section";
@@ -127,44 +126,46 @@ export default async function MemePage({ params }: { params: Params }) {
   };
 
   return (
-    <div className="container max-w-4xl mx-auto py-6 px-4">
+    <div className="container max-w-6xl mx-auto py-6 px-4">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8 items-start">
 
         {/* ЛЕВАЯ КОЛОНКА */}
-        <div className="lg:col-span-2 space-y-8">
+        <div className="lg:col-span-2 space-y-4">
           
           <div className="space-y-6">
-             <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative aspect-video flex items-center justify-center">
+             <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative flex items-center justify-center">
                 {isMp4 ? (
-                    <video 
-                        src={mediaSrc} 
-                        controls 
-                        autoPlay 
-                        loop 
-                        muted={!meme.has_audio} 
+                    <video
+                        src={mediaSrc}
+                        controls
+                        autoPlay
+                        loop
+                        muted={!meme.has_audio}
                         playsInline
                         crossOrigin="anonymous"
-                        className="w-full h-full object-contain"
+                        className="w-full max-h-[60vh] md:max-h-[70vh] object-contain"
                     />
                 ) : (
-                    <img 
-                        src={mediaSrc} 
+                    <img
+                        src={mediaSrc}
                         alt={meme.title}
-                        className="w-full h-full object-contain"
+                        className="w-full max-h-[60vh] md:max-h-[70vh] object-contain"
                     />
                 )}
              </div>
 
              <div className="space-y-4">
-                 <h1 className="text-2xl md:text-3xl font-bold break-words">{meme.title}</h1>
+                 <h1 className="text-lg md:text-xl font-bold break-words">{meme.title}</h1>
                  
                  <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border">
                      <Link href={`/user/${meme.user.username}`} className="flex items-center gap-3 group">
-                        <Avatar className="w-10 h-10 border border-border group-hover:border-primary transition-colors">
-                           <AvatarImage src={avatarUrl} />
-                           <AvatarFallback>{meme.user.username[0]}</AvatarFallback>
-                        </Avatar>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                           src={avatarUrl}
+                           alt={meme.user.username}
+                           className="w-10 h-10 rounded-full border border-border group-hover:border-primary transition-colors object-cover bg-muted"
+                        />
                         <div>
                            <div className="font-semibold group-hover:text-primary transition-colors">@{meme.user.username}</div>
                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -219,7 +220,7 @@ export default async function MemePage({ params }: { params: Params }) {
           </div>
 
           {similarMemes.length > 0 && (
-             <div className="pt-8 border-t">
+             <div className="pt-4 border-t">
                  <h3 className="text-xl font-bold mb-4">Похожие мемы</h3>
                  <MemeGrid items={similarMemes} />
              </div>

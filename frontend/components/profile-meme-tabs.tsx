@@ -18,7 +18,7 @@ export function ProfileMemeTabs({ username, initialMemes, initialFavorites }: Pr
         <TabsTrigger value="favorites">Избранное</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="memes" className="mt-6">
+      <TabsContent value="memes" forceMount className="mt-6 data-[state=inactive]:hidden">
         <InfiniteMemeGrid
           fetchUrl={`/api/v1/memes/?username=${username}`}
           initialItems={initialMemes}
@@ -26,7 +26,7 @@ export function ProfileMemeTabs({ username, initialMemes, initialFavorites }: Pr
         />
       </TabsContent>
 
-      <TabsContent value="favorites" className="mt-6">
+      <TabsContent value="favorites" forceMount className="mt-6 data-[state=inactive]:hidden">
         <InfiniteMemeGrid
           fetchUrl={`/api/v1/memes/?liked_by=${username}`}
           initialItems={initialFavorites}

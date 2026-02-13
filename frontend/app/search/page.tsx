@@ -108,7 +108,7 @@ function SearchContent() {
 
             <div className="min-h-[300px]">
                 {/* Вкладка ВСЕ */}
-                <TabsContent value="all" className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <TabsContent value="all" forceMount className="space-y-12 data-[state=inactive]:hidden">
                     
                     {/* Люди (Превью 6 шт) */}
                     {users.length > 0 && (
@@ -150,11 +150,11 @@ function SearchContent() {
                 </TabsContent>
 
                 {/* Отдельные вкладки */}
-                <TabsContent value="memes">
+                <TabsContent value="memes" forceMount className="data-[state=inactive]:hidden">
                      <MemeGrid items={memes} />
                 </TabsContent>
-                
-                <TabsContent value="users">
+
+                <TabsContent value="users" forceMount className="data-[state=inactive]:hidden">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {users.map((user: any) => (
                             <UserCard key={user.id} user={user} />
@@ -162,7 +162,7 @@ function SearchContent() {
                     </div>
                 </TabsContent>
 
-                 <TabsContent value="tags">
+                 <TabsContent value="tags" forceMount className="data-[state=inactive]:hidden">
                     <div className="flex flex-wrap gap-2">
                         {tags.map((tag: any) => (
                             <TagCard key={tag.id} tag={tag} />

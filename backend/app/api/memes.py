@@ -34,14 +34,26 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
-# ... (get_popular_content оставляем без изменений) ...
+import json as json_lib
+
+POPULAR_CONTENT_CACHE_KEY = "popular_content"
+POPULAR_CONTENT_TTL = 600  # 10 минут
+
 @router.get("/popular-content")
 async def get_popular_content(db: AsyncSession = Depends(get_db)):
-    # ... (код get_popular_content)
-    # Топ 5 тегов
+    # Пробуем получить из кэша
+    cached = await redis_client.get(POPULAR_CONTENT_CACHE_KEY)
+    if cached:
+        return json_lib.loads(cached)
+
+    week_ago = datetime.utcnow() - timedelta(days=7)
+
+    # Топ 5 тегов за 7 дней (по количеству лайков на мемах с этим тегом)
     tags_stmt = (
-        select(Tag.name, func.count(meme_tags.c.meme_id).label("count"))
-        .join(meme_tags)
+        select(Tag.name, func.count(Like.meme_id.distinct()).label("count"))
+        .join(meme_tags, meme_tags.c.tag_id == Tag.id)
+        .join(Like, Like.meme_id == meme_tags.c.meme_id)
+        .where(Like.created_at >= week_ago)
         .group_by(Tag.id, Tag.name)
         .order_by(desc("count"))
         .limit(5)
@@ -49,7 +61,32 @@ async def get_popular_content(db: AsyncSession = Depends(get_db)):
     tags_res = await db.execute(tags_stmt)
     tags = [{"name": row[0], "count": row[1]} for row in tags_res.all()]
 
-    return {"tags": tags}
+    # Топ 5 пользователей за 7 дней (по количеству лайков на их мемах)
+    top_users_stmt = (
+        select(
+            User.username,
+            User.avatar_url,
+            func.count(Like.meme_id).label("likes_count")
+        )
+        .join(Meme, Meme.user_id == User.id)
+        .join(Like, Like.meme_id == Meme.id)
+        .where(Like.created_at >= week_ago)
+        .group_by(User.id, User.username, User.avatar_url)
+        .order_by(desc("likes_count"))
+        .limit(5)
+    )
+    top_users_res = await db.execute(top_users_stmt)
+    top_users = [
+        {"username": row[0], "avatar_url": row[1], "likes_count": row[2]}
+        for row in top_users_res.all()
+    ]
+
+    result = {"tags": tags, "top_users": top_users}
+
+    # Кэшируем на 10 минут
+    await redis_client.set(POPULAR_CONTENT_CACHE_KEY, json_lib.dumps(result), ex=POPULAR_CONTENT_TTL)
+
+    return result
 
 @router.post("/upload", response_model=MemeResponse)
 async def upload_meme(

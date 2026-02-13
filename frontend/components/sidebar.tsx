@@ -3,12 +3,12 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Flame, Hash, RefreshCw } from "lucide-react";
+import { Home, Flame, Hash, RefreshCw, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 const MENU_ITEMS = [
   { name: "Главная", href: "/", icon: Home },
@@ -18,7 +18,7 @@ const MENU_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [popular, setPopular] = useState<{ tags: any[] } | null>(null);
+  const [popular, setPopular] = useState<{ tags: any[]; top_users: any[] } | null>(null);
 
   useEffect(() => {
     const fetchPopular = async () => {
@@ -36,7 +36,7 @@ export function Sidebar() {
 
   return (
     <div className="w-full flex flex-col gap-6 h-full">
-      
+
       {/* Основное меню */}
       <div className="flex flex-col gap-1">
         <h3 className="px-4 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
@@ -57,6 +57,42 @@ export function Sidebar() {
           </Link>
         ))}
       </div>
+
+      {/* Топ Пользователи */}
+      {popular && popular.top_users && popular.top_users.length > 0 && (
+        <div className="flex flex-col gap-1">
+            <h3 className="px-4 text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider flex items-center gap-2">
+                <Trophy className="w-3 h-3" /> Топ Авторов
+            </h3>
+            <div className="flex flex-col gap-0.5">
+                {popular.top_users.map((user: any) => {
+                  const avatarSrc = user.avatar_url
+                    ? (user.avatar_url.startsWith("http") ? user.avatar_url : `${API_URL}${user.avatar_url}`)
+                    : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`;
+                  return (
+                    <Link key={user.username} href={`/user/${user.username}`}>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "w-full justify-start gap-3 text-sm font-normal h-auto py-2",
+                          pathname === `/user/${user.username}` && "bg-secondary font-medium"
+                        )}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={avatarSrc}
+                          alt={user.username}
+                          className="w-7 h-7 rounded-full object-cover bg-muted shrink-0"
+                        />
+                        <span className="truncate">@{user.username}</span>
+                        <span className="ml-auto text-xs text-muted-foreground shrink-0">{user.likes_count}</span>
+                      </Button>
+                    </Link>
+                  );
+                })}
+            </div>
+        </div>
+      )}
 
       {/* Популярные Теги */}
       {popular && popular.tags.length > 0 && (
@@ -84,9 +120,12 @@ export function Sidebar() {
       )}
 
       {/* Футер */}
-      <div className="mt-auto px-4 py-4 text-xs text-muted-foreground border-t">
-        <Link href="/about" className="hover:underline">О проекте</Link> • 
-        <Link href="/rules" className="hover:underline ml-1">Правила</Link>
+      <div className="mt-auto px-4 py-4 text-xs text-muted-foreground border-t space-y-1">
+        <div className="flex flex-wrap gap-x-2 gap-y-1">
+          <Link href="/terms" className="hover:underline">Условия</Link>
+          <span>·</span>
+          <Link href="/privacy" className="hover:underline">Конфиденциальность</Link>
+        </div>
         <div className="mt-2">© 2026 MemeHUB</div>
       </div>
     </div>

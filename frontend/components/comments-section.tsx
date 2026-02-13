@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -30,7 +31,7 @@ interface CommentData {
 }
 
 export function CommentsSection({ memeId }: CommentsSectionProps) {
-  const { token } = useAuth();
+  const { token, isLoading: authLoading } = useAuth();
   const [comments, setComments] = useState<CommentData[]>([]);
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<CommentData | null>(null);
@@ -233,7 +234,12 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
       </ScrollArea>
 
       <div className="p-3 border-t bg-background flex-shrink-0">
-        {token ? (
+        {authLoading ? (
+            <div className="space-y-2">
+                <Skeleton className="h-[80px] w-full rounded-md" />
+                <Skeleton className="h-3 w-16 ml-auto rounded" />
+            </div>
+        ) : token ? (
             <div className="space-y-2">
                 {replyTo && (
                     <div className="flex items-center justify-between bg-primary/10 text-primary text-xs px-3 py-2 rounded-md border border-primary/20 animate-in slide-in-from-bottom-2 fade-in">

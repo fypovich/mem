@@ -32,14 +32,17 @@ export function MemeInteractions({
   authorUsername
 }: MemeInteractionsProps) {
   const router = useRouter();
-  const { token, user } = useAuth();
+  const { token, user, isLoading: authLoading } = useAuth();
 
   // --- STATES ---
   const [likes, setLikes] = useState(initialLikes);
   const [isLiked, setIsLiked] = useState(initialLiked);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
+  const [statusLoaded, setStatusLoaded] = useState(false);
 
   const isOwner = user?.username === authorUsername;
+  // До получения реального статуса используем SSR-значение, не показываем "liked" стиль
+  const showLiked = statusLoaded ? isLiked : initialLiked;
 
   // Share
   const [isCopied, setIsCopied] = useState(false);
@@ -52,6 +55,7 @@ export function MemeInteractions({
 
   // --- INIT LOGIC ---
   useEffect(() => {
+    if (authLoading) return;
     if (token) {
       fetch(`${API_URL}/api/v1/memes/${memeId}/status`, {
         headers: { "Authorization": `Bearer ${token}` }
@@ -59,10 +63,16 @@ export function MemeInteractions({
       .then(res => res.json())
       .then(data => {
          setIsLiked(data.is_liked);
+         setStatusLoaded(true);
       })
-      .catch(err => console.error(err));
+      .catch(err => {
+         console.error(err);
+         setStatusLoaded(true);
+      });
+    } else {
+      setStatusLoaded(true);
     }
-  }, [memeId, token]);
+  }, [memeId, token, authLoading]);
 
   const handleLike = async () => {
     if (!token) {
@@ -75,6 +85,7 @@ export function MemeInteractions({
     const prevLikes = likes;
     const prevLiked = isLiked;
 
+    setStatusLoaded(true);
     setIsLiked(!isLiked);
     setLikes(prevLiked ? prevLikes - 1 : prevLikes + 1);
     setIsLikeLoading(true);
@@ -154,14 +165,14 @@ export function MemeInteractions({
     <div className="flex items-center gap-2 mt-4 md:mt-0">
       
       {/* КНОПКА ЛАЙКА */}
-      <Button 
-        variant="secondary" 
-        size="sm" 
+      <Button
+        variant="secondary"
+        size="sm"
         onClick={handleLike}
         disabled={isLikeLoading}
-        className={`gap-2 transition-colors ${isLiked ? "bg-rose-500/10 text-rose-500 hover:bg-rose-500/20" : ""}`}
+        className={`gap-2 ${statusLoaded ? "transition-colors" : ""} ${showLiked ? "bg-rose-500/10 text-rose-500 hover:bg-rose-500/20" : ""}`}
       >
-        <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
+        <Heart className={`w-4 h-4 ${showLiked ? "fill-current" : ""}`} />
         <span>{likes}</span>
       </Button>
 
@@ -179,11 +190,11 @@ export function MemeInteractions({
         )}
       </Button>
       
-      {/* КНОПКА ПОЖАЛОВАТЬСЯ (Только если не автор) */}
-      {!isOwner && (
-          <Button 
-            variant="ghost" 
-            size="icon" 
+      {/* КНОПКА ПОЖАЛОВАТЬСЯ (скрывается только когда auth загружен И пользователь — автор) */}
+      {!(statusLoaded && isOwner) && (
+          <Button
+            variant="ghost"
+            size="icon"
             className="text-muted-foreground hover:text-white"
             onClick={() => setIsReportOpen(true)}
           >

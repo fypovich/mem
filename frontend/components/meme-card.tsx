@@ -2,15 +2,16 @@
 
 import React from "react";
 import Link from "next/link";
-import { 
-  Heart, 
-  MessageCircle, 
-  Volume2, 
-  Image as ImageIcon, 
-  Film, 
-  Play 
+import {
+  Heart,
+  MessageCircle,
+  Volume2,
+  Image as ImageIcon,
+  Film,
+  Play
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // 1. Адрес для отображения (через прокси Next.js или прямой)
 const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -72,28 +73,26 @@ export function MemeCard({ meme }: MemeCardProps) {
     <Link href={`/meme/${meme.id}`} className="block break-inside-avoid mb-4">
       <div className="group relative rounded-xl overflow-hidden cursor-pointer transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/10 bg-stone-900 border border-border/50">
         
-        <div className="w-full relative min-h-[100px] bg-muted/10">
-            {/* Рендерим контент:
-                - Если это видео-формат (даже без звука, например конвертированный гиф) -> <video>
-                - Иначе -> <img> 
-            */}
+        <div
+            className="w-full relative bg-muted/10"
+            style={meme.width && meme.height ? { aspectRatio: `${meme.width}/${meme.height}` } : { minHeight: 100 }}
+        >
             {isMp4Format ? (
                 <video
                     src={mediaUrl}
-                    className="w-full h-auto object-cover"
+                    className="w-full h-full object-cover"
                     muted
                     loop
                     autoPlay
                     playsInline
                     crossOrigin="anonymous"
-                    // pointerEvents-none чтобы нельзя было нажать на паузу кликом, перейдя по ссылке
-                    style={{ pointerEvents: 'none' }} 
+                    style={{ pointerEvents: 'none' }}
                 />
             ) : (
-                <img 
-                    src={thumbUrl} 
-                    alt={meme.title} 
-                    className="w-full h-auto object-cover"
+                <img
+                    src={thumbUrl}
+                    alt={meme.title}
+                    className="w-full h-full object-cover"
                     loading="lazy"
                 />
             )}
@@ -143,5 +142,18 @@ export function MemeCard({ meme }: MemeCardProps) {
         </div>
       </div>
     </Link>
+  );
+}
+
+const SKELETON_HEIGHTS = [200, 280, 180, 320, 240, 260];
+
+export function MemeCardSkeleton({ index = 0 }: { index?: number }) {
+  const height = SKELETON_HEIGHTS[index % SKELETON_HEIGHTS.length];
+  return (
+    <div className="break-inside-avoid mb-4">
+      <div className="rounded-xl overflow-hidden bg-stone-900 border border-border/50">
+        <Skeleton className="w-full bg-muted/20" style={{ height }} />
+      </div>
+    </div>
   );
 }

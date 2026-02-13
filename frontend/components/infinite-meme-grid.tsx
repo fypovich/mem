@@ -2,7 +2,7 @@
 
 import React, { useCallback } from "react";
 import { Loader2 } from "lucide-react";
-import { MemeGrid } from "@/components/meme-grid";
+import { MemeGrid, MemeGridSkeleton } from "@/components/meme-grid";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -46,8 +46,8 @@ export function InfiniteMemeGrid({
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[30vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="min-h-[60vh]">
+        <MemeGridSkeleton />
       </div>
     );
   }
@@ -61,7 +61,7 @@ export function InfiniteMemeGrid({
   }
 
   return (
-    <div>
+    <div className="min-h-[60vh]">
       <MemeGrid items={items} />
 
       {/* Sentinel */}

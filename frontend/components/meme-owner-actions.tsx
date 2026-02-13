@@ -36,7 +36,7 @@ interface MemeOwnerActionsProps {
 
 export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", initialDescription="", initialTags=[] }: MemeOwnerActionsProps) {
   const router = useRouter();
-  const { token, user } = useAuth();
+  const { token, user, isLoading: authLoading } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Состояния для редактирования
@@ -48,7 +48,9 @@ export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", init
     tags: initialTags.map(t => t.name).join(", ")
   });
 
-  if (!user || user.username !== authorUsername) {
+  const isOwner = !authLoading && user && user.username === authorUsername;
+
+  if (!isOwner) {
     return null;
   }
 
@@ -110,7 +112,7 @@ export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", init
   };
 
   return (
-    <>
+    <div className="animate-in fade-in duration-300">
         <DropdownMenu>
         <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8 ml-2">
@@ -180,6 +182,6 @@ export function MemeOwnerActions({ memeId, authorUsername, initialTitle="", init
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-    </>
+    </div>
   );
 }
