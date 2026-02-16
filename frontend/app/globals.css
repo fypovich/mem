@@ -115,6 +115,21 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Vidstack: remove forced 16:9, let videos use natural aspect ratio */
+.vds-video-player[data-media-player] {
+  aspect-ratio: auto !important;
+  transition: opacity 0.3s ease;
+}
+
+/* Скрываем плеер до готовности видео, предотвращаем мерцание */
+.vds-video-player[data-media-player]:not([data-can-play]) {
+  opacity: 0;
+}
+
+.vds-video-player[data-media-player] video {
+  max-height: 60vh;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

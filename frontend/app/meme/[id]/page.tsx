@@ -7,6 +7,7 @@ import { MemeInteractions } from "@/components/meme-interactions";
 import { CommentsSection } from "@/components/comments-section";
 import { MemeGrid } from "@/components/meme-grid";
 import { MemeOwnerActions } from "@/components/meme-owner-actions";
+import { VideoPlayer } from "@/components/video-player";
 import type { Metadata } from "next";
 import { getImageUrl } from "@/lib/seo";
 
@@ -99,7 +100,9 @@ export default async function MemePage({ params }: { params: Params }) {
   // Для видео/картинок мема используем DISPLAY_API_URL
   const mediaSrc = meme.media_url.startsWith('http') ? meme.media_url : `${DISPLAY_API_URL}${meme.media_url}`;
   
-  const isMp4 = meme.media_url.endsWith(".mp4");
+  const ext = meme.media_url.split('.').pop()?.toLowerCase();
+  const isVideo = ext === "mp4" || ext === "webm" || ext === "mov";
+  const isMp4 = isVideo;
 
   const thumbnailUrl = meme.thumbnail_url.startsWith("http") ? meme.thumbnail_url : `${DISPLAY_API_URL}${meme.thumbnail_url}`;
   const jsonLd = {
@@ -134,23 +137,20 @@ export default async function MemePage({ params }: { params: Params }) {
         <div className="lg:col-span-2 space-y-4">
           
           <div className="space-y-6">
-             <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl relative flex items-center justify-center">
-                {isMp4 ? (
-                    <video
+             <div className="rounded-xl overflow-hidden bg-black border border-border/50 shadow-2xl">
+                {isVideo ? (
+                    <VideoPlayer
                         src={mediaSrc}
-                        controls
-                        autoPlay
+                        poster={thumbnailUrl}
+                        title={meme.title}
+                        hasAudio={!!meme.has_audio}
                         loop
-                        muted={!meme.has_audio}
-                        playsInline
-                        crossOrigin="anonymous"
-                        className="w-full max-h-[45vh] md:max-h-[55vh] object-contain"
                     />
                 ) : (
                     <img
                         src={mediaSrc}
                         alt={meme.title}
-                        className="w-full max-h-[45vh] md:max-h-[55vh] object-contain"
+                        className="w-full max-h-[60vh] object-contain"
                     />
                 )}
              </div>
@@ -183,11 +183,14 @@ export default async function MemePage({ params }: { params: Params }) {
                      </Link>
 
                      <div className="flex items-center gap-2">
-                        <MemeInteractions 
-                            memeId={meme.id} 
-                            initialLikes={meme.likes_count} 
+                        <MemeInteractions
+                            memeId={meme.id}
+                            initialLikes={meme.likes_count}
                             initialLiked={meme.is_liked}
-                            authorUsername={meme.user.username} 
+                            authorUsername={meme.user.username}
+                            mediaUrl={mediaSrc}
+                            memeTitle={meme.title}
+                            initialShares={meme.shares_count ?? 0}
                         />
 
                         <MemeOwnerActions 

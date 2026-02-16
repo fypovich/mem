@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Heart, Share2, Flag, Check, Loader2 } from "lucide-react";
+import { Heart, Share2, Flag, Check, Loader2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,14 +22,20 @@ interface MemeInteractionsProps {
   memeId: string;
   initialLikes: number;
   initialLiked: boolean;
-  authorUsername: string; // <-- Добавили, чтобы знать, кто автор
+  authorUsername: string;
+  mediaUrl: string;
+  memeTitle: string;
+  initialShares: number;
 }
 
 export function MemeInteractions({
   memeId,
   initialLikes,
   initialLiked,
-  authorUsername
+  authorUsername,
+  mediaUrl,
+  memeTitle,
+  initialShares,
 }: MemeInteractionsProps) {
   const router = useRouter();
   const { token, user, isLoading: authLoading } = useAuth();
@@ -46,6 +52,10 @@ export function MemeInteractions({
 
   // Share
   const [isCopied, setIsCopied] = useState(false);
+
+  // Download
+  const [shares, setShares] = useState(initialShares);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Report
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -129,6 +139,42 @@ export function MemeInteractions({
     }
   };
 
+  const handleDownload = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+
+    const ext = mediaUrl.split(".").pop()?.split("?")[0] || "jpg";
+    const safeName = memeTitle.replace(/[<>:"/\\|?*]/g, "").trim() || "meme";
+
+    try {
+      const res = await fetch(mediaUrl);
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeName}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Фоллбек: открываем в новой вкладке для ручного сохранения
+      const a = document.createElement("a");
+      a.href = mediaUrl;
+      a.download = `${safeName}.${ext}`;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.click();
+    }
+
+    // Инкрементируем счётчик загрузок (не блокируем UI)
+    fetch(`${API_URL}/api/v1/memes/${memeId}/share`, { method: "POST" })
+      .then((r) => r.json())
+      .then((d) => setShares(d.count))
+      .catch(() => {});
+
+    setIsDownloading(false);
+  };
+
   const handleReportSubmit = async () => {
     if (!token) {
         router.push("/login");
@@ -177,9 +223,9 @@ export function MemeInteractions({
       </Button>
 
       {/* КНОПКА ПОДЕЛИТЬСЯ */}
-      <Button 
-        variant="ghost" 
-        size="icon" 
+      <Button
+        variant="ghost"
+        size="icon"
         className="text-muted-foreground hover:text-white"
         onClick={handleShare}
       >
@@ -189,7 +235,23 @@ export function MemeInteractions({
             <Share2 className="w-4 h-4" />
         )}
       </Button>
-      
+
+      {/* КНОПКА СКАЧАТЬ */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="gap-1.5 text-muted-foreground hover:text-white"
+        onClick={handleDownload}
+        disabled={isDownloading}
+      >
+        {isDownloading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Download className="w-4 h-4" />
+        )}
+        <span>{shares}</span>
+      </Button>
+
       {/* КНОПКА ПОЖАЛОВАТЬСЯ (скрывается только когда auth загружен И пользователь — автор) */}
       {!(statusLoaded && isOwner) && (
           <Button
