@@ -18,6 +18,7 @@ interface Notification {
   text?: string;
   sender?: {
     username: string;
+    full_name?: string;
     avatar_url?: string;
   };
   meme?: {
@@ -204,7 +205,7 @@ export default function NotificationsPage() {
                 <div className="text-sm leading-snug">
                     {note.sender && (
                         <Link href={`/user/${note.sender.username}`} className="font-bold hover:underline mr-1 text-foreground">
-                            {note.sender.username}
+                            {note.sender.full_name || note.sender.username}
                         </Link>
                     )}
                     <span className="text-muted-foreground">{content}</span>

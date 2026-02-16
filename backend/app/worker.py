@@ -385,24 +385,33 @@ def delete_index_task(meme_id: str):
 
 @shared_task(name="app.worker.sync_views_task")
 def sync_views_task():
+    """Batch sync views from Redis to DB."""
     redis_client = redis.from_url(settings.CELERY_BROKER_URL, decode_responses=True)
     db = SessionLocal()
-    updated_count = 0
     try:
+        # Собираем все обновления в один словарь
+        updates = {}
         for key in redis_client.scan_iter(match="meme:views:*"):
             try:
                 views_str = redis_client.getset(key, 0)
                 if views_str and int(views_str) > 0:
-                    views = int(views_str)
                     meme_id = key.split(":")[-1]
-                    db.execute(
-                        text("UPDATE memes SET views_count = views_count + :val WHERE id = :mid"),
-                        {"val": views, "mid": meme_id}
-                    )
-                    updated_count += 1
-            except Exception: pass
-        if updated_count > 0: db.commit()
-    except Exception: db.rollback()
+                    updates[meme_id] = int(views_str)
+            except Exception:
+                pass
+
+        # Batch update
+        if updates:
+            for meme_id, views in updates.items():
+                db.execute(
+                    text("UPDATE memes SET views_count = views_count + :val WHERE id = :mid"),
+                    {"val": views, "mid": meme_id}
+                )
+            db.commit()
+            print(f"👁️ Synced views for {len(updates)} memes")
+    except Exception as e:
+        print(f"Sync views error: {e}")
+        db.rollback()
     finally:
         db.close()
         redis_client.close()
@@ -418,10 +427,10 @@ def sync_search_stats_task():
             count = int(score)
             if count > 0:
                 s_term = db.query(SearchTerm).filter(SearchTerm.term == term).first()
-                if s_term: 
+                if s_term:
                     s_term.count += count
                     s_term.last_searched_at = datetime.utcnow()
-                else: 
+                else:
                     db.add(SearchTerm(term=term, count=count))
                 redis_client.zincrby("stats:search_terms", -count, term)
         db.commit()
@@ -430,3 +439,30 @@ def sync_search_stats_task():
     finally:
         db.close()
         redis_client.close()
+
+@shared_task(name="app.worker.sync_denormalized_counts_task")
+def sync_denormalized_counts_task():
+    """Safety net: periodically recalculate denormalized counters from actual data."""
+    db = SessionLocal()
+    try:
+        # Memes: likes_count, comments_count
+        db.execute(text("""
+            UPDATE memes SET
+                likes_count = (SELECT COUNT(*) FROM likes WHERE likes.meme_id = memes.id),
+                comments_count = (SELECT COUNT(*) FROM comments WHERE comments.meme_id = memes.id)
+        """))
+
+        # Users: followers_count, following_count
+        db.execute(text("""
+            UPDATE users SET
+                followers_count = (SELECT COUNT(*) FROM follows WHERE follows.followed_id = users.id),
+                following_count = (SELECT COUNT(*) FROM follows WHERE follows.follower_id = users.id)
+        """))
+
+        db.commit()
+        print("🔄 Denormalized counts synced")
+    except Exception as e:
+        print(f"Sync counts error: {e}")
+        db.rollback()
+    finally:
+        db.close()

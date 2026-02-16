@@ -13,13 +13,15 @@ celery_app.conf.update(
     beat_schedule={
         "sync-views-every-30-seconds": {
             "task": "app.worker.sync_views_task",
-            "schedule": 30.0, # Запуск каждые 30 секунд
+            "schedule": 30.0,
         },
-
-    # Новая задача (можно реже, например раз в 5 минут)
         "sync-search-stats-every-5-minutes": {
             "task": "app.worker.sync_search_stats_task",
-            "schedule": 300.0, 
+            "schedule": 300.0,
+        },
+        "sync-denormalized-counts-every-hour": {
+            "task": "app.worker.sync_denormalized_counts_task",
+            "schedule": 3600.0,
         },
     },
     timezone="UTC"

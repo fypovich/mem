@@ -121,41 +121,48 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center gap-4 px-4 mx-auto max-w-7xl">
+      <div className="flex h-14 items-center">
 
-        <div className="md:hidden mr-2">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-72">
-               <div className="px-4 py-6">
-                 <Sidebar />
-               </div>
-            </SheetContent>
-          </Sheet>
+        {/* ЛЕВАЯ ЗОНА — Лого (ширина сайдбара) */}
+        <div className="shrink-0 flex items-center gap-2 px-4 md:w-64 md:border-r md:border-border/50">
+          <div className="md:hidden">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="mr-1">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="p-0 w-72">
+                <div className="px-4 py-6">
+                  <Sidebar />
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
+
+          <Link href="/" className="flex items-center gap-2 font-bold text-xl shrink-0">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground">M</div>
+            <span className="hidden sm:inline-block">MemeHUB</span>
+          </Link>
         </div>
 
-        <Link href="/" className="flex items-center gap-2 font-bold text-xl mr-4 shrink-0">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground">M</div>
-          <span className="hidden sm:inline-block">MemeHUB</span>
-        </Link>
-
-        <div className="flex-1 max-w-xl relative hidden md:block">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Поиск мемов, людей, тегов..."
-            className="w-full pl-9 bg-muted/50 focus:bg-background transition-colors"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleSearch}
-          />
+        {/* ЦЕНТРАЛЬНАЯ ЗОНА — Поиск */}
+        <div className="flex-1 flex justify-center px-4">
+          <div className="w-full max-w-xl relative hidden md:block">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Поиск мемов, людей, тегов..."
+              className="w-full pl-9 bg-muted/50 focus:bg-background transition-colors"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearch}
+            />
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 md:gap-4 ml-auto">
+        {/* ПРАВАЯ ЗОНА — Кнопки */}
+        <div className="shrink-0 flex items-center gap-2 md:gap-3 px-4">
           {isLoading ? (
             <div className="flex items-center gap-3">
               <Skeleton className="h-8 w-8 rounded-full" />
@@ -191,7 +198,10 @@ export function Header() {
                   </Avatar>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>@{user?.username}</DropdownMenuLabel>
+                  <DropdownMenuLabel>
+                    <div>{user?.full_name || `@${user?.username}`}</div>
+                    {user?.full_name && <div className="text-xs font-normal text-muted-foreground">@{user?.username}</div>}
+                  </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <Link href={`/user/${user?.username}`}>
                     <DropdownMenuItem className="cursor-pointer">

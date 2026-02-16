@@ -15,31 +15,34 @@ from app.core.redis import redis_client
 
 router = APIRouter()
 
+UNREAD_COUNT_TTL = 300  # 5 минут
+
+def _unread_key(user_id) -> str:
+    return f"unread_count:{user_id}"
+
 # --- WEBSOCKET ENDPOINT ---
 @router.websocket("/ws")
 async def websocket_endpoint(
-    websocket: WebSocket, 
-    token: str = Query(...) 
+    websocket: WebSocket,
+    token: str = Query(...)
 ):
     await websocket.accept()
-    
+
     user = None
     try:
-        # Импорт здесь, чтобы избежать циклических ссылок
         from app.core.security import get_current_user_ws
         user = await get_current_user_ws(token)
-        
+
         if not user:
             print(f"WS Auth Failed: User not found for token")
             await websocket.close(code=1008)
             return
-            
+
     except Exception as e:
         print(f"WS Auth Error: {e}")
         await websocket.close(code=1008)
         return
 
-    # Подписка на Redis канал
     pubsub = redis_client.pubsub()
     channel = f"notify:{user.id}"
     await pubsub.subscribe(channel)
@@ -47,21 +50,16 @@ async def websocket_endpoint(
 
     try:
         while True:
-            # Слушаем Redis
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            
+
             if message:
                 print(f"WS Sending to {user.username}: {message['data']}")
                 await websocket.send_text(message["data"])
-            
-            # Пингуем клиент, чтобы держать соединение (и обнаружить разрыв)
-            # Встроенный ping/pong есть, но полезно просто отдать управление event loop
+
             try:
-                # Ждем данные от клиента (он вряд ли что-то шлет, но если разорвет - вылетит тут)
-                # Используем wait_for с таймаутом, чтобы не блокировать цикл
                 await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
             except asyncio.TimeoutError:
-                pass # Таймаут - это ок, просто идем дальше слушать Redis
+                pass
             except WebSocketDisconnect:
                 print(f"WS Disconnected client: {user.username}")
                 break
@@ -78,12 +76,11 @@ async def websocket_endpoint(
 
 @router.get("/", response_model=List[NotificationResponse])
 async def get_notifications(
-    skip: int = 0, 
+    skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # ИСПРАВЛЕНИЕ: Подгружаем вложенные связи для мема!
     query = (
         select(Notification)
         .where(Notification.user_id == current_user.id)
@@ -103,11 +100,28 @@ async def get_unread_count(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Пробуем из Redis кэша
+    cache_key = _unread_key(current_user.id)
+    try:
+        cached = await redis_client.get(cache_key)
+        if cached is not None:
+            return {"count": int(cached)}
+    except Exception:
+        pass
+
+    # Идем в БД
     query = select(func.count()).select_from(Notification).where(
-        (Notification.user_id == current_user.id) & 
+        (Notification.user_id == current_user.id) &
         (Notification.is_read == False)
     )
     count = await db.scalar(query)
+
+    # Кэшируем
+    try:
+        await redis_client.set(cache_key, str(count), ex=UNREAD_COUNT_TTL)
+    except Exception:
+        pass
+
     return {"count": count}
 
 @router.post("/read-all")
@@ -117,10 +131,20 @@ async def mark_all_read(
 ):
     await db.execute(
         update(Notification)
-        .where(Notification.user_id == current_user.id)
+        .where(
+            (Notification.user_id == current_user.id) &
+            (Notification.is_read == False)
+        )
         .values(is_read=True)
     )
     await db.commit()
+
+    # Инвалидируем кэш
+    try:
+        await redis_client.delete(_unread_key(current_user.id))
+    except Exception:
+        pass
+
     return {"status": "ok"}
 
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
@@ -129,9 +153,8 @@ async def mark_notification_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Здесь тоже нужно подгрузить связи, чтобы вернуть полный объект
     query = select(Notification).where(
-        (Notification.id == notification_id) & 
+        (Notification.id == notification_id) &
         (Notification.user_id == current_user.id)
     ).options(
         selectinload(Notification.sender),
@@ -147,5 +170,11 @@ async def mark_notification_read(
     db.add(notification)
     await db.commit()
     await db.refresh(notification)
-    
+
+    # Инвалидируем кэш
+    try:
+        await redis_client.delete(_unread_key(current_user.id))
+    except Exception:
+        pass
+
     return notification

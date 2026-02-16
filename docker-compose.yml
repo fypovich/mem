@@ -94,7 +94,10 @@ services:
       - db
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
     container_name: memegiphy_frontend
     restart: always
     ports:

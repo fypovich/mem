@@ -36,6 +36,10 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     is_superuser: bool = Column(Boolean, default=False)
 
+    # Денормализованные счетчики
+    followers_count = Column(Integer, default=0)
+    following_count = Column(Integer, default=0)
+
     # --- НОВЫЕ ПОЛЯ НАСТРОЕК (Добавили их сюда) ---
     notify_on_like = Column(Boolean, default=True)
     notify_on_comment = Column(Boolean, default=True)
@@ -84,6 +88,8 @@ class Meme(Base):
     has_audio = Column(Boolean, default=False)
     
     views_count = Column(Integer, default=0)
+    likes_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0)
     status = Column(String, default="pending")
     shares_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)

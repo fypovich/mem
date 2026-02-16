@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.security import create_access_token, verify_password, get_password_hash, create_password_reset_token, verify_password_reset_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.models.models import User
 from app.schemas import Token, UserResponse, UserCreate, PasswordResetRequest, PasswordResetConfirm
+from app.utils.avatar_gen import generate_default_avatar, generate_default_header
 
 router = APIRouter()
 
@@ -64,6 +65,17 @@ async def register_user(
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
+
+    # 3.1 Генерация дефолтных аватара и шапки (DiceBear)
+    try:
+        avatar_url = await generate_default_avatar(str(new_user.id), new_user.username)
+        header_url = await generate_default_header(str(new_user.id), new_user.username)
+        new_user.avatar_url = avatar_url
+        new_user.header_url = header_url
+        await db.commit()
+        await db.refresh(new_user)
+    except Exception as e:
+        print(f"Avatar/header generation failed: {e}")
 
     # 4. Автоматический логин (выдача токена)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

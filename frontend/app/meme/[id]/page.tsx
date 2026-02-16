@@ -144,13 +144,13 @@ export default async function MemePage({ params }: { params: Params }) {
                         muted={!meme.has_audio}
                         playsInline
                         crossOrigin="anonymous"
-                        className="w-full max-h-[60vh] md:max-h-[70vh] object-contain"
+                        className="w-full max-h-[45vh] md:max-h-[55vh] object-contain"
                     />
                 ) : (
                     <img
                         src={mediaSrc}
                         alt={meme.title}
-                        className="w-full max-h-[60vh] md:max-h-[70vh] object-contain"
+                        className="w-full max-h-[45vh] md:max-h-[55vh] object-contain"
                     />
                 )}
              </div>
@@ -167,8 +167,11 @@ export default async function MemePage({ params }: { params: Params }) {
                            className="w-10 h-10 rounded-full border border-border group-hover:border-primary transition-colors object-cover bg-muted"
                         />
                         <div>
-                           <div className="font-semibold group-hover:text-primary transition-colors">@{meme.user.username}</div>
+                           <div className="font-semibold group-hover:text-primary transition-colors">
+                             {meme.user.full_name || `@${meme.user.username}`}
+                           </div>
                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                             {meme.user.full_name && <span>@{meme.user.username}</span>}
                              <div className="flex items-center gap-1">
                                  <Calendar className="w-3 h-3" /> {date}
                              </div>

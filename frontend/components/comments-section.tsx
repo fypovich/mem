@@ -23,6 +23,7 @@ interface CommentData {
   created_at: string;
   user: {
     username: string;
+    full_name?: string | null;
     avatar_url: string | null;
   };
   parent_id: string | null;
@@ -152,8 +153,11 @@ export function CommentsSection({ memeId }: CommentsSectionProps) {
 
                     <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                         <Link href={`/user/${comment.user.username}`} className="font-bold text-sm hover:underline text-foreground">
-                            {comment.user.username}
+                            {comment.user.full_name || comment.user.username}
                         </Link>
+                        {comment.user.full_name && (
+                            <span className="text-xs text-muted-foreground">@{comment.user.username}</span>
+                        )}
                         
                         {/* 3. Кому отвечаем (визуально помогает в плоской структуре) */}
                         {comment.parent_username && (

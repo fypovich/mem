@@ -84,7 +84,7 @@ export function Sidebar() {
                           alt={user.username}
                           className="w-7 h-7 rounded-full object-cover bg-muted shrink-0"
                         />
-                        <span className="truncate">@{user.username}</span>
+                        <span className="truncate">{user.full_name || `@${user.username}`}</span>
                         <span className="ml-auto text-xs text-muted-foreground shrink-0">{user.likes_count}</span>
                       </Button>
                     </Link>

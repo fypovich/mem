@@ -66,18 +66,19 @@ async def get_popular_content(db: AsyncSession = Depends(get_db)):
         select(
             User.username,
             User.avatar_url,
+            User.full_name,
             func.count(Like.meme_id).label("likes_count")
         )
         .join(Meme, Meme.user_id == User.id)
         .join(Like, Like.meme_id == Meme.id)
         .where(Like.created_at >= week_ago)
-        .group_by(User.id, User.username, User.avatar_url)
+        .group_by(User.id, User.username, User.avatar_url, User.full_name)
         .order_by(desc("likes_count"))
         .limit(5)
     )
     top_users_res = await db.execute(top_users_stmt)
     top_users = [
-        {"username": row[0], "avatar_url": row[1], "likes_count": row[2]}
+        {"username": row[0], "avatar_url": row[1], "full_name": row[2], "likes_count": row[3]}
         for row in top_users_res.all()
     ]
 
@@ -232,30 +233,23 @@ async def upload_meme(
 async def read_memes(
     skip: int = 0,
     limit: int = 20,
-    username: Optional[str] = None, 
+    username: Optional[str] = None,
     liked_by: Optional[str] = None,
     tag: Optional[str] = None,
-    sort: str = "new",              
-    period: str = "all",            
+    sort: str = "new",
+    period: str = "all",
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user) 
+    current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    LikeStats = aliased(Like)
-    CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
-    likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
-    comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
-    
     is_liked = sa.literal(False)
     if current_user:
         is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id))
 
     query = (
         select(
-            Meme, 
-            likes_count.label("likes_count"),
-            comments_count.label("comments_count"),
+            Meme,
             is_liked.label("is_liked")
         )
         .options(
@@ -264,7 +258,7 @@ async def read_memes(
         )
         .where(Meme.status == "approved")
     )
-    
+
     if current_user:
         blocked_users_query = select(Block.blocked_id).where(Block.blocker_id == current_user.id)
         query = query.where(Meme.user_id.not_in(blocked_users_query))
@@ -276,7 +270,7 @@ async def read_memes(
     if liked_by:
         uid_res = await db.execute(select(User.id).where(User.username == liked_by))
         uid = uid_res.scalar_one_or_none()
-        if not uid: return [] 
+        if not uid: return []
         query = query.join(Like, Meme.id == Like.meme_id).where(Like.user_id == uid)
 
     if period == "week":
@@ -287,27 +281,25 @@ async def read_memes(
         query = query.where(Meme.created_at >= month_ago)
 
     if sort == "popular":
-        query = query.order_by(desc("likes_count"), desc(Meme.views_count))
+        query = query.order_by(desc(Meme.likes_count), desc(Meme.views_count))
     elif sort == "smart":
         age_in_hours = (extract('epoch', func.now() - Meme.created_at) / 3600)
-        gravity_score = (likes_count + 1) / func.power((age_in_hours + 2), 1.5)
+        gravity_score = (Meme.likes_count + 1) / func.power((age_in_hours + 2), 1.5)
         query = query.order_by(desc(gravity_score))
     else:
         query = query.order_by(Meme.created_at.desc())
 
     query = query.offset(skip).limit(limit)
-    
+
     result = await db.execute(query)
     rows = result.all()
-    
+
     memes_with_stats = []
     for row in rows:
         meme = row[0]
-        meme.likes_count = row[1]
-        meme.comments_count = row[2]
-        meme.is_liked = row[3]
+        meme.is_liked = row[1]
         memes_with_stats.append(meme)
-        
+
     return memes_with_stats
 
 
@@ -337,20 +329,13 @@ async def read_meme(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
-    # 1. ОПТИМИЗАЦИЯ: Инкрементируем просмотры в Redis (очень быстро)
-    # Celery Beat потом заберет их в БД
     try:
         await redis_client.incr(f"meme:views:{meme_id}")
     except Exception as e:
         print(f"Redis views error: {e}")
 
-    LikeStats = aliased(Like)
-    CommentStats = aliased(Comment)
     MyLike = aliased(Like)
 
-    likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
-    comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
-    
     is_liked = sa.literal(False)
     if current_user:
         is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id))
@@ -358,8 +343,6 @@ async def read_meme(
     query = (
         select(
             Meme,
-            likes_count.label("likes_count"),
-            comments_count.label("comments_count"),
             is_liked.label("is_liked")
         )
         .options(selectinload(Meme.user), selectinload(Meme.tags))
@@ -368,14 +351,12 @@ async def read_meme(
 
     res = await db.execute(query)
     row = res.first()
-    
+
     if not row:
         raise HTTPException(status_code=404, detail="Meme not found")
 
     meme = row[0]
-    meme.likes_count = row[1]
-    meme.comments_count = row[2]
-    meme.is_liked = row[3]
+    meme.is_liked = row[1]
     return meme
 
 
@@ -385,7 +366,10 @@ async def like_meme(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    meme = await db.get(Meme, meme_id)
+    res = await db.execute(
+        select(Meme).options(selectinload(Meme.user)).where(Meme.id == meme_id)
+    )
+    meme = res.scalars().first()
     if not meme: raise HTTPException(404, "Meme not found")
 
     query = select(Like).where((Like.user_id == current_user.id) & (Like.meme_id == meme_id))
@@ -393,8 +377,8 @@ async def like_meme(
 
     if existing_like:
         await db.delete(existing_like)
+        meme.likes_count = max(0, meme.likes_count - 1)
         if meme.user_id != current_user.id:
-            # Удаляем уведомление при анлайке
             await db.execute(
                 sa.delete(Notification).where(
                     (Notification.sender_id == current_user.id) &
@@ -406,12 +390,11 @@ async def like_meme(
     else:
         new_like = Like(user_id=current_user.id, meme_id=meme_id)
         db.add(new_like)
+        meme.likes_count = meme.likes_count + 1
         action = "liked"
-        
+
         if meme.user_id != current_user.id:
-            meme_owner = await db.get(User, meme.user_id)
             if getattr(meme.user, 'notify_on_like', True):
-                # Проверяем на дубликат уведомления
                 existing_notif = await db.scalar(
                     select(Notification).where(
                         (Notification.sender_id == current_user.id) &
@@ -432,8 +415,7 @@ async def like_meme(
                     )
 
     await db.commit()
-    count = await db.scalar(select(func.count()).select_from(Like).where(Like.meme_id == meme_id))
-    return {"action": action, "likes_count": count}
+    return {"action": action, "likes_count": meme.likes_count}
 
 
 @router.post("/{meme_id}/comments", response_model=CommentResponse)
@@ -446,7 +428,10 @@ async def create_comment(
     if len(comment.text) > 500:
         raise HTTPException(status_code=400, detail="Комментарий не может быть длиннее 500 символов")
 
-    meme = await db.get(Meme, meme_id)
+    res = await db.execute(
+        select(Meme).options(selectinload(Meme.user)).where(Meme.id == meme_id)
+    )
+    meme = res.scalars().first()
     if not meme: raise HTTPException(404, "Meme not found")
 
     if comment.parent_id:
@@ -455,13 +440,14 @@ async def create_comment(
             raise HTTPException(404, "Parent comment not found")
 
     new_comm = Comment(
-        text=comment.text, 
-        user_id=current_user.id, 
+        text=comment.text,
+        user_id=current_user.id,
         meme_id=meme_id,
-        parent_id=comment.parent_id 
+        parent_id=comment.parent_id
     )
     db.add(new_comm)
-    
+    meme.comments_count = meme.comments_count + 1
+
     if meme.user_id != current_user.id:
         meme_owner = await db.get(User, meme.user_id)
         if getattr(meme.user, 'notify_on_comment', True):
@@ -538,26 +524,19 @@ async def get_similar_memes(
 
     tag_ids = [t.id for t in current_meme.tags]
 
-    LikeStats = aliased(Like)
-    CommentStats = aliased(Comment)
     MyLike = aliased(Like)
-
-    likes_count = select(func.count(LikeStats.user_id)).where(LikeStats.meme_id == Meme.id).scalar_subquery()
-    comments_count = select(func.count(CommentStats.id)).where(CommentStats.meme_id == Meme.id).scalar_subquery()
     is_liked = exists().where((MyLike.meme_id == Meme.id) & (MyLike.user_id == current_user.id)) if current_user else sa.literal(False)
 
     query = (
         select(
-            Meme, 
-            likes_count.label("likes_count"),
-            comments_count.label("comments_count"),
+            Meme,
             is_liked.label("is_liked")
         )
         .options(
             selectinload(Meme.user),
             selectinload(Meme.tags)
         )
-        .where(Meme.id != meme_id) 
+        .where(Meme.id != meme_id)
         .where(Meme.status == "approved")
     )
 
@@ -568,10 +547,8 @@ async def get_similar_memes(
     if conditions:
         query = query.where(or_(*conditions))
     else:
-        query = query.order_by(desc("likes_count"))
+        query = query.order_by(desc(Meme.likes_count))
 
-    # 2. ОПТИМИЗАЦИЯ: Убираем ORDER BY random() из БД
-    # Выбираем в 5 раз больше, чем нужно, и мешаем в Python
     query = query.limit(limit * 5)
 
     result = await db.execute(query)
@@ -580,12 +557,9 @@ async def get_similar_memes(
     memes_with_stats = []
     for row in rows:
         meme = row[0]
-        meme.likes_count = row[1]
-        meme.comments_count = row[2]
-        meme.is_liked = row[3]
+        meme.is_liked = row[1]
         memes_with_stats.append(meme)
 
-    # Перемешиваем в памяти
     if len(memes_with_stats) > limit:
         return random.sample(memes_with_stats, limit)
     else:

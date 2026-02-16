@@ -70,7 +70,7 @@ export function MemeCard({ meme }: MemeCardProps) {
   };
 
   return (
-    <Link href={`/meme/${meme.id}`} className="block break-inside-avoid mb-4">
+    <Link href={`/meme/${meme.id}`} className="block">
       <div className="group relative rounded-xl overflow-hidden cursor-pointer transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/10 bg-stone-900 border border-border/50">
         
         <div
@@ -150,10 +150,8 @@ const SKELETON_HEIGHTS = [200, 280, 180, 320, 240, 260];
 export function MemeCardSkeleton({ index = 0 }: { index?: number }) {
   const height = SKELETON_HEIGHTS[index % SKELETON_HEIGHTS.length];
   return (
-    <div className="break-inside-avoid mb-4">
-      <div className="rounded-xl overflow-hidden bg-stone-900 border border-border/50">
-        <Skeleton className="w-full bg-muted/20" style={{ height }} />
-      </div>
+    <div className="rounded-xl overflow-hidden bg-stone-900 border border-border/50">
+      <Skeleton className="w-full bg-muted/20" style={{ height }} />
     </div>
   );
 }

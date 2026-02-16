@@ -5,7 +5,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import type { Metadata } from "next";
 
-const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const FETCH_API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const DISPLAY_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string }> }): Promise<Metadata> {
   const { username } = await params;
@@ -18,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ username:
 
 async function getFollowers(username: string) {
     try {
-        const res = await fetch(`${API_URL}/api/v1/users/${username}/followers`, { cache: "no-store" });
+        const res = await fetch(`${FETCH_API_URL}/api/v1/users/${username}/followers`, { cache: "no-store" });
         if (!res.ok) return [];
         return res.json();
     } catch (e) {
@@ -44,7 +45,7 @@ export default async function FollowersPage({ params }: { params: Promise<{ user
                     followers.map((user: any) => (
                         <Link href={`/user/${user.username}`} key={user.id} className="flex items-center gap-4 p-4 rounded-xl border bg-card hover:bg-accent/50 transition-colors">
                             <Avatar>
-                                <AvatarImage src={user.avatar_url ? `${API_URL}${user.avatar_url}` : undefined} />
+                                <AvatarImage src={user.avatar_url ? `${DISPLAY_API_URL}${user.avatar_url}` : undefined} />
                                 <AvatarFallback>{user.username[0]}</AvatarFallback>
                             </Avatar>
                             <div className="flex-1">

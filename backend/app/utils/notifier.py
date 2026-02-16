@@ -43,6 +43,7 @@ async def send_notification(
     if sender:
         sender_data = {
             "username": sender.username,
+            "full_name": sender.full_name,
             "avatar_url": sender.avatar_url
         }
     
@@ -67,7 +68,12 @@ async def send_notification(
 
     # 3. Публикуем в Redis
     channel = f"notify:{user_id}"
-    # Используем json.dumps с нашим энкодером
     await redis_client.publish(channel, json.dumps(notification_payload, cls=DateTimeEncoder))
-    
+
+    # 4. Инвалидируем кэш непрочитанных уведомлений
+    try:
+        await redis_client.delete(f"unread_count:{user_id}")
+    except Exception:
+        pass
+
     return new_notif
