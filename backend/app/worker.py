@@ -67,17 +67,10 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         upload_dir = os.path.dirname(file_path)
         final_path = os.path.join(upload_dir, final_filename)
         
-        # Определяем расширение для превью
-        # Если мем GIF -> превью GIF (анимированное)
-        # Если мем MP4 -> превью JPG (статичное)
-        if is_gif:
-            thumbnail_ext = "gif"
-        else:
-            thumbnail_ext = "jpg"
-            
-        thumbnail_path = os.path.join(upload_dir, f"{meme_id_str}_thumb.{thumbnail_ext}")
+        # Все thumbnails теперь WebP
+        thumbnail_path = os.path.join(upload_dir, f"{meme_id_str}_thumb.webp")
 
-        print(f"ℹ️ Detected format: {output_ext}, Thumb: {thumbnail_ext} (Audio: {has_audio_stream}, New Audio: {bool(audio_path)})")
+        print(f"ℹ️ Detected format: {output_ext}, Thumb: webp (Audio: {has_audio_stream}, New Audio: {bool(audio_path)})")
 
         # --- ОБРАБОТКА ---
         if audio_path:
@@ -99,12 +92,13 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
 
         # --- ГЕНЕРАЦИЯ ПРЕВЬЮ ---
         if is_gif:
-            # 🔥 ВАЖНО: Копируем готовый GIF в превью, чтобы оно двигалось
-            if os.path.exists(final_path):
-                shutil.copy(final_path, thumbnail_path)
+            # Animated WebP thumbnail для GIF (25-34% меньше, 24-bit цвет)
+            processor.generate_animated_webp_thumbnail(thumbnail_path)
         else:
-            # Для видео генерируем статичную картинку
-            processor.generate_thumbnail(thumbnail_path)
+            # Для видео: WebM preview (полное, без звука) + WebP poster
+            preview_path = os.path.join(upload_dir, f"{meme_id_str}_preview.webm")
+            processor.generate_video_preview(preview_path, thumbnail_path)
+            meme.preview_url = f"/static/{meme_id_str}_preview.webm"
         
         # Получаем метаданные финального файла
         duration, width, height = processor.get_metadata()
@@ -119,7 +113,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
         meme.has_audio = final_has_audio
         meme.status = "approved"
         meme.media_url = f"/static/{final_filename}"
-        meme.thumbnail_url = f"/static/{meme_id_str}_thumb.{thumbnail_ext}" # .gif или .jpg
+        meme.thumbnail_url = f"/static/{meme_id_str}_thumb.webp"
         
         db.commit()
 
@@ -142,6 +136,7 @@ def process_meme_task(self, meme_id_str: str, file_path: str, audio_path: str = 
                 "title": meme.title,
                 "description": meme.description,
                 "thumbnail_url": meme.thumbnail_url,
+                "preview_url": meme.preview_url,
                 "media_url": meme.media_url,
                 "views_count": meme.views_count,
                 "shares_count": meme.shares_count,

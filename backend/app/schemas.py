@@ -103,6 +103,7 @@ class MemeResponse(MemeBase):
     id: uuid.UUID
     media_url: str
     thumbnail_url: str
+    preview_url: Optional[str] = None
     original_audio_url: Optional[str] = None
     
     duration: float

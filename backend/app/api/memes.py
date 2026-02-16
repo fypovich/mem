@@ -103,13 +103,15 @@ async def upload_meme(
     ext = file.filename.split('.')[-1].lower()
     
     is_image_input = ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']
+    is_gif_input = ext == 'gif'
+    # GIF тоже идёт через worker (animated WebP генерация занимает время)
     is_final_video = True
-    if is_image_input and not audio_file:
+    if is_image_input and not audio_file and not is_gif_input:
         is_final_video = False
 
     raw_filename = f"raw_{file_id}.{ext}"
     final_filename = f"{file_id}.mp4" if is_final_video else f"{file_id}.{ext}"
-    thumbnail_filename = f"{file_id}_thumb.jpg"
+    thumbnail_filename = f"{file_id}_thumb.webp"
 
     raw_path = os.path.join(UPLOAD_DIR, raw_filename)
     final_path = os.path.join(UPLOAD_DIR, final_filename)
@@ -133,12 +135,15 @@ async def upload_meme(
 
     if not is_final_video:
         shutil.copy(raw_path, final_path)
-        shutil.copy(final_path, thumbnail_path)
         try:
             processor = MediaProcessor(final_path)
             _, width, height = processor.get_metadata()
-        except: pass
-        
+            # Генерируем оптимизированный WebP thumbnail вместо копии
+            processor.generate_webp_thumbnail(thumbnail_path)
+        except Exception as e:
+            print(f"Thumbnail generation error: {e}")
+            shutil.copy(final_path, thumbnail_path)
+
         status = "approved"
         thumbnail_url = f"/static/{thumbnail_filename}"
         if os.path.exists(raw_path): os.remove(raw_path)
@@ -186,6 +191,7 @@ async def upload_meme(
             "title": new_meme.title,
             "description": new_meme.description,
             "thumbnail_url": new_meme.thumbnail_url,
+            "preview_url": new_meme.preview_url,
             "media_url": new_meme.media_url,
             "views_count": new_meme.views_count,
             "shares_count": new_meme.shares_count, # <-- ДОБАВЛЕНО
@@ -589,6 +595,12 @@ async def delete_meme(
         
         if meme.thumbnail_url:
             filename = meme.thumbnail_url.split("/")[-1]
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            if await aiofiles.os.path.exists(file_path):
+                await aiofiles.os.remove(file_path)
+
+        if meme.preview_url:
+            filename = meme.preview_url.split("/")[-1]
             file_path = os.path.join(UPLOAD_DIR, filename)
             if await aiofiles.os.path.exists(file_path):
                 await aiofiles.os.remove(file_path)

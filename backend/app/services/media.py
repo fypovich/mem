@@ -1,6 +1,7 @@
 import os
 import shutil
 import ffmpeg
+from PIL import Image
 
 class MediaProcessor:
     def __init__(self, path: str):
@@ -60,6 +61,108 @@ class MediaProcessor:
             print(f"Thumbnail error: {e.stderr.decode() if e.stderr else str(e)}")
             if self.path.lower().endswith(('.jpg', '.png', '.jpeg')):
                 shutil.copy(self.path, output_path)
+
+    def generate_webp_thumbnail(self, output_path: str, width: int = 640, quality: int = 82):
+        """Генерирует оптимизированный статичный WebP thumbnail из картинки."""
+        try:
+            img = Image.open(self.path)
+
+            # Конвертируем в RGB/RGBA для WebP
+            if img.mode in ('RGBA', 'LA', 'PA'):
+                pass  # Сохраняем альфа-канал
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            # Только уменьшаем, не увеличиваем
+            if img.width > width:
+                ratio = width / img.width
+                new_height = int(img.height * ratio)
+                img = img.resize((width, new_height), Image.LANCZOS)
+
+            img.save(output_path, 'WEBP', quality=quality, method=4)
+        except Exception as e:
+            print(f"WebP thumbnail error: {e}")
+            shutil.copy(self.path, output_path)
+
+    def generate_animated_webp_thumbnail(self, output_path: str, width: int = 480, fps: int = 15, quality: int = 75):
+        """Конвертирует GIF в оптимизированный animated WebP через FFmpeg."""
+        try:
+            (
+                ffmpeg
+                .input(self.path)
+                .filter('fps', fps=fps)
+                .filter('scale', width, -1, flags='lanczos')
+                .output(output_path, quality=quality, loop=0, an=None)
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+        except ffmpeg.Error as e:
+            print(f"Animated WebP FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}")
+            # Фолбэк через Pillow
+            try:
+                img = Image.open(self.path)
+                frames = []
+                durations = []
+                try:
+                    while True:
+                        frame = img.copy()
+                        if img.width > width:
+                            ratio = width / img.width
+                            new_size = (width, int(img.height * ratio))
+                            frame = frame.resize(new_size, Image.LANCZOS)
+                        frames.append(frame)
+                        durations.append(img.info.get('duration', 100))
+                        img.seek(img.tell() + 1)
+                except EOFError:
+                    pass
+                if frames:
+                    frames[0].save(
+                        output_path, 'WEBP', save_all=True,
+                        append_images=frames[1:],
+                        duration=durations, quality=quality, method=4, loop=0
+                    )
+                else:
+                    shutil.copy(self.path, output_path)
+            except Exception as e2:
+                print(f"Animated WebP Pillow fallback error: {e2}")
+                shutil.copy(self.path, output_path)
+
+    def generate_video_preview(self, preview_path: str, poster_path: str,
+                               preview_width: int = 480, poster_width: int = 640, poster_quality: int = 82):
+        """Генерирует WebM preview (полное видео, без звука) и WebP poster (первый кадр)."""
+        # 1. WebM preview — полное видео, без звука, VP9, 480px
+        try:
+            (
+                ffmpeg
+                .input(self.path)
+                .filter('scale', preview_width, -1)
+                .output(
+                    preview_path,
+                    an=None,
+                    vcodec='libvpx-vp9',
+                    crf=40,
+                    **{'b:v': '0'}
+                )
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+        except ffmpeg.Error as e:
+            print(f"WebM preview error: {e.stderr.decode() if e.stderr else str(e)}")
+
+        # 2. WebP poster — первый кадр, 640px
+        try:
+            (
+                ffmpeg
+                .input(self.path, ss=0)
+                .filter('scale', poster_width, -1)
+                .output(poster_path, vframes=1)
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+        except ffmpeg.Error as e:
+            print(f"WebP poster error: {e.stderr.decode() if e.stderr else str(e)}")
+            # Фолбэк на старый метод
+            self.generate_thumbnail(poster_path.replace('.webp', '.jpg'))
 
     def convert_to_mp4(self, output_path: str):
         """Конвертирует видео или GIF в MP4 с исправлением размеров."""

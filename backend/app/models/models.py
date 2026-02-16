@@ -87,6 +87,8 @@ class Meme(Base):
     # НОВОЕ ПОЛЕ: Есть ли звук?
     has_audio = Column(Boolean, default=False)
     
+    preview_url = Column(String, nullable=True)  # WebM preview для видео в grid
+
     views_count = Column(Integer, default=0)
     likes_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
