@@ -26,9 +26,14 @@ export function MemeCard({ meme }: MemeCardProps) {
     ? meme.media_url 
     : `${DISPLAY_API_URL}${meme.media_url}`;
 
-  const thumbUrl = meme.thumbnail_url 
+  const thumbUrl = meme.thumbnail_url
     ? (meme.thumbnail_url.startsWith("http") ? meme.thumbnail_url : `${DISPLAY_API_URL}${meme.thumbnail_url}`)
     : mediaUrl; // Если превью нет, пробуем оригинал (для картинок)
+
+  // WebM preview для видео в grid (вместо полного MP4)
+  const previewUrl = meme.preview_url
+    ? (meme.preview_url.startsWith("http") ? meme.preview_url : `${DISPLAY_API_URL}${meme.preview_url}`)
+    : null;
 
   // Получаем расширение файла
   const ext = meme.media_url.split('.').pop()?.toLowerCase();
@@ -79,7 +84,8 @@ export function MemeCard({ meme }: MemeCardProps) {
         >
             {isMp4Format ? (
                 <video
-                    src={mediaUrl}
+                    src={previewUrl || mediaUrl}
+                    poster={thumbUrl}
                     className="w-full h-full object-cover"
                     muted
                     loop
